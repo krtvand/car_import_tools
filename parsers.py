@@ -6,6 +6,7 @@ saved HTML fragments.
 from __future__ import annotations
 
 import re
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -111,6 +112,50 @@ def next_page_url(soup: BeautifulSoup, current_page: int) -> str | None:
         if a.get("data-page") == target and a.get("href"):
             return BASE_URL + a["href"]
     return None
+
+
+def has_next_page(soup: BeautifulSoup, current_page: int) -> bool:
+    """True if a pagination link to ``current_page + 1`` exists."""
+    target = str(current_page + 1)
+    return any(a.get("data-page") == target for a in soup.select("a.page-number"))
+
+
+def with_page(url: str, page: int) -> str:
+    """Return ``url`` with its ``page`` query param set to ``page``.
+
+    Preserves all other query params, including repeated keys (multi-select
+    filters such as ``attrs__body-type``), so pagination keeps the filters.
+    """
+    parts = urlparse(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query) if k != "page"]
+    query.append(("page", str(page)))
+    return urlunparse(parts._replace(query=urlencode(query)))
+
+
+def parse_year_codes(soup: BeautifulSoup) -> dict[int, str]:
+    """Map calendar year -> site option code from the year filter <select>."""
+    codes: dict[int, str] = {}
+    sel = soup.select_one("select[name='attrs__year_min']")
+    if sel:
+        for opt in sel.select("option"):
+            value = opt.get("value")
+            text = opt.get_text(strip=True)
+            if value and text.isdigit():
+                codes[int(text)] = value
+    return codes
+
+
+def parse_engine_codes(soup: BeautifulSoup) -> dict[str, str]:
+    """Map engine-size label (lowercased) -> site option code."""
+    codes: dict[str, str] = {}
+    sel = soup.select_one("select[name='attrs__engine-size_min']")
+    if sel:
+        for opt in sel.select("option"):
+            value = opt.get("value")
+            text = opt.get_text(strip=True)
+            if value:
+                codes[text.lower()] = value
+    return codes
 
 
 def parse_detail(soup: BeautifulSoup) -> dict:

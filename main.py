@@ -1,19 +1,34 @@
 """CLI for the bazaraki.com cars scraper.
 
+Filters come from config.DEFAULT_FILTERS (edit config.py); the flags below
+override the most common ones for quick one-off runs.
+
 Examples:
-    uv run python main.py scrape --max-pages 3
+    uv run python main.py scrape --max-pages 3 --export
+    uv run python main.py scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
     uv run python main.py scrape --max-pages 10 --no-details
-    uv run python main.py export
     uv run python main.py export --out cars.xlsx
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 
+import config
 import db
-from crawler import CARS_URL, run_scrape
+from crawler import run_scrape
 from export import export_xlsx
+
+
+def _filters_from_args(args: argparse.Namespace) -> config.CarFilters:
+    """Start from DEFAULT_FILTERS and apply any provided CLI overrides."""
+    overrides = {
+        name: getattr(args, name)
+        for name in ("make", "model", "price_min", "price_max", "year_min", "year_max")
+        if getattr(args, name) is not None
+    }
+    return dataclasses.replace(config.DEFAULT_FILTERS, **overrides)
 
 
 def main() -> None:
@@ -21,13 +36,18 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_scrape = sub.add_parser("scrape", help="Crawl listings into the SQLite DB")
-    p_scrape.add_argument("--url", default=CARS_URL, help="Category URL to scrape")
+    p_scrape.add_argument("--make", help="Make slug, e.g. mazda (overrides config)")
+    p_scrape.add_argument("--model", help="Model slug, e.g. cx-30 (requires --make)")
+    p_scrape.add_argument("--price-min", type=int, dest="price_min")
+    p_scrape.add_argument("--price-max", type=int, dest="price_max")
+    p_scrape.add_argument("--year-min", type=int, dest="year_min")
+    p_scrape.add_argument("--year-max", type=int, dest="year_max")
     p_scrape.add_argument("--max-pages", type=int, default=3, help="Listing pages to crawl")
     p_scrape.add_argument(
         "--no-details",
         dest="details",
         action="store_false",
-        help="Skip detail pages (faster; only card fields: title/price/url/image)",
+        help="Skip detail pages (faster; only list-view fields)",
     )
     p_scrape.add_argument("--concurrency", type=int, default=5, help="Concurrent requests")
     p_scrape.add_argument("--export", action="store_true", help="Also write xlsx when done")
@@ -38,9 +58,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "scrape":
+        filters = _filters_from_args(args)
         asyncio.run(
             run_scrape(
-                category_url=args.url,
+                filters=filters,
                 max_pages=args.max_pages,
                 details=args.details,
                 concurrency=args.concurrency,

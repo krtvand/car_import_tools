@@ -21,3 +21,8 @@ def list_soup() -> BeautifulSoup:
 @pytest.fixture
 def detail_soup() -> BeautifulSoup:
     return _soup("detail_page.html")
+
+
+@pytest.fixture
+def filter_form_soup() -> BeautifulSoup:
+    return _soup("filter_form.html")

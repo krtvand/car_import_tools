@@ -132,3 +132,48 @@ def test_parse_detail_ignores_unlabelled_rows(detail_soup):
     data = parsers.parse_detail(detail_soup)
     # The "No colon here" li must not create a bogus field.
     assert all(v != "No colon here should be skipped" for v in data.values())
+
+
+# --- pagination helpers -----------------------------------------------------
+
+def test_has_next_page(list_soup):
+    assert parsers.has_next_page(list_soup, 1) is True
+    assert parsers.has_next_page(list_soup, 2) is True
+    assert parsers.has_next_page(list_soup, 3) is False
+
+
+def test_with_page_adds_param():
+    url = "https://www.bazaraki.com/cars/mazda/cx-30/?price_max=25000"
+    assert parsers.with_page(url, 2) == (
+        "https://www.bazaraki.com/cars/mazda/cx-30/?price_max=25000&page=2"
+    )
+
+
+def test_with_page_replaces_existing_param():
+    url = "https://www.bazaraki.com/cars/?price_max=25000&page=2"
+    out = parsers.with_page(url, 3)
+    assert "page=3" in out
+    assert "page=2" not in out
+
+
+def test_with_page_preserves_repeated_keys():
+    url = "https://www.bazaraki.com/cars/?attrs__body-type=1&attrs__body-type=3&page=1"
+    out = parsers.with_page(url, 2)
+    assert out.count("attrs__body-type=") == 2
+    assert out.endswith("page=2")
+
+
+# --- option-code resolution -------------------------------------------------
+
+def test_parse_year_codes(filter_form_soup):
+    codes = parsers.parse_year_codes(filter_form_soup)
+    assert codes[2026] == "80"
+    assert codes[2018] == "69"
+    # "Older" is non-numeric and must be skipped.
+    assert all(isinstance(k, int) for k in codes)
+
+
+def test_parse_engine_codes(filter_form_soup):
+    codes = parsers.parse_engine_codes(filter_form_soup)
+    assert codes["2,0l"] == "20"
+    assert codes["electric"] == "80"
