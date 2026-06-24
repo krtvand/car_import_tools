@@ -1,0 +1,9 @@
+[project]
+name = "bazaraki-scraper"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "crawlee[beautifulsoup]>=1.7.3",
+    "openpyxl>=3.1.5",
+    "sqlmodel>=0.0.38",
+]

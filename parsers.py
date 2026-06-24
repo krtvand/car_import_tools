@@ -1,0 +1,139 @@
+"""Pure HTML-parsing helpers for bazaraki car pages.
+
+Kept free of network/Crawlee dependencies so they can be unit-tested against
+saved HTML fragments.
+"""
+from __future__ import annotations
+
+import re
+
+from bs4 import BeautifulSoup, Tag
+
+BASE_URL = "https://www.bazaraki.com"
+
+# Maps the label shown in the detail-page characteristics list to a model field
+# plus an optional converter.
+_CHAR_MAP: dict[str, tuple[str, callable]] = {
+    "year": ("year", lambda v: _first_int(v)),
+    "mileage (in km)": ("mileage_km", lambda v: _first_int(v)),
+    "fuel type": ("fuel_type", str.strip),
+    "gearbox": ("gearbox", str.strip),
+    "body type": ("body_type", str.strip),
+    "engine size": ("engine_size", str.strip),
+    "power": ("power_hp", lambda v: _first_int(v)),
+    "colour": ("colour", str.strip),
+    "doors": ("doors", str.strip),
+    "seats": ("seats", lambda v: _first_int(v)),
+    "drive": ("drive", str.strip),
+    "mot till": ("mot_till", str.strip),
+    "availability": ("availability", str.strip),
+    "extras": ("extras", str.strip),
+}
+
+
+def _first_int(text: str) -> int | None:
+    """Pull the first integer out of free text like '7500 km' or '631 hp'."""
+    digits = re.sub(r"[\s.,]", "", text)
+    match = re.search(r"\d+", digits)
+    return int(match.group()) if match else None
+
+
+# Transmission values that may appear (unlabelled) among the inline list-card
+# features; anything else in that slot is treated as the fuel type.
+_GEARBOX_VALUES = {"automatic", "manual", "semi-automatic", "tiptronic", "cvt"}
+
+
+def _ad_id_from_url(url: str) -> int | None:
+    match = re.search(r"/adv/(\d+)", url)
+    return int(match.group(1)) if match else None
+
+
+def _abs_url(href: str) -> str:
+    """Absolute URL with the trailing ``?p=N`` pagination marker stripped."""
+    path = href.split("?", 1)[0]
+    return path if path.startswith("http") else BASE_URL + path
+
+
+def parse_cards(soup: BeautifulSoup) -> list[dict]:
+    """Extract base fields from every listing card on a category page.
+
+    Uses the list-view container (``div.advert.js-item-listing``), which is
+    present on every page and carries price, mileage, gearbox, fuel, location
+    and date inline.
+    """
+    results: list[dict] = []
+    for card in soup.select("div.advert.js-item-listing"):
+        link = card.select_one("a.advert__content-title")
+        if link is None or not link.get("href"):
+            continue
+        ad_id = _first_int(card.get("data-id", "")) or _ad_id_from_url(link["href"])
+        if ad_id is None:
+            continue
+
+        price_el = card.select_one("a.advert__content-price")
+        place_el = card.select_one(".advert__content-place")
+        date_el = card.select_one(".advert__content-date")
+        photo_el = card.select_one(".advert__body-property._photo span[data-count]")
+        first_slide = card.select_one("a.swiper-slide[data-background]")
+
+        record = {
+            "ad_id": ad_id,
+            "title": link.get_text(strip=True),
+            "url": _abs_url(link["href"]),
+            "price": float(_first_int(price_el.get_text())) if price_el and _first_int(price_el.get_text()) else None,
+            "currency": "EUR" if price_el and "€" in price_el.get_text() else None,
+            "image_url": first_slide.get("data-background") if first_slide else None,
+            "photo_count": _first_int(photo_el.get("data-count", "")) if photo_el else None,
+            "location": place_el.get_text(" ", strip=True) if place_el else None,
+            "posted_raw": date_el.get_text(strip=True) if date_el else None,
+        }
+
+        # Inline, unlabelled features: "13000 km" · "Automatic" · "Hybrid Diesel".
+        for feat in card.select(".advert__content-feature > div"):
+            text = feat.get_text(" ", strip=True)
+            if not text:
+                continue
+            if "km" in text.lower():
+                record["mileage_km"] = _first_int(text)
+            elif text.lower() in _GEARBOX_VALUES:
+                record["gearbox"] = text
+            else:
+                record["fuel_type"] = text
+
+        results.append(record)
+    return results
+
+
+def next_page_url(soup: BeautifulSoup, current_page: int) -> str | None:
+    """Return the absolute URL of the next page, or None if there isn't one."""
+    target = str(current_page + 1)
+    for a in soup.select("a.page-number"):
+        if a.get("data-page") == target and a.get("href"):
+            return BASE_URL + a["href"]
+    return None
+
+
+def parse_detail(soup: BeautifulSoup) -> dict:
+    """Extract enrichment fields from an advert detail page."""
+    data: dict = {}
+
+    for li in soup.select("ul.chars-column li"):
+        text = li.get_text(" ", strip=True)
+        if ":" not in text:
+            continue
+        label, _, value = text.partition(":")
+        mapping = _CHAR_MAP.get(label.strip().lower())
+        if mapping:
+            field, convert = mapping
+            data[field] = convert(value.strip())
+
+    address = soup.select_one("[itemprop='address']")
+    if address:
+        data["location"] = address.get_text(" ", strip=True)
+
+    date_meta = soup.select_one("span.date-meta")
+    if date_meta:
+        # "Posted: 19.06.2026 09:56" -> "19.06.2026 09:56"
+        data["posted_raw"] = date_meta.get_text(" ", strip=True).replace("Posted:", "").strip()
+
+    return data
