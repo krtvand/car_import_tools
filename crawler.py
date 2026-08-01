@@ -16,7 +16,7 @@ async def run_scrape(
     filters: CarFilters | None = None,
     max_pages: int = 3,
     details: bool = True,
-    concurrency: int = 5,
+    concurrency: int = 1,
 ) -> None:
     """Scrape up to ``max_pages`` of a filtered cars search into SQLite.
 

@@ -74,8 +74,7 @@ class CarFilters:
 DEFAULT_FILTERS = CarFilters(
     make="mazda",
     model="cx-30",
-    price_max=25000,
-    year_min=2018,
+    year_min=2022,
 )
 
 
