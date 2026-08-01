@@ -73,8 +73,7 @@ class CarFilters:
 # Motors > Cars > Mazda > CX-30, 2018+, up to €25,000.
 DEFAULT_FILTERS = CarFilters(
     make="mazda",
-    model="cx-30",
-    year_min=2022,
+    model="cx-5",
 )
 
 

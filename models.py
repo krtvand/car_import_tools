@@ -15,6 +15,8 @@ class CarListing(SQLModel, table=True):
 
     ad_id: int = Field(primary_key=True)
     title: str
+    make: str | None = None    # split out of ``title`` (e.g. "Mercedes-Benz")
+    model: str | None = None   # split out of ``title`` (e.g. "C-Class")
     url: str
     price: float | None = None
     currency: str | None = None

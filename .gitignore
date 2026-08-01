@@ -2,6 +2,13 @@
 __pycache__/
 *.py[cod]
 .venv/
+.pytest_cache/
+
+# IDE
+.idea/
+
+# Claude Code local settings
+.claude/
 
 # Crawlee request/dataset storage
 storage/

@@ -39,6 +39,71 @@ def _first_int(text: str) -> int | None:
     return int(match.group()) if match else None
 
 
+# Known bazaraki car makes. Multi-word makes are spelled out so the make/model
+# split of a listing title (e.g. "Mercedes-Benz C-Class 2,0L 2024") keeps the
+# make whole instead of breaking on the first space. Longest match wins.
+CAR_MAKES: tuple[str, ...] = (
+    "Abarth", "Alfa Romeo", "Aston Martin", "Audi", "Bentley", "BMW", "Bugatti",
+    "Buick", "BYD", "Cadillac", "Chevrolet", "Chrysler", "Citroen", "Cupra",
+    "Dacia", "Daewoo", "Daihatsu", "Dodge", "DS", "Ferrari", "Fiat", "Ford",
+    "Genesis", "GMC", "Great Wall", "Haval", "Honda", "Hummer", "Hyundai",
+    "Infiniti", "Isuzu", "Jaguar", "Jeep", "Kia", "Lada", "Lamborghini",
+    "Lancia", "Land Rover", "Lexus", "Lincoln", "Lotus", "Maserati", "Maybach",
+    "Mazda", "McLaren", "Mercedes-Benz", "MG", "Mini", "Mitsubishi", "Nissan",
+    "Opel", "Peugeot", "Polestar", "Pontiac", "Porsche", "RAM", "Renault",
+    "Rolls-Royce", "Rover", "Saab", "Seat", "Skoda", "Smart", "SsangYong",
+    "Subaru", "Suzuki", "Tesla", "Toyota", "Vauxhall", "Volkswagen", "Volvo",
+    "Zeekr",
+)
+_MAKES_BY_LENGTH = sorted(CAR_MAKES, key=len, reverse=True)
+
+
+def _is_engine_or_year(token: str) -> bool:
+    """True for the trailing title tokens that describe the car, not the model.
+
+    Covers the year ("2024"), engine size ("2,0L", "3L") and the "Electric"
+    marker that stands in for engine size on EV listings.
+    """
+    return bool(
+        re.fullmatch(r"\d{4}", token)
+        or re.fullmatch(r"\d+[.,]?\d*[lL]", token)
+        or token.lower() == "electric"
+    )
+
+
+def split_make_model(title: str) -> tuple[str | None, str | None]:
+    """Split a listing title into ``(make, model)``.
+
+    Titles read "<Make> <Model> <engine>L <year>", e.g.
+    "Mercedes-Benz C-Class 2,0L 2024". The make is matched against
+    ``CAR_MAKES`` (longest first, so multi-word makes stay whole); the model is
+    whatever remains once the trailing engine-size/year tokens are stripped. An
+    unrecognised make falls back to the first whitespace token.
+    """
+    title = title.strip()
+    if not title:
+        return None, None
+
+    lower = title.lower()
+    make: str | None = None
+    rest = title
+    for candidate in _MAKES_BY_LENGTH:
+        c = candidate.lower()
+        if lower == c or lower.startswith(c + " "):
+            make = candidate
+            rest = title[len(candidate):].strip()
+            break
+    if make is None:
+        make, _, rest = title.partition(" ")
+        rest = rest.strip()
+
+    tokens = rest.split()
+    while tokens and _is_engine_or_year(tokens[-1]):
+        tokens.pop()
+    model = " ".join(tokens)
+    return make or None, model or None
+
+
 # Transmission values that may appear (unlabelled) among the inline list-card
 # features; anything else in that slot is treated as the fuel type.
 _GEARBOX_VALUES = {"automatic", "manual", "semi-automatic", "tiptronic", "cvt"}
@@ -77,9 +142,13 @@ def parse_cards(soup: BeautifulSoup) -> list[dict]:
         photo_el = card.select_one(".advert__body-property._photo span[data-count]")
         first_slide = card.select_one("a.swiper-slide[data-background]")
 
+        title = link.get_text(strip=True)
+        make, model = split_make_model(title)
         record = {
             "ad_id": ad_id,
-            "title": link.get_text(strip=True),
+            "title": title,
+            "make": make,
+            "model": model,
             "url": _abs_url(link["href"]),
             "price": float(_first_int(price_el.get_text())) if price_el and _first_int(price_el.get_text()) else None,
             "currency": "EUR" if price_el and "€" in price_el.get_text() else None,

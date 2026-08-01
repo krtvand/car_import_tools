@@ -12,7 +12,7 @@ from models import CarListing
 
 # Column order for the spreadsheet (subset/ordering of the model fields).
 COLUMNS = [
-    "ad_id", "title", "price", "currency", "year", "mileage_km", "fuel_type",
+    "ad_id", "title", "make", "model", "price", "currency", "year", "mileage_km", "fuel_type",
     "gearbox", "body_type", "engine_size", "power_hp", "colour", "doors",
     "seats", "drive", "mot_till", "availability", "location", "posted_raw",
     "photo_count", "extras", "url", "image_url", "first_seen_at", "last_seen_at",

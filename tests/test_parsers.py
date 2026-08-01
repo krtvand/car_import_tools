@@ -24,6 +24,25 @@ def test_first_int(text, expected):
     assert parsers._first_int(text) == expected
 
 
+# --- split_make_model -------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "title, expected",
+    [
+        ("Mercedes-Benz C-Class 2,0L 2024", ("Mercedes-Benz", "C-Class")),
+        ("BMW 4 Series 3,0L 2016", ("BMW", "4 Series")),
+        ("Land Rover Range Rover 3,0L 2020", ("Land Rover", "Range Rover")),
+        ("Tesla Model 3 Electric 2022", ("Tesla", "Model 3")),
+        ("Toyota Yaris 2019", ("Toyota", "Yaris")),          # no engine token
+        ("Lada Niva", ("Lada", "Niva")),                     # no engine/year
+        ("Wartburg 353 1,0L 1985", ("Wartburg", "353")),     # unknown make
+        ("", (None, None)),
+    ],
+)
+def test_split_make_model(title, expected):
+    assert parsers.split_make_model(title) == expected
+
+
 # --- _ad_id_from_url / _abs_url ---------------------------------------------
 
 def test_ad_id_from_url():
@@ -54,6 +73,8 @@ def test_parse_cards_full_card(list_soup):
     assert card == {
         "ad_id": 6350404,
         "title": "Mercedes-Benz C-Class 2,0L 2024",
+        "make": "Mercedes-Benz",
+        "model": "C-Class",
         "url": "https://www.bazaraki.com/adv/6350404_mercedes-benz-c-class-2-0l-2024/",
         "price": 38500.0,
         "currency": "EUR",
@@ -65,6 +86,12 @@ def test_parse_cards_full_card(list_soup):
         "gearbox": "Automatic",
         "fuel_type": "Hybrid Diesel",
     }
+
+
+def test_parse_cards_splits_make_and_model_from_title(list_soup):
+    cards = parsers.parse_cards(list_soup)
+    assert (cards[0]["make"], cards[0]["model"]) == ("Mercedes-Benz", "C-Class")
+    assert (cards[1]["make"], cards[1]["model"]) == ("BMW", "4 Series")
 
 
 def test_parse_cards_minimal_card_has_no_optional_fields(list_soup):
