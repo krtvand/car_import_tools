@@ -49,7 +49,7 @@ def main() -> None:
         action="store_false",
         help="Skip detail pages (faster; only list-view fields)",
     )
-    p_scrape.add_argument("--concurrency", type=int, default=5, help="Concurrent requests")
+    p_scrape.add_argument("--concurrency", type=int, default=1, help="Concurrent requests")
     p_scrape.add_argument("--export", action="store_true", help="Also write xlsx when done")
 
     p_export = sub.add_parser("export", help="Export the DB to an .xlsx file")
@@ -59,7 +59,7 @@ def main() -> None:
 
     if args.command == "scrape":
         filters = _filters_from_args(args)
-        asyncio.run(
+        summary = asyncio.run(
             run_scrape(
                 filters=filters,
                 max_pages=args.max_pages,
@@ -67,7 +67,11 @@ def main() -> None:
                 concurrency=args.concurrency,
             )
         )
-        print(f"Done. {db.count_listings()} listings in {db.DB_PATH}")
+        note = "" if summary["completed"] else " (truncated by --max-pages; no delisting)"
+        print(
+            f"Done. Saw {summary['seen']} adverts, delisted {summary['delisted']}"
+            f"{note}. {db.count_listings()} listings total in {db.DB_PATH}"
+        )
         if args.export:
             out = export_xlsx()
             print(f"Exported -> {out}")

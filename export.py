@@ -15,7 +15,8 @@ COLUMNS = [
     "ad_id", "title", "make", "model", "price", "currency", "year", "mileage_km", "fuel_type",
     "gearbox", "body_type", "engine_size", "power_hp", "colour", "doors",
     "seats", "drive", "mot_till", "availability", "location", "posted_raw",
-    "photo_count", "extras", "url", "image_url", "first_seen_at", "last_seen_at",
+    "photo_count", "extras", "seller_type", "url", "image_url",
+    "first_seen_at", "last_seen_at", "is_active", "delisted_at", "days_on_market",
 ]
 
 
