@@ -97,6 +97,10 @@ One parameterized notebook (`make`, `model` at top), charts:
 
 ---
 
+## Part E
+
+If advert from DB was delisted, visit advert by url to understand if it was expired (not sold) or it was actually sold 
+
 ## Open questions
 
 - **Sale-price ground truth.** bazaraki never confirms a sale, so Layer 2 is always an
