@@ -59,7 +59,7 @@ def main() -> None:
 
     if args.command == "scrape":
         filters = _filters_from_args(args)
-        asyncio.run(
+        summary = asyncio.run(
             run_scrape(
                 filters=filters,
                 max_pages=args.max_pages,
@@ -67,7 +67,11 @@ def main() -> None:
                 concurrency=args.concurrency,
             )
         )
-        print(f"Done. {db.count_listings()} listings in {db.DB_PATH}")
+        note = "" if summary["completed"] else " (truncated by --max-pages; no delisting)"
+        print(
+            f"Done. Saw {summary['seen']} adverts, delisted {summary['delisted']}"
+            f"{note}. {db.count_listings()} listings total in {db.DB_PATH}"
+        )
         if args.export:
             out = export_xlsx()
             print(f"Exported -> {out}")

@@ -17,7 +17,7 @@ async def run_scrape(
     max_pages: int = 3,
     details: bool = True,
     concurrency: int = 1,
-) -> None:
+) -> dict:
     """Scrape up to ``max_pages`` of a filtered cars search into SQLite.
 
     When the filters include year/engine-size (whose codes are site-specific),
@@ -26,6 +26,12 @@ async def run_scrape(
     """
     filters = filters or config.DEFAULT_FILTERS
     db.init_db()
+    run_id = db.start_run(filters)
+
+    seen_ad_ids: set[int] = set()
+    # Flipped when a next page exists but max_pages stops us fetching it; a
+    # truncated run must not delist adverts merely sitting on an unseen page.
+    state = {"truncated": False}
 
     crawler = BeautifulSoupCrawler(
         max_request_retries=3,
@@ -52,15 +58,19 @@ async def run_scrape(
 
         detail_requests: list[Request] = []
         for card in cards:
+            seen_ad_ids.add(card["ad_id"])
             db.upsert_listing(card)
             if details:
                 detail_requests.append(Request.from_url(card["url"], label="detail"))
         if detail_requests:
             await context.add_requests(detail_requests)
 
-        if page < max_pages and parsers.has_next_page(context.soup, page):
+        has_next = parsers.has_next_page(context.soup, page)
+        if page < max_pages and has_next:
             nxt = parsers.with_page(context.request.url, page + 1)
             await context.add_requests([Request.from_url(nxt, user_data={"page": page + 1})])
+        elif has_next:
+            state["truncated"] = True  # more pages exist but max_pages caps us
 
     @crawler.router.handler("detail")
     async def detail_handler(context: BeautifulSoupCrawlingContext) -> None:
@@ -77,3 +87,12 @@ async def run_scrape(
         start = Request.from_url(config.build_search_url(filters), user_data={"page": 1})
 
     await crawler.run([start])
+
+    completed = not state["truncated"]
+    delisted = db.finalize_run(run_id, seen_ad_ids, completed)
+    return {
+        "run_id": run_id,
+        "seen": len(seen_ad_ids),
+        "completed": completed,
+        "delisted": delisted,
+    }

@@ -69,17 +69,48 @@ Re-export the current database at any time:
 uv run python main.py export --out cars.xlsx
 ```
 
+## Price history & lifecycle
+
+To turn *asking* prices into a realistic *sale* price (see `PRICING_PLAN.md`), the
+scraper records two extra signals on every run — run the daily scrape and they
+accumulate automatically:
+
+- **Price trajectory.** Each advert's price is logged to the `priceobservation`
+  table on first sighting and thereafter only when it changes, so price cuts over
+  time are preserved rather than overwritten.
+- **Lifecycle.** Every scrape opens a `scraperun` (recording its filter scope).
+  When a run **completes** (crawls all result pages, not stopped by `--max-pages`)
+  any in-scope advert it no longer finds is marked `is_active = False` with a
+  `delisted_at` timestamp — a proxy for "sold". A truncated run delists nothing,
+  and delisting is bounded to the exact make/model + year/price/mileage scope the
+  run covered, so scraping one model never touches another's rows.
+
+`CarListing` gains `is_active`, `delisted_at`, a derived `days_on_market`
+property, and a reserved `seller_type`; all appear in the xlsx export. `init_db`
+adds the new columns to an existing database in place, so no manual step is
+needed. To seed a baseline price observation for listings scraped before this
+change, run once:
+
+```bash
+uv run python migrate_lifecycle.py
+```
+
+The scrape summary now reports adverts seen / delisted, e.g.
+`Done. Saw 218 adverts, delisted 3. 232 listings total in bazaraki.db`.
+
 ## How it works
 
 - `config.py` — `CarFilters` dataclass (the filter schema) + label→code maps and
   `build_search_url`, which turns filters into the make/model path plus query.
-- `crawler.py` — Crawlee crawler: resolves year/engine codes from the live page
-  when needed, parses listing pages, follows pagination (preserving filters), and
-  (unless `--no-details`) enqueues each advert's detail page for enrichment.
+- `crawler.py` — Crawlee crawler: opens a `ScrapeRun`, resolves year/engine codes
+  from the live page when needed, parses listing pages, follows pagination
+  (preserving filters), enqueues detail pages (unless `--no-details`), and on
+  finish delists in-scope adverts it didn't see.
 - `parsers.py` — pure HTML→dict parsing (`parse_cards`, `parse_detail`,
   pagination + option-code helpers), no network, so they're easy to test.
-- `models.py` / `db.py` — `CarListing` SQLModel and a SQLite upsert keyed on
-  bazaraki's advert id, so re-runs update rather than duplicate.
+- `models.py` / `db.py` — `CarListing`, `PriceObservation` and `ScrapeRun`
+  SQLModels; a SQLite upsert keyed on bazaraki's advert id (re-runs update rather
+  than duplicate) that also logs price changes and refreshes lifecycle.
 - `export.py` — writes the table to `.xlsx` (openpyxl).
 
 Outputs (`bazaraki.db`, `*.xlsx`) and Crawlee's `storage/` dir are gitignored.
