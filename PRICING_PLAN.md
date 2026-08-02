@@ -29,9 +29,8 @@ Implemented on branch `feature/price-history-lifecycle`.
    scope) so "not seen this run" is unambiguous, and delisting is bounded to exactly the
    make/model + year/price/mileage space the run covered (never touches other models).
 
-Extras: `init_db` self-heals the columns on an existing DB; `migrate_lifecycle.py` seeds a
-baseline observation for pre-existing rows; the CLI now reports seen/delisted counts. 20 new
-tests (71 total, all passing).
+Extras: `init_db` self-heals the columns on an existing DB; the CLI now reports
+seen/delisted counts. 20 new tests (71 total, all passing).
 
 Still open in Part A: `seller_type` parsing once a dependable private/dealer selector is found.
 

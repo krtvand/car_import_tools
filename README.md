@@ -93,12 +93,7 @@ accumulate automatically:
 `CarListing` gains `is_active`, `delisted_at`, a derived `days_on_market`
 property, and a reserved `seller_type`; all appear in the xlsx export. `init_db`
 adds the new columns to an existing database in place, so no manual step is
-needed. To seed a baseline price observation for listings scraped before this
-change, run once:
-
-```bash
-uv run python migrate_lifecycle.py
-```
+needed.
 
 The scrape summary now reports adverts seen / delisted, e.g.
 `Done. Saw 218 adverts, delisted 3. 232 listings total in bazaraki.db`.
