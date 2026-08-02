@@ -36,7 +36,13 @@ async def run_scrape(
     crawler = BeautifulSoupCrawler(
         max_request_retries=3,
         request_handler_timeout=timedelta(seconds=60),
-        concurrency_settings=ConcurrencySettings(desired_concurrency=concurrency),
+        # Politeness: cap the request rate so a run is a steady trickle rather
+        # than a burst (the main trigger for bazaraki's rate limiting), on top
+        # of the low concurrency default.
+        concurrency_settings=ConcurrencySettings(
+            desired_concurrency=concurrency,
+            max_tasks_per_minute=30,
+        ),
     )
 
     async def enqueue_first_page(context: BeautifulSoupCrawlingContext, url: str) -> None:

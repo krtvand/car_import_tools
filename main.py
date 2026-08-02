@@ -49,7 +49,7 @@ def main() -> None:
         action="store_false",
         help="Skip detail pages (faster; only list-view fields)",
     )
-    p_scrape.add_argument("--concurrency", type=int, default=5, help="Concurrent requests")
+    p_scrape.add_argument("--concurrency", type=int, default=1, help="Concurrent requests")
     p_scrape.add_argument("--export", action="store_true", help="Also write xlsx when done")
 
     p_export = sub.add_parser("export", help="Export the DB to an .xlsx file")

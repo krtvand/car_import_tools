@@ -60,8 +60,13 @@ Options for `scrape`:
 | `--price-min/max`, `--year-min/max` | from config | Range overrides |
 | `--max-pages N` | 3 | How many listing pages to crawl (~60 ads/page) |
 | `--no-details` | off | Skip per-ad detail pages — faster, but only the fields shown in the list view (price, mileage, gearbox, fuel, location, date) |
-| `--concurrency N` | 5 | Concurrent requests (keep modest to be polite) |
+| `--concurrency N` | 1 | Concurrent requests (kept low to be polite) |
 | `--export` | off | Also write the xlsx when the crawl finishes |
+
+To be polite to the site (it rate-limits aggressively), the crawler caps itself
+at **30 requests/minute** and defaults to a single concurrent request, so a run
+is a steady trickle rather than a burst. Failed requests are retried with
+backoff. Raise `--concurrency` only if you know the site tolerates it.
 
 Re-export the current database at any time:
 
