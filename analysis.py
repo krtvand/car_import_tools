@@ -454,3 +454,162 @@ def sale_adjustment_factor(
     if not used:
         return default
     return float(min(max(factor, 0.5), 1.0))
+
+
+# ---------------------------------------------------------------------------
+# Top-level query: (make, model, year range, mileage range) -> sale estimate
+# ---------------------------------------------------------------------------
+
+_CONFIDENCE_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
+_RANK_CONFIDENCE = {v: k for k, v in _CONFIDENCE_RANK.items()}
+
+
+@dataclass(frozen=True)
+class SalePriceEstimate:
+    """The actionable answer to a bid query.
+
+    ``sale_price`` is the asking-curve estimate discounted by the Layer-2
+    adjustment; ``range_low``/``range_high`` are the P25-P75 predictive band on
+    the same discounted scale. ``expected_days_on_market`` is the median time
+    comparable adverts took to delist. ``n`` is the fit sample size.
+    """
+
+    sale_price: float | None
+    asking_estimate: float | None
+    range_low: float | None
+    range_high: float | None
+    expected_days_on_market: int | None
+    n: int
+    confidence: str
+    adjustment_factor: float
+    comparables_median: float | None
+
+
+def _midpoint(rng: tuple[float, float]) -> float:
+    lo, hi = rng
+    return (lo + hi) / 2.0
+
+
+def _resolve_range(rng, values) -> tuple[float, float] | None:
+    if rng is not None:
+        return rng
+    vals = [v for v in values if v is not None]
+    return (min(vals), max(vals)) if vals else None
+
+
+def _fit_confidence(n: int) -> str:
+    if n >= 40:
+        return "high"
+    if n >= 20:
+        return "medium"
+    if n >= MIN_FIT:
+        return "low"
+    return "none"
+
+
+def _weaker(a: str, b: str) -> str:
+    return _RANK_CONFIDENCE[min(_CONFIDENCE_RANK[a], _CONFIDENCE_RANK[b])]
+
+
+def _expected_days_on_market(records, year, mileage, year_tol, mileage_band) -> int | None:
+    """Median days-on-market of comparable *delisted* adverts near the query.
+
+    Delisted rows are used because an active advert's days-on-market is
+    right-censored (the clock is still running). Approximates DOM at the query
+    year/mileage, not strictly conditioned on the estimated price.
+    """
+    doms = [
+        r.days_on_market
+        for r in records
+        if not r.is_active and r.days_on_market is not None
+        and r.year is not None and r.mileage_km is not None
+        and abs(r.year - year) <= year_tol
+        and abs(r.mileage_km - mileage) <= mileage_band
+    ]
+    if len(doms) < MIN_GROUP:
+        return None
+    return int(statistics.median(doms))
+
+
+def estimate_sale_price(
+    records,
+    make: str,
+    model: str | None = None,
+    year_range: tuple[int, int] | None = None,
+    mileage_range: tuple[int, int] | None = None,
+    histories=None,
+    ref_year: int | None = None,
+) -> SalePriceEstimate:
+    """Estimate a realistic sale price for a make/model at a year/mileage query.
+
+    Combines the hedonic curve (Layer 1) with the asking->sale adjustment
+    (Layer 2), cross-checks against comparables, and reports an expected
+    days-on-market and a confidence grade. ``year_range``/``mileage_range``
+    default to the span of the matched data when omitted; the estimate is taken
+    at their midpoint. ``histories`` (optional trajectories for the scoped
+    adverts) powers the price-cut signal.
+    """
+    if ref_year is None:
+        ref_year = _current_year()
+    scoped = clean(filter_model(records, make, model), ref_year)
+
+    price_cut = price_cut_factor(histories) if histories is not None else PriceCutSignal(None, 0)
+
+    curve = fit_price_curve(scoped, ref_year)
+    if curve is None:
+        adjustment = sale_adjustment_factor(price_cut, None)
+        return SalePriceEstimate(
+            sale_price=None, asking_estimate=None, range_low=None, range_high=None,
+            expected_days_on_market=None, n=len(scoped), confidence="none",
+            adjustment_factor=adjustment, comparables_median=None,
+        )
+
+    yr = _resolve_range(year_range, [r.year for r in scoped])
+    mr = _resolve_range(mileage_range, [r.mileage_km for r in scoped])
+    q_year, q_mileage = _midpoint(yr), _midpoint(mr)
+
+    # P25-P75 predictive band (alpha=0.5) plus the point estimate.
+    band = predict(curve, q_year, q_mileage, alpha=0.5)
+    comp = comparables(scoped, int(round(q_year)), int(round(q_mileage)))
+    survivorship = survivorship_adjustment(scoped, curve, ref_year=ref_year)
+    adjustment = sale_adjustment_factor(price_cut, survivorship)
+
+    asking = band.estimate
+    sale_price = asking * adjustment
+    range_low = band.lo * adjustment if band.lo is not None else None
+    range_high = band.hi * adjustment if band.hi is not None else None
+
+    year_tol = comp.year_tol
+    mileage_band = comp.mileage_band
+    dom = _expected_days_on_market(scoped, q_year, q_mileage, year_tol, mileage_band)
+
+    confidence = _weaker(_fit_confidence(curve.n), comp.confidence)
+    return SalePriceEstimate(
+        sale_price=float(sale_price),
+        asking_estimate=float(asking),
+        range_low=range_low,
+        range_high=range_high,
+        expected_days_on_market=dom,
+        n=curve.n,
+        confidence=confidence,
+        adjustment_factor=adjustment,
+        comparables_median=comp.estimate,
+    )
+
+
+def estimate_from_db(
+    make: str,
+    model: str | None = None,
+    year_range: tuple[int, int] | None = None,
+    mileage_range: tuple[int, int] | None = None,
+) -> SalePriceEstimate:
+    """DB-backed :func:`estimate_sale_price`: reads listings and price histories."""
+    import db
+
+    listings = db.all_listings()
+    records = to_records(listings)
+    scoped = filter_model(records, make, model)
+    histories = [[o.price for o in db.price_history(r.ad_id)] for r in scoped]
+    return estimate_sale_price(
+        records, make, model, year_range, mileage_range, histories=histories
+    )

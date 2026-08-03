@@ -262,6 +262,104 @@ def test_sale_adjustment_clamps_to_floor():
     assert analysis.sale_adjustment_factor(cut, surv) == 0.5
 
 
+# --- top-level query: estimate_sale_price -----------------------------------
+
+def _scoped_pool(n=40, noise_sd=0.0, seed=7):
+    """A noise-tunable Mazda CX-5 active pool drawn from the known model."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for i in range(n):
+        age = int(rng.integers(0, 12))
+        mileage = int(rng.integers(10_000, 160_000))
+        noise = float(rng.normal(0, noise_sd)) if noise_sd else 0.0
+        out.append(rec(
+            ad_id=i, year=REF_YEAR - age, mileage_km=mileage,
+            price=_price(age, mileage, noise), make="Mazda", model="CX-5",
+        ))
+    return out
+
+
+def test_estimate_sale_price_defaults_adjustment_without_history():
+    records = _scoped_pool(noise_sd=0.12)
+    est = analysis.estimate_sale_price(
+        records, "Mazda", "CX-5",
+        year_range=(2018, 2022), mileage_range=(40_000, 80_000), ref_year=REF_YEAR,
+    )
+    assert est.n == 40
+    assert est.adjustment_factor == analysis.DEFAULT_SALE_ADJUSTMENT  # no signals
+    assert est.sale_price == pytest.approx(est.asking_estimate * 0.92, rel=1e-9)
+    assert est.range_low < est.sale_price < est.range_high
+    assert est.confidence in {"low", "medium", "high"}
+
+
+def test_estimate_sale_price_asking_matches_curve_at_midpoint():
+    records = _scoped_pool(noise_sd=0.0)
+    est = analysis.estimate_sale_price(
+        records, "Mazda", "CX-5",
+        year_range=(2018, 2022), mileage_range=(40_000, 80_000), ref_year=REF_YEAR,
+    )
+    # midpoint = age 5, 60k km; noise-free curve is exact there.
+    assert est.asking_estimate == pytest.approx(_price(5, 60_000), rel=1e-6)
+
+
+def test_estimate_sale_price_uses_history_and_delisting():
+    records = _scoped_pool(n=40, noise_sd=0.0)
+    # Five delisted CX-5s at the query point, priced under the curve.
+    for i, dom in enumerate([10, 20, 30, 40, 50]):
+        records.append(rec(
+            ad_id=1000 + i, year=2020, mileage_km=60_000,
+            price=0.9 * _price(5, 60_000), make="Mazda", model="CX-5",
+            is_active=False, days_on_market=dom,
+        ))
+    histories = [[20_000, 19_000], [16_000, 15_000], [12_000, 11_500],
+                 [30_000, 28_000], [10_000, 9_800]]  # 5 trajectories -> cut signal active
+    est = analysis.estimate_sale_price(
+        records, "Mazda", "CX-5",
+        year_range=(2018, 2022), mileage_range=(40_000, 80_000),
+        histories=histories, ref_year=REF_YEAR,
+    )
+    assert est.expected_days_on_market == 30           # median of [10,20,30,40,50]
+    assert est.adjustment_factor < analysis.DEFAULT_SALE_ADJUSTMENT  # data pulled it down
+    assert est.sale_price < est.asking_estimate
+
+
+def test_estimate_sale_price_none_when_no_matching_data():
+    est = analysis.estimate_sale_price(
+        [rec(ad_id=1, make="Toyota", model="Yaris")], "Mazda", "CX-5", ref_year=REF_YEAR,
+    )
+    assert est.sale_price is None
+    assert est.n == 0
+    assert est.confidence == "none"
+
+
+# --- DB-backed wrapper ------------------------------------------------------
+
+def test_estimate_from_db_reads_listings_and_histories(tmp_path, monkeypatch):
+    from sqlmodel import create_engine
+    import db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'analysis.db'}")
+    monkeypatch.setattr(db, "_engine", engine)
+    db.init_db()
+
+    # Enough CX-5 rows (>= MIN_FIT) spanning age/mileage for a fit.
+    for i in range(10):
+        age, mileage = i, 20_000 + 12_000 * i
+        db.upsert_listing({
+            "ad_id": i, "title": f"Mazda CX-5 {i}", "url": f"/adv/{i}/",
+            "make": "Mazda", "model": "CX-5",
+            "year": REF_YEAR - age, "mileage_km": mileage,
+            "price": _price(age, mileage),
+        })
+
+    est = analysis.estimate_from_db(
+        "Mazda", "CX-5", year_range=(2018, 2022), mileage_range=(40_000, 80_000)
+    )
+    assert est.n == 10
+    assert est.asking_estimate is not None
+    assert est.sale_price == pytest.approx(est.asking_estimate * est.adjustment_factor, rel=1e-9)
+
+
 # --- to_records -------------------------------------------------------------
 
 # --- comparables ------------------------------------------------------------
