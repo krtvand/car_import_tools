@@ -181,6 +181,87 @@ def test_fit_skips_dummies_on_small_sample():
     assert curve.beta.shape == (3,)
 
 
+# --- Layer 2: price cuts ----------------------------------------------------
+
+def test_price_cut_factor_median_of_first_to_last_drops():
+    histories = [
+        [20000, 19000, 18000],  # 10% cut
+        [15000, 15000],         # 0% cut (flat)
+        [10000, 9500],          # 5% cut
+    ]
+    signal = analysis.price_cut_factor(histories)
+    assert signal.n == 3
+    assert signal.median_cut == pytest.approx(0.05)
+
+
+def test_price_cut_factor_skips_single_observation_trajectories():
+    signal = analysis.price_cut_factor([[20000], [18000]])
+    assert signal.median_cut is None
+    assert signal.n == 0
+
+
+# --- Layer 2: survivorship --------------------------------------------------
+
+def _fit_noisefree_curve():
+    return analysis.fit_price_curve(_synthetic(noise_sd=0.0), ref_year=REF_YEAR)
+
+
+def _priced(ad_id, age, mileage, k, *, active, dom):
+    """A record priced k x the noise-free curve value (residual = ln k)."""
+    return rec(
+        ad_id=ad_id, year=REF_YEAR - age, mileage_km=mileage,
+        price=k * _price(age, mileage), is_active=active, days_on_market=dom,
+    )
+
+
+def test_survivorship_factor_below_one_when_fast_sellers_underpriced():
+    curve = _fit_noisefree_curve()
+    records = []
+    # Fast-delisted cars priced 10% below the curve (residual ln 0.9).
+    for i in range(5):
+        records.append(_priced(100 + i, age=3 + i, mileage=40000 + 5000 * i, k=0.9,
+                               active=False, dom=10))
+    # Still-active cars priced 10% above the curve (residual ln 1.1).
+    for i in range(5):
+        records.append(_priced(200 + i, age=3 + i, mileage=40000 + 5000 * i, k=1.1,
+                               active=True, dom=None))
+    signal = analysis.survivorship_adjustment(records, curve, ref_year=REF_YEAR)
+    assert signal.n_fast == 5 and signal.n_linger == 5
+    assert signal.factor == pytest.approx(math.exp(math.log(0.9) - math.log(1.1)), rel=1e-6)
+    assert signal.factor < 1.0
+
+
+def test_survivorship_none_when_a_group_is_thin():
+    curve = _fit_noisefree_curve()
+    records = [_priced(1, 3, 40000, 0.9, active=False, dom=10)]  # one fast, no lingering
+    signal = analysis.survivorship_adjustment(records, curve, ref_year=REF_YEAR)
+    assert signal.factor is None
+
+
+# --- Layer 2: combined factor -----------------------------------------------
+
+def test_sale_adjustment_default_when_no_signals():
+    assert analysis.sale_adjustment_factor() == analysis.DEFAULT_SALE_ADJUSTMENT
+
+
+def test_sale_adjustment_default_when_cut_signal_too_thin():
+    thin = analysis.PriceCutSignal(median_cut=0.05, n=2)  # < MIN_CUT_TRAJECTORIES
+    assert analysis.sale_adjustment_factor(price_cut=thin) == analysis.DEFAULT_SALE_ADJUSTMENT
+
+
+def test_sale_adjustment_combines_cut_and_survivorship():
+    cut = analysis.PriceCutSignal(median_cut=0.05, n=8)
+    surv = analysis.SurvivorshipSignal(factor=0.9, n_fast=5, n_linger=5)
+    # (1 - 0.05) * 0.9 = 0.855
+    assert analysis.sale_adjustment_factor(cut, surv) == pytest.approx(0.855)
+
+
+def test_sale_adjustment_clamps_to_floor():
+    cut = analysis.PriceCutSignal(median_cut=0.6, n=10)
+    surv = analysis.SurvivorshipSignal(factor=0.5, n_fast=5, n_linger=5)
+    assert analysis.sale_adjustment_factor(cut, surv) == 0.5
+
+
 # --- to_records -------------------------------------------------------------
 
 # --- comparables ------------------------------------------------------------

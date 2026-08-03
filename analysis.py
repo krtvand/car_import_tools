@@ -339,3 +339,118 @@ def predict(
         lo = float(np.exp(mean_log - tcrit * se_pred))
         hi = float(np.exp(mean_log + tcrit * se_pred))
     return PricePrediction(estimate=estimate, lo=lo, hi=hi, alpha=alpha, n=curve.n, df=curve.df)
+
+
+# ---------------------------------------------------------------------------
+# Layer 2: discount from asking to realistic sale price
+# ---------------------------------------------------------------------------
+#
+# The hedonic curve models *asking* prices, but a bid decision needs the *sale*
+# price. Two signals close that gap, both refined as history accrues:
+#   * price cuts — how far adverts drop from first to last asking before they go;
+#   * survivorship — still-listed cars are biased high (overpriced cars linger,
+#     good deals vanish), so what actually sells looks cheaper than the pool.
+# Until enough history exists, sale_adjustment_factor falls back to a default.
+
+DEFAULT_SALE_ADJUSTMENT = 0.92   # ~8% asking->sale haircut before data replaces it
+FAST_DAYS = 30                   # "sold quickly" threshold for the survivorship split
+MIN_GROUP = 3                    # per-group minimum for a usable survivorship signal
+MIN_CUT_TRAJECTORIES = 5         # price-cut median needs at least this many adverts
+
+
+@dataclass(frozen=True)
+class PriceCutSignal:
+    median_cut: float | None   # typical first->last drop as a fraction, e.g. 0.05
+    n: int                     # adverts with >= 2 price observations
+
+
+@dataclass(frozen=True)
+class SurvivorshipSignal:
+    factor: float | None       # multiply an asking-curve estimate by this (<1 = pool biased high)
+    n_fast: int
+    n_linger: int
+
+
+def price_cut_factor(histories) -> PriceCutSignal:
+    """Median fractional drop between an advert's first and last observed price.
+
+    ``histories`` is an iterable of price trajectories, each a chronological
+    sequence of prices (oldest first). Trajectories with fewer than two
+    observations are skipped; a flat trajectory contributes a 0% cut. A positive
+    result means prices typically fall on the way to delisting.
+    """
+    cuts = []
+    for prices in histories:
+        prices = list(prices)
+        if len(prices) < 2 or prices[0] <= 0:
+            continue
+        cuts.append((prices[0] - prices[-1]) / prices[0])
+    if not cuts:
+        return PriceCutSignal(None, 0)
+    return PriceCutSignal(float(statistics.median(cuts)), len(cuts))
+
+
+def _log_residual(curve: PriceCurve, r: CarRecord) -> float:
+    """How over/under-priced ``r`` is vs the pooled curve, on the log scale."""
+    pred = predict(curve, r.year, r.mileage_km, r.fuel_type, r.gearbox)
+    return math.log(r.price) - math.log(pred.estimate)
+
+
+def survivorship_adjustment(
+    records,
+    curve: PriceCurve,
+    fast_days: int = FAST_DAYS,
+    ref_year: int | None = None,
+) -> SurvivorshipSignal:
+    """Compare how (under)priced fast-selling adverts are vs still-active ones.
+
+    Using residuals from the pooled asking-curve controls for age/mileage, so the
+    comparison isn't confounded by the two groups holding different cars. The
+    returned ``factor = exp(median_resid_fast - median_resid_linger)`` is below 1
+    when cars that sold quickly were priced under what's still on the market —
+    i.e. the live asking pool sits above realistic sale prices. ``None`` when
+    either group is thinner than :data:`MIN_GROUP`.
+    """
+    if ref_year is None:
+        ref_year = _current_year()
+    fast, linger = [], []
+    for r in clean(records, ref_year):
+        e = _log_residual(curve, r)
+        if not r.is_active and r.days_on_market is not None and r.days_on_market <= fast_days:
+            fast.append(e)
+        elif r.is_active:
+            linger.append(e)
+    if len(fast) < MIN_GROUP or len(linger) < MIN_GROUP:
+        return SurvivorshipSignal(None, len(fast), len(linger))
+    factor = math.exp(statistics.median(fast) - statistics.median(linger))
+    return SurvivorshipSignal(float(factor), len(fast), len(linger))
+
+
+def sale_adjustment_factor(
+    price_cut: PriceCutSignal | None = None,
+    survivorship: SurvivorshipSignal | None = None,
+    default: float = DEFAULT_SALE_ADJUSTMENT,
+) -> float:
+    """Combine the Layer-2 signals into one asking->sale multiplier.
+
+    Applies the price-cut haircut and the survivorship factor multiplicatively
+    when each is backed by enough data, and clamps the result to ``[0.5, 1.0]``.
+    With neither signal available it returns ``default``. The combination is
+    intentionally simple and provisional — Part D calibrates it once weeks of
+    delisting data have accrued.
+    """
+    factor = 1.0
+    used = False
+    if (
+        price_cut is not None
+        and price_cut.median_cut is not None
+        and price_cut.n >= MIN_CUT_TRAJECTORIES
+    ):
+        factor *= 1.0 - price_cut.median_cut
+        used = True
+    if survivorship is not None and survivorship.factor is not None:
+        factor *= survivorship.factor
+        used = True
+    if not used:
+        return default
+    return float(min(max(factor, 0.5), 1.0))
