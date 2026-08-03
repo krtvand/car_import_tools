@@ -250,4 +250,27 @@ def parse_detail(soup: BeautifulSoup) -> dict:
         # "Posted: 19.06.2026 09:56" -> "19.06.2026 09:56"
         data["posted_raw"] = date_meta.get_text(" ", strip=True).replace("Posted:", "").strip()
 
+    seller_type = _parse_seller_type(soup)
+    if seller_type:
+        data["seller_type"] = seller_type
+
     return data
+
+
+def _parse_seller_type(soup: BeautifulSoup) -> str | None:
+    """Classify the seller as 'dealer' or 'private'.
+
+    Bazaraki has no explicit label; the reliable signal is the verified-account
+    marker in the seller box (``div.author-info``): businesses/dealers get a
+    verified badge, private individuals don't. The seller's shop-link path is
+    NOT reliable — some dealers link via /items/author/<id>/ (same as private
+    sellers), so only the verified marker distinguishes them.
+    """
+    author = soup.select_one("div.author-info")
+    if author is None:
+        return None
+    is_dealer = (
+        "_verified" in author.get("class", [])
+        or author.select_one("span.verified") is not None
+    )
+    return "dealer" if is_dealer else "private"

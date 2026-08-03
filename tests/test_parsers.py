@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from bs4 import BeautifulSoup
 
 import parsers
 
@@ -159,6 +160,72 @@ def test_parse_detail_ignores_unlabelled_rows(detail_soup):
     data = parsers.parse_detail(detail_soup)
     # The "No colon here" li must not create a bogus field.
     assert all(v != "No colon here should be skipped" for v in data.values())
+
+
+# --- seller_type ------------------------------------------------------------
+
+# Real-world seller-box variants observed on live bazaraki advert pages.
+_DEALER_SHOP_LINK = """
+<div class="author-info _verified" itemscope itemtype="http://schema.org/Person">
+  <div class="author-name js-online-user" data-user="49444" itemprop="name">
+    <a href="/c/carbidcy/"><img src="//cdn/logo.webp" alt="CarBid CY"></a>
+    CarBid CY
+  </div>
+  <span class="verified" title="Verified account">Verified account</span>
+  <p class="date-registration">Posting since feb, 2017</p>
+  <a href="/c/carbidcy/" class="other-announcement-author">Other ads from this seller</a>
+</div>
+"""
+
+# A verified dealer whose links use /items/author/<id>/ — the SAME path shape a
+# private seller uses. This is why the shop-link path can't be the signal.
+_DEALER_AUTHOR_LINK = """
+<div class="author-info _verified" itemscope itemtype="http://schema.org/Person">
+  <div class="author-name js-online-user" data-user="9954894" itemprop="name">
+    <a href="/items/author/9954894/"><img src="//cdn/logo.webp" alt="Kalopsidiotes Motors"></a>
+    Kalopsidiotes Motors
+  </div>
+  <span class="verified" title="Verified account">Verified account</span>
+  <p class="date-registration">Posting since jun, 2025</p>
+  <a href="/items/author/9954894/" class="other-announcement-author">Other ads from this seller</a>
+</div>
+"""
+
+_PRIVATE = """
+<div class="author-info " itemscope itemtype="http://schema.org/Person">
+  <div class="author-name js-online-user" data-user="9247153" itemprop="name"> Efthimios </div>
+  <p class="date-registration">Posting since feb, 2024</p>
+  <a href="/items/author/9247153/" class="other-announcement-author">Other ads from this seller</a>
+</div>
+"""
+
+
+@pytest.mark.parametrize(
+    "html, expected",
+    [
+        (_DEALER_SHOP_LINK, "dealer"),
+        (_DEALER_AUTHOR_LINK, "dealer"),  # verified wins over the /items/author/ path
+        (_PRIVATE, "private"),
+    ],
+)
+def test_parse_seller_type_classifies_verified_as_dealer(html, expected):
+    soup = BeautifulSoup(html, "html.parser")
+    assert parsers._parse_seller_type(soup) == expected
+
+
+def test_parse_seller_type_none_when_no_author_box():
+    soup = BeautifulSoup("<div>no seller box here</div>", "html.parser")
+    assert parsers._parse_seller_type(soup) is None
+
+
+def test_parse_detail_includes_seller_type():
+    soup = BeautifulSoup(_DEALER_SHOP_LINK, "html.parser")
+    assert parsers.parse_detail(soup)["seller_type"] == "dealer"
+
+
+def test_parse_detail_omits_seller_type_when_absent(detail_soup):
+    # The full detail fixture has no author-info box -> field simply absent.
+    assert "seller_type" not in parsers.parse_detail(detail_soup)
 
 
 # --- pagination helpers -----------------------------------------------------

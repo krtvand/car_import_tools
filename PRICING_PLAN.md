@@ -23,16 +23,20 @@ Implemented on branch `feature/price-history-lifecycle`.
 2. ✅ **Lifecycle fields on `CarListing`**: `is_active`, `delisted_at`, and a derived
    `days_on_market` property. A **completed** run marks any in-scope advert it no longer sees
    as delisted (sold-proxy); a truncated run delists nothing.
-3. ✅ **`seller_type`** column added (nullable) — reserved; not yet parsed (no reliable
-   selector confirmed from saved fixtures). Analysis can filter on it once populated.
+3. ✅ **`seller_type`** column added (nullable) and **now parsed**. `parse_detail`
+   reads the seller box (`div.author-info`): a verified-account marker (`_verified`
+   class / `span.verified`) means `dealer`, its absence means `private`. The
+   shop-link path is *not* used — some dealers link via `/items/author/<id>/`, the
+   same shape private sellers use, so only the verified marker is reliable.
 4. ✅ **`ScrapeRun` table** (`run_id, started_at, finished_at, n_seen, completed` + filter
    scope) so "not seen this run" is unambiguous, and delisting is bounded to exactly the
    make/model + year/price/mileage space the run covered (never touches other models).
 
 Extras: `init_db` self-heals the columns on an existing DB; the CLI now reports
-seen/delisted counts. 20 new tests (71 total, all passing).
+seen/delisted counts. 26 new tests (77 total, all passing).
 
-Still open in Part A: `seller_type` parsing once a dependable private/dealer selector is found.
+Part A is complete — the `seller_type` selector (verified-account marker) is confirmed
+from live pages and wired through `parse_detail` → `upsert_listing`.
 
 ---
 
