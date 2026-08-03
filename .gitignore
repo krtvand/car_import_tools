@@ -15,4 +15,5 @@ storage/
 
 # Scraper outputs
 *.db
+*.sqlite3
 *.xlsx
