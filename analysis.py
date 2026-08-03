@@ -8,6 +8,7 @@ from :mod:`db` live at the bottom of the module. See ``PRICING_PLAN.md`` Part B.
 from __future__ import annotations
 
 import re
+import statistics
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -121,3 +122,79 @@ def is_usable(record: CarRecord, ref_year: int | None = None) -> bool:
 def clean(records, ref_year: int | None = None) -> list[CarRecord]:
     """Drop records missing required fields or failing plausibility checks."""
     return [r for r in records if is_usable(r, ref_year)]
+
+
+# ---------------------------------------------------------------------------
+# Layer 1 cross-check: comparables median
+# ---------------------------------------------------------------------------
+
+# A median needs a few points to be meaningful; below this we widen the search
+# band (and lower confidence). Above HIGH_CONFIDENCE_N an exact-band match is
+# trustworthy on its own.
+MIN_COMPARABLES = 5
+HIGH_CONFIDENCE_N = 12
+
+
+@dataclass(frozen=True)
+class Comparables:
+    """Result of a comparables lookup.
+
+    ``estimate`` is the median asking price of the matched cars, or ``None`` when
+    nothing matched even after widening. ``confidence`` is one of
+    ``"high" | "medium" | "low" | "none"``; ``widened`` counts how many times the
+    band had to be enlarged to reach :data:`MIN_COMPARABLES`.
+    """
+
+    estimate: float | None
+    n: int
+    confidence: str
+    year_tol: int
+    mileage_band: int
+    widened: int
+
+
+def comparables(
+    records,
+    year: int,
+    mileage: int,
+    year_tol: int = 1,
+    mileage_band: int = 15_000,
+    max_widen: int = 2,
+) -> Comparables:
+    """Median asking price of cars near ``(year, mileage)``.
+
+    Matches records within ``±year_tol`` years and ``±mileage_band`` km. When
+    fewer than :data:`MIN_COMPARABLES` match, the band is widened (year_tol +1,
+    mileage_band doubled) up to ``max_widen`` times and confidence is lowered —
+    robust to thin data without silently reporting a one-listing "median".
+
+    ``records`` are expected to be already scoped to the model of interest and
+    cleaned (see :func:`filter_model`, :func:`clean`); records lacking price,
+    year or mileage are ignored defensively.
+    """
+    yt, mb, widened = year_tol, mileage_band, 0
+    while True:
+        matched = [
+            r for r in records
+            if r.price is not None and r.year is not None and r.mileage_km is not None
+            and abs(r.year - year) <= yt
+            and abs(r.mileage_km - mileage) <= mb
+        ]
+        if len(matched) >= MIN_COMPARABLES or widened >= max_widen:
+            break
+        widened += 1
+        yt += 1
+        mb *= 2
+
+    n = len(matched)
+    if n == 0:
+        return Comparables(None, 0, "none", yt, mb, widened)
+
+    estimate = float(statistics.median(r.price for r in matched))
+    if widened > 0 or n < MIN_COMPARABLES:
+        confidence = "low"
+    elif n >= HIGH_CONFIDENCE_N:
+        confidence = "high"
+    else:
+        confidence = "medium"
+    return Comparables(estimate, n, confidence, yt, mb, widened)
