@@ -40,11 +40,18 @@ from live pages and wired through `parse_detail` → `upsert_listing`.
 
 ---
 
-## Part B — Pricing methodology (asking → realistic sale price)
+## Part B — Pricing methodology (asking → realistic sale price) — ✅ DONE
+
+Implemented in `analysis.py` (branch `feature/pricing-analysis`) as pure,
+DB-independent functions plus a thin `estimate_from_db` wrapper; 26 tests.
+Entry point: `analysis.estimate_sale_price(...)` / `analysis.estimate_from_db(...)`.
 
 Two layers, because bazaraki only shows *asking* prices and we care about *sale* price.
 
-### Layer 1 — Model the asking-price curve for a make/model
+### Layer 1 — Model the asking-price curve for a make/model — ✅
+
+Implemented: `fit_price_curve` / `predict` (regression), `comparables` (cross-check),
+`clean` / `is_usable` (outlier hygiene).
 
 - **Primary: hedonic log-linear regression** on the model's rows:
   `log(price) ~ age + mileage_km` (+ `fuel_type` / `gearbox` dummies when N allows).
@@ -56,7 +63,11 @@ Two layers, because bazaraki only shows *asking* prices and we care about *sale*
 - **Outlier hygiene** before both: drop price/mileage physical impossibilities, flag
   dealer vs private.
 
-### Layer 2 — Discount from asking to realistic sale (where the history pays off)
+### Layer 2 — Discount from asking to realistic sale (where the history pays off) — ✅
+
+Implemented: `price_cut_factor`, `survivorship_adjustment` (residual-based, so it
+controls for age/mileage), `sale_adjustment_factor` (combines both, 0.92 default
+until history accrues). The combination is provisional — Part D recalibrates it.
 
 - **Price-cut signal:** median % gap between an advert's *first* and *last* observed price
   (from `PriceObservation`).
