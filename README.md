@@ -98,6 +98,23 @@ needed.
 The scrape summary now reports adverts seen / delisted, e.g.
 `Done. Saw 218 adverts, delisted 3. 232 listings total in bazaraki.db`.
 
+## Pricing notebook
+
+`pricing_analysis.ipynb` is a parameterized per-make/model view of the market
+(see `PRICING_PLAN.md` Part C). It reads the DB and reuses `analysis.py` for all
+estimation, drawing: price-vs-mileage and price-vs-year clouds with the fitted
+regression curve, your query marked against the cloud, price-cut trajectories +
+distribution, days-on-market vs. price percentile, and market state over time.
+
+```bash
+uv run jupyter lab pricing_analysis.ipynb
+```
+
+Set `MAKE`, `MODEL`, `QUERY_YEAR_RANGE`, `QUERY_MILEAGE_RANGE` in the first code
+cell (`MODEL = None` pools all models of a make) and **Run All**. The notebook is
+committed without outputs; the history-dependent charts fill in as daily runs
+accumulate price and lifecycle data.
+
 ## How it works
 
 - `config.py` — `CarFilters` dataclass (the filter schema) + label→code maps and

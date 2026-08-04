@@ -87,16 +87,24 @@ until history accrues). The combination is provisional — Part D recalibrates i
 
 ---
 
-## Part C — Per-make/model Jupyter notebook
+## Part C — Per-make/model Jupyter notebook — ✅ DONE
 
-One parameterized notebook (`make`, `model` at top), charts:
+Implemented as `pricing_analysis.ipynb`: a single parameterized notebook (`MAKE`,
+`MODEL`, `QUERY_YEAR_RANGE`, `QUERY_MILEAGE_RANGE` in the first code cell — tagged
+`parameters` for papermill). It only *reads* the DB and draws; all estimation is
+reused from `analysis.py` (Part B). Every history-dependent chart degrades
+gracefully (prints a note instead of erroring) until daily runs accrue. Charts:
 
-1. **Price vs. mileage** scatter, colored by year, with fitted regression curve + interval band.
-2. **Price vs. year** (depreciation curve).
-3. **Your-query marker** — plug in year/mileage range, show the estimate against the cloud.
-4. **Price-history / cuts** — trajectories of adverts that changed price; distribution of cut %.
-5. **Days-on-market vs. price percentile** — how underpricing buys speed.
-6. **Market state over time** — active-listing count, median price by week (needs accrued history).
+1. ✅ **Price vs. mileage** scatter, colored by year, with fitted regression curve + interval band.
+2. ✅ **Price vs. year** (depreciation curve).
+3. ✅ **Your-query marker** — plug in year/mileage range, show the estimate against the cloud.
+4. ✅ **Price-history / cuts** — trajectories of adverts that changed price; distribution of cut %.
+5. ✅ **Days-on-market vs. price percentile** — how underpricing buys speed.
+6. ✅ **Market state over time** — active-listing count, median price by week (needs accrued history).
+
+Plotting deps (`matplotlib`, `pandas`, `ipykernel`, `jupyterlab`) are in
+`pyproject.toml`; the notebook is committed unexecuted (`uv run jupyter lab` to
+render). Verified end-to-end against the live DB (Mazda CX-30, N=181).
 
 ---
 
