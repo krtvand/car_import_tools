@@ -122,7 +122,8 @@ render). Verified end-to-end against the live DB (Mazda CX-30, N=181).
 
 ## Part E
 
-If advert from DB was delisted, visit advert by url to understand if it was expired (not sold) or it was actually sold 
+If advert from DB was delisted, visit advert by url to understand if it was expired (not sold) or it was actually sold
+drop ads with status "in transit"
 
 ## Open questions
 
