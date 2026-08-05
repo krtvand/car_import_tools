@@ -174,6 +174,27 @@ def test_fit_adds_categorical_dummies_only_when_n_allows():
     assert diesel.estimate > petrol.estimate
 
 
+def test_fit_adds_seller_type_dummy_and_prices_dealer_premium():
+    # 40 cars, dealers vs private with a real price effect -> dummy included.
+    rng = np.random.default_rng(2)
+    records = []
+    for i in range(40):
+        age = int(rng.integers(0, 10))
+        mileage = int(rng.integers(10_000, 150_000))
+        seller = "dealer" if i % 2 else "private"
+        bump = 0.15 if seller == "dealer" else 0.0  # dealers ask a premium
+        records.append(
+            rec(ad_id=i, year=REF_YEAR - age, mileage_km=mileage,
+                price=_price(age, mileage, noise=bump), seller_type=seller)
+        )
+    curve = analysis.fit_price_curve(records, ref_year=REF_YEAR)
+    assert "seller_type" in curve.spec.categoricals
+    # Predicting the two seller types at the same age/mileage differs by ~the premium.
+    dealer = analysis.predict(curve, year=REF_YEAR - 5, mileage=60_000, seller_type="dealer")
+    private = analysis.predict(curve, year=REF_YEAR - 5, mileage=60_000, seller_type="private")
+    assert dealer.estimate > private.estimate
+
+
 def test_fit_skips_dummies_on_small_sample():
     curve = analysis.fit_price_curve(_synthetic(n=12, noise_sd=0.0), ref_year=REF_YEAR)
     # 12 rows < MIN_FOR_DUMMIES -> numeric model only (3 columns).

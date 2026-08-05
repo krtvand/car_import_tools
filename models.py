@@ -47,7 +47,7 @@ class CarListing(SQLModel, table=True):
     mot_till: str | None = None
     availability: str | None = None
     extras: str | None = None
-    seller_type: str | None = None  # "private" / "dealer"; reserved, not yet parsed
+    seller_type: str | None = None  # "private" / "dealer"; from parsers._parse_seller_type (verified badge)
 
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None

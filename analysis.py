@@ -265,7 +265,7 @@ def _kept_levels(records, attr: str) -> tuple[Counter, list[str]]:
 def _build_spec(records, ref_year: int) -> _Spec:
     cats: dict[str, tuple[str, list[str]]] = {}
     if len(records) >= MIN_FOR_DUMMIES:
-        for attr in ("fuel_type", "gearbox"):
+        for attr in ("fuel_type", "gearbox", "seller_type"):
             counts, kept = _kept_levels(records, attr)
             if len(kept) >= 2:
                 reference = max(kept, key=lambda lvl: counts[lvl])
@@ -274,9 +274,9 @@ def _build_spec(records, ref_year: int) -> _Spec:
     return _Spec(ref_year=ref_year, categoricals=cats)
 
 
-def _row(spec: _Spec, age: int, mileage_km: int, fuel_type, gearbox) -> list[float]:
+def _row(spec: _Spec, age: int, mileage_km: int, fuel_type, gearbox, seller_type) -> list[float]:
     row = [1.0, float(age), mileage_km / _MILEAGE_UNIT]
-    values = {"fuel_type": fuel_type, "gearbox": gearbox}
+    values = {"fuel_type": fuel_type, "gearbox": gearbox, "seller_type": seller_type}
     for attr, (_reference, others) in spec.categoricals.items():
         val = values[attr]
         row.extend(1.0 if val == lvl else 0.0 for lvl in others)
@@ -298,7 +298,7 @@ def fit_price_curve(records, ref_year: int | None = None) -> PriceCurve | None:
 
     spec = _build_spec(rows, ref_year)
     X = np.array([
-        _row(spec, car_age(r.year, ref_year), r.mileage_km, r.fuel_type, r.gearbox)
+        _row(spec, car_age(r.year, ref_year), r.mileage_km, r.fuel_type, r.gearbox, r.seller_type)
         for r in rows
     ])
     y = np.log(np.array([r.price for r in rows], dtype=float))
@@ -318,6 +318,7 @@ def predict(
     mileage: int,
     fuel_type: str | None = None,
     gearbox: str | None = None,
+    seller_type: str | None = None,
     alpha: float = 0.05,
 ) -> PricePrediction:
     """Predict asking price at ``(year, mileage)`` with a ``1 - alpha`` interval.
@@ -327,7 +328,7 @@ def predict(
     space — wider above than below, as depreciation curves are. When the fit has
     no residual degrees of freedom the interval is ``None``.
     """
-    x0 = np.array(_row(curve.spec, car_age(year, curve.spec.ref_year), mileage, fuel_type, gearbox))
+    x0 = np.array(_row(curve.spec, car_age(year, curve.spec.ref_year), mileage, fuel_type, gearbox, seller_type))
     mean_log = float(x0 @ curve.beta)
     estimate = float(np.exp(mean_log))
 
@@ -392,7 +393,7 @@ def price_cut_factor(histories) -> PriceCutSignal:
 
 def _log_residual(curve: PriceCurve, r: CarRecord) -> float:
     """How over/under-priced ``r`` is vs the pooled curve, on the log scale."""
-    pred = predict(curve, r.year, r.mileage_km, r.fuel_type, r.gearbox)
+    pred = predict(curve, r.year, r.mileage_km, r.fuel_type, r.gearbox, r.seller_type)
     return math.log(r.price) - math.log(pred.estimate)
 
 
