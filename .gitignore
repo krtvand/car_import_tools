@@ -18,6 +18,7 @@ storage/
 *.sqlite3
 *.xlsx
 
-# banzai24: per-run artifacts and the persisted browser login session
+# banzai24: per-run artifacts and the persisted Chrome profile (login session)
 runs/
+banzai24/.chrome-profile/
 banzai24/.session.json
