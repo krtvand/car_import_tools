@@ -6,10 +6,10 @@ from datetime import timedelta
 from crawlee import ConcurrencySettings, Request
 from crawlee.crawlers import BeautifulSoupCrawler, BeautifulSoupCrawlingContext
 
-import config
-import db
-import parsers
-from config import CarFilters
+from . import config
+from . import db
+from . import parsers
+from .config import CarFilters
 
 
 async def run_scrape(

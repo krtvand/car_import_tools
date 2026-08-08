@@ -7,8 +7,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-import db
-from models import CarListing
+from . import db
+from .models import CarListing
 
 # Column order for the spreadsheet (subset/ordering of the model fields).
 COLUMNS = [

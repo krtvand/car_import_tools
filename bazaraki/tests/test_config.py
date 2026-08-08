@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-import config
-from config import CarFilters
+from bazaraki import config
+from bazaraki.config import CarFilters
 
 
 # --- base_path --------------------------------------------------------------

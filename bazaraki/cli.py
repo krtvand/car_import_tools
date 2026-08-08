@@ -15,10 +15,10 @@ import argparse
 import asyncio
 import dataclasses
 
-import config
-import db
-from crawler import run_scrape
-from export import export_xlsx
+from . import config
+from . import db
+from .crawler import run_scrape
+from .export import export_xlsx
 
 
 def _filters_from_args(args: argparse.Namespace) -> config.CarFilters:

@@ -14,9 +14,9 @@ from pathlib import Path
 from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from models import CarListing, PriceObservation, ScrapeRun
+from .models import CarListing, PriceObservation, ScrapeRun
 
-DB_PATH = Path(__file__).parent / "bazaraki.db"
+DB_PATH = Path(__file__).parent.parent / "bazaraki.db"
 _engine = create_engine(f"sqlite:///{DB_PATH}")
 
 # Columns added after the first schema; SQLite create_all won't add these to an

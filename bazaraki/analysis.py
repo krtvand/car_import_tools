@@ -605,7 +605,7 @@ def estimate_from_db(
     mileage_range: tuple[int, int] | None = None,
 ) -> SalePriceEstimate:
     """DB-backed :func:`estimate_sale_price`: reads listings and price histories."""
-    import db
+    from . import db
 
     listings = db.all_listings()
     records = to_records(listings)

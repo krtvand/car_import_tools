@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlmodel import create_engine
 
-import db
-from models import CarListing
+from bazaraki import db
+from bazaraki.models import CarListing
 
 
 @pytest.fixture

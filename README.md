@@ -15,7 +15,7 @@ uv sync
 
 ## Search filters
 
-What to scrape is described by the `CarFilters` dataclass in `config.py` — the
+What to scrape is described by the `CarFilters` dataclass in `bazaraki/config.py` — the
 single place listing every available site filter. Edit `DEFAULT_FILTERS` there:
 
 ```python
@@ -46,7 +46,7 @@ Scrape using `DEFAULT_FILTERS` and export to xlsx in one go:
 uv run python main.py scrape --max-pages 3 --export
 ```
 
-Quick overrides for the common filters (no need to edit `config.py`):
+Quick overrides for the common filters (no need to edit `bazaraki/config.py`):
 
 ```bash
 uv run python main.py scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
@@ -101,7 +101,7 @@ The scrape summary now reports adverts seen / delisted, e.g.
 ## Pricing notebook
 
 `pricing_analysis.ipynb` is a parameterized per-make/model view of the market
-(see `PRICING_PLAN.md` Part C). It reads the DB and reuses `analysis.py` for all
+(see `PRICING_PLAN.md` Part C). It reads the DB and reuses `bazaraki/analysis.py` for all
 estimation, drawing: price-vs-mileage and price-vs-year clouds with the fitted
 regression curve, your query marked against the cloud, price-cut trajectories +
 distribution, days-on-market vs. price percentile, and market state over time.
@@ -115,20 +115,45 @@ cell (`MODEL = None` pools all models of a make) and **Run All**. The notebook i
 committed without outputs; the history-dependent charts fill in as daily runs
 accumulate price and lifecycle data.
 
+## Repository layout
+
+This repo hosts two independent car-sourcing projects. They share a virtualenv
+and `pyproject.toml`; everything else — code, tests, fixtures — is per-project:
+
+| Package | What it does |
+|---|---|
+| `bazaraki/` | Scrapes bazaraki.com (Cyprus market) and models realistic sale prices. Documented here and in `PRICING_PLAN.md`. |
+| `banzai24/` | Scrapes banzai24.com Japanese auction lots and reads their auction sheets with Claude vision. See `AUCTION_PLAN.md`. |
+
+Each package owns its tests and fixtures (`bazaraki/tests/`, `banzai24/tests/`),
+so a project is self-contained and could be lifted out of the repo whole. Both
+databases live at the repo root (`bazaraki.db`, `auction.db`) so the auction
+project can join against Cyprus prices for a comparable.
+
+```bash
+uv run pytest                    # both projects
+uv run pytest bazaraki/tests     # one project
+```
+
+Run either project as a module — `python -m bazaraki`, `python -m banzai24`.
+`main.py` remains as a shim for the `python main.py …` commands above.
+
 ## How it works
 
-- `config.py` — `CarFilters` dataclass (the filter schema) + label→code maps and
-  `build_search_url`, which turns filters into the make/model path plus query.
-- `crawler.py` — Crawlee crawler: opens a `ScrapeRun`, resolves year/engine codes
-  from the live page when needed, parses listing pages, follows pagination
-  (preserving filters), enqueues detail pages (unless `--no-details`), and on
-  finish delists in-scope adverts it didn't see.
-- `parsers.py` — pure HTML→dict parsing (`parse_cards`, `parse_detail`,
+- `bazaraki/config.py` — `CarFilters` dataclass (the filter schema) + label→code
+  maps and `build_search_url`, which turns filters into the make/model path plus
+  query.
+- `bazaraki/crawler.py` — Crawlee crawler: opens a `ScrapeRun`, resolves
+  year/engine codes from the live page when needed, parses listing pages, follows
+  pagination (preserving filters), enqueues detail pages (unless `--no-details`),
+  and on finish delists in-scope adverts it didn't see.
+- `bazaraki/parsers.py` — pure HTML→dict parsing (`parse_cards`, `parse_detail`,
   pagination + option-code helpers), no network, so they're easy to test.
-- `models.py` / `db.py` — `CarListing`, `PriceObservation` and `ScrapeRun`
-  SQLModels; a SQLite upsert keyed on bazaraki's advert id (re-runs update rather
-  than duplicate) that also logs price changes and refreshes lifecycle.
-- `export.py` — writes the table to `.xlsx` (openpyxl).
+- `bazaraki/models.py` / `bazaraki/db.py` — `CarListing`, `PriceObservation` and
+  `ScrapeRun` SQLModels; a SQLite upsert keyed on bazaraki's advert id (re-runs
+  update rather than duplicate) that also logs price changes and refreshes
+  lifecycle.
+- `bazaraki/export.py` — writes the table to `.xlsx` (openpyxl).
 
 Outputs (`bazaraki.db`, `*.xlsx`) and Crawlee's `storage/` dir are gitignored.
 

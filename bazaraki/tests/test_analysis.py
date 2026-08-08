@@ -6,8 +6,8 @@ import math
 import numpy as np
 import pytest
 
-import analysis
-from analysis import CarRecord
+from bazaraki import analysis
+from bazaraki.analysis import CarRecord
 
 
 def rec(ad_id=1, price=20000.0, year=2020, mileage_km=50000, **kw) -> CarRecord:
@@ -357,7 +357,7 @@ def test_estimate_sale_price_none_when_no_matching_data():
 
 def test_estimate_from_db_reads_listings_and_histories(tmp_path, monkeypatch):
     from sqlmodel import create_engine
-    import db
+    from bazaraki import db
 
     engine = create_engine(f"sqlite:///{tmp_path / 'analysis.db'}")
     monkeypatch.setattr(db, "_engine", engine)

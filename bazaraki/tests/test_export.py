@@ -5,8 +5,8 @@ import pytest
 from openpyxl import load_workbook
 from sqlmodel import create_engine
 
-import db
-import export
+from bazaraki import db
+from bazaraki import export
 
 
 @pytest.fixture

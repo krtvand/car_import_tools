@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from bs4 import BeautifulSoup
 
-import parsers
+from bazaraki import parsers
 
 
 # --- _first_int -------------------------------------------------------------

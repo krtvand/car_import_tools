@@ -21,4 +21,8 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["tests"]
+# Each project owns its own tests; add a line here when a project is added.
+testpaths = ["bazaraki/tests", "banzai24/tests"]
+# importlib mode lets both projects hold a test_db.py without the
+# duplicate-basename collision the default prepend mode causes.
+addopts = "--import-mode=importlib"
