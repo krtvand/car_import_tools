@@ -346,9 +346,10 @@ async def fetch_lots(
     as soon as a later day appears. That is the day you can actually still bid
     on, and it keeps the paid extraction step off lots that are weeks out.
 
-    ``lots_filter`` is applied **before** the day is chosen, so the day picked is
-    the closest one that actually has a car you asked for. Narrowing first would
-    hand you an empty run every time the nearest day happens to list none.
+    ``lots_filter`` is applied **within** that day, not before it. The day is
+    chosen from everything on offer, and if nothing on it matches, the run is
+    empty — the question being answered is "what should I look at for the next
+    auction", so a match three weeks out is not a better answer than none.
     """
     filters = filters or config.DEFAULT_FILTERS
     lots_filter = lots_filter or LotFilters()
@@ -374,19 +375,19 @@ async def fetch_lots(
 
         wanted = min(total_pages, max_pages)
         for number in range(2, wanted + 1):
-            if nearest_day_only and _nearest_day_complete(payloads, today, lots_filter):
+            if nearest_day_only and _nearest_day_complete(payloads, today):
                 break
             await asyncio.sleep(PAGE_DELAY_S)
             payloads.append(await _goto_page(page, number))
 
     fetched = [item for payload in payloads for item in (payload.get("items") or [])]
 
-    lots, rejected = lot_filters_mod.split(fetched, lots_filter)
-    matched = len(lots)
-
     day = None
+    on_day = fetched
     if nearest_day_only:
-        lots, day = lots_on_nearest_day(lots, today)
+        on_day, day = lots_on_nearest_day(fetched, today)
+
+    lots, rejected = lot_filters_mod.split(on_day, lots_filter)
 
     # Page 1 is server-rendered and carries no totals; any later page came from
     # the API and does. Prefer the API's numbers when we have them, so the
@@ -404,31 +405,25 @@ async def fetch_lots(
         # Stopping early on purpose is not truncation: everything we wanted is
         # here. Only an unread page that could still hold the chosen day counts.
         truncated=total_pages > len(payloads)
-        and not (day and _nearest_day_complete(payloads, today, lots_filter)),
+        and not (day and _nearest_day_complete(payloads, today)),
         trade_date=day,
-        lots_other_days=matched - len(lots),
+        lots_other_days=len(fetched) - len(on_day),
         lots_filtered_out=len(rejected),
     )
     _write_lots_json(result, filters, url, payloads, lots_filter)
     return result
 
 
-def _nearest_day_complete(
-    payloads: list[dict],
-    today: date | None = None,
-    lots_filter: LotFilters | None = None,
-) -> bool:
+def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bool:
     """Have we already seen past the closest upcoming day?
 
-    Judged over the lots that pass ``lots_filter``, matching how the day is
-    chosen. Paging must not stop at a day boundary the filter has emptied — with
-    a filter on, the run keeps turning pages until a *wanted* lot on a later day
-    proves the wanted day is complete.
+    Judged over every lot, not the filtered ones, because the day is chosen that
+    way too: once a later day appears the nearest day is complete, whether or not
+    anything on it survived the filter. Paging on in the hope of a match would be
+    searching the days the run has deliberately excluded.
     """
     today = today or japan_today()
     lots = [item for payload in payloads for item in (payload.get("items") or [])]
-    if lots_filter:
-        lots = [lot for lot in lots if lots_filter.matches(lot)]
     day = nearest_trade_date(lots, today)
     return bool(day) and has_later_day(lots, day, today)
 

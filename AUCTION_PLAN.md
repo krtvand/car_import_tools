@@ -279,12 +279,15 @@ but they keep sheet downloads and paid extraction off unwanted lots.
   for, and a prefix-only pattern (`5AA`) correctly matches nothing. Falls back
   to `car.shortCodeModel`, then to `characteristics.bodyNumber` — which is
   `DMEJ3P-10**32`, the same code split from the *other* end.
-- **Filters run before the day is chosen**, so the day selected is the closest
-  one that actually lists a car you want. Narrowing first would return an empty
-  run whenever the nearest day happens to have none — on the saved CX-30 run,
-  `--body-model-code DMEJ3P` correctly skips 08-11 (only DMEJ3R that day) and
-  lands on 08-12. Page-turning follows the same rule: a day boundary the filter
-  has emptied does not stop paging.
+- **Filters run inside the chosen day, not before it.** The day is picked from
+  everything on offer, then the filter runs within it; if nothing on that day
+  matches, **the run is empty and later days are not searched**. The question
+  being answered is "what should I look at for the next auction", and a match
+  three weeks out is not a better answer than none. On the saved CX-30 run the
+  nearest day is 08-11 whatever the filter says, so `--body-model-code DMEJ3P`
+  returns nothing rather than reaching forward to the DMEJ3P on 08-12.
+  Page-turning follows the same rule — a day emptied by the filter still stops
+  paging. `--all-days` is the way to look further out.
 - Downloads each `auctImage` to `sheets/<lot_number>.jpg` with plain `httpx` —
   **no browser or auth needed**, since those URLs are public. Skips any lot whose
   hash already has an extraction row.

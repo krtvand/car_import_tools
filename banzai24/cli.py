@@ -153,8 +153,9 @@ def main() -> None:
 
     print(result.summary())
     if lots_filter.active and not result.lots:
-        print(f"Note: nothing matched {lots_filter.describe()} in the pages fetched. "
-              "Raise --max-pages, or re-run without the filter to see the codes on offer.")
+        where = f"on {result.trade_date}" if result.trade_date else "in the pages fetched"
+        print(f"Note: nothing {where} matched {lots_filter.describe()}. Later auction "
+              "days are not searched — re-run with --all-days to look past this one.")
     if not args.all_days and result.trade_date is None:
         print("Note: no upcoming auction day in these results — kept every lot. "
               "(Expected for --source archive.)")
