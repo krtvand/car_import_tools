@@ -25,8 +25,9 @@ import httpx
 from playwright.async_api import Page, Response
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from . import config, session
+from . import config, lot_filters as lot_filters_mod, session
 from .config import AuctionFilters
+from .lot_filters import LotFilters
 
 RUNS_DIR = Path(__file__).parent.parent / "runs"
 
@@ -142,6 +143,7 @@ class FetchResult:
     sheets_missing: int = 0
     trade_date: str | None = None      # the day we narrowed to, if we did
     lots_other_days: int = 0           # fetched, then set aside as later/past
+    lots_filtered_out: int = 0         # fetched, then rejected by LotFilters
 
     def summary(self) -> str:
         scope = f" on {self.trade_date}" if self.trade_date else ""
@@ -149,6 +151,8 @@ class FetchResult:
             f"{len(self.lots)} lots{scope} from {self.pages_fetched}/{self.total_pages} page(s)",
             f"{self.sheets_downloaded} sheets downloaded",
         ]
+        if self.lots_filtered_out:
+            bits.append(f"{self.lots_filtered_out} lots filtered out")
         if self.lots_other_days:
             bits.append(f"{self.lots_other_days} lots on other days skipped")
         if self.sheets_skipped:
@@ -333,6 +337,7 @@ async def fetch_lots(
     run_dir: Path | None = None,
     headless: bool = False,
     nearest_day_only: bool = True,
+    lots_filter: LotFilters | None = None,
 ) -> FetchResult:
     """Collect lots for ``filters``, writing raw payloads into a run directory.
 
@@ -340,8 +345,13 @@ async def fetch_lots(
     later days a search also returns are fetched but set aside, and paging stops
     as soon as a later day appears. That is the day you can actually still bid
     on, and it keeps the paid extraction step off lots that are weeks out.
+
+    ``lots_filter`` is applied **before** the day is chosen, so the day picked is
+    the closest one that actually has a car you asked for. Narrowing first would
+    hand you an empty run every time the nearest day happens to list none.
     """
     filters = filters or config.DEFAULT_FILTERS
+    lots_filter = lots_filter or LotFilters()
     url = config.build_search_url(filters)
     run_dir = run_dir or _new_run_dir(filters)
 
@@ -364,17 +374,19 @@ async def fetch_lots(
 
         wanted = min(total_pages, max_pages)
         for number in range(2, wanted + 1):
-            if nearest_day_only and _nearest_day_complete(payloads, today):
+            if nearest_day_only and _nearest_day_complete(payloads, today, lots_filter):
                 break
             await asyncio.sleep(PAGE_DELAY_S)
             payloads.append(await _goto_page(page, number))
 
     fetched = [item for payload in payloads for item in (payload.get("items") or [])]
 
+    lots, rejected = lot_filters_mod.split(fetched, lots_filter)
+    matched = len(lots)
+
     day = None
-    lots = fetched
     if nearest_day_only:
-        lots, day = lots_on_nearest_day(fetched, today)
+        lots, day = lots_on_nearest_day(lots, today)
 
     # Page 1 is server-rendered and carries no totals; any later page came from
     # the API and does. Prefer the API's numbers when we have them, so the
@@ -392,18 +404,31 @@ async def fetch_lots(
         # Stopping early on purpose is not truncation: everything we wanted is
         # here. Only an unread page that could still hold the chosen day counts.
         truncated=total_pages > len(payloads)
-        and not (day and _nearest_day_complete(payloads, today)),
+        and not (day and _nearest_day_complete(payloads, today, lots_filter)),
         trade_date=day,
-        lots_other_days=len(fetched) - len(lots),
+        lots_other_days=matched - len(lots),
+        lots_filtered_out=len(rejected),
     )
-    _write_lots_json(result, filters, url, payloads)
+    _write_lots_json(result, filters, url, payloads, lots_filter)
     return result
 
 
-def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bool:
-    """Have we already seen past the closest upcoming day?"""
+def _nearest_day_complete(
+    payloads: list[dict],
+    today: date | None = None,
+    lots_filter: LotFilters | None = None,
+) -> bool:
+    """Have we already seen past the closest upcoming day?
+
+    Judged over the lots that pass ``lots_filter``, matching how the day is
+    chosen. Paging must not stop at a day boundary the filter has emptied — with
+    a filter on, the run keeps turning pages until a *wanted* lot on a later day
+    proves the wanted day is complete.
+    """
     today = today or japan_today()
     lots = [item for payload in payloads for item in (payload.get("items") or [])]
+    if lots_filter:
+        lots = [lot for lot in lots if lots_filter.matches(lot)]
     day = nearest_trade_date(lots, today)
     return bool(day) and has_later_day(lots, day, today)
 
@@ -413,6 +438,7 @@ def _write_lots_json(
     filters: AuctionFilters,
     url: str,
     payloads: list[dict],
+    lots_filter: LotFilters | None = None,
 ) -> Path:
     """Persist the API payloads verbatim, wrapped in run provenance."""
     path = result.run_dir / "lots.json"
@@ -422,6 +448,7 @@ def _write_lots_json(
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "search_url": url,
                 "filters": asdict(filters),
+                "lot_filters": asdict(lots_filter or LotFilters()),
                 "pages_fetched": result.pages_fetched,
                 "total_pages": result.total_pages,
                 "total_lots": result.total_lots,
@@ -433,6 +460,7 @@ def _write_lots_json(
                     (lot.get("lot") or {}).get("number") for lot in result.lots
                 ],
                 "lots_other_days": result.lots_other_days,
+                "lots_filtered_out": result.lots_filtered_out,
                 # untouched, exactly as the API returned them
                 "pages": payloads,
             },
@@ -507,6 +535,7 @@ async def run_fetch(
     sheets: bool = True,
     headless: bool = False,
     nearest_day_only: bool = True,
+    lots_filter: LotFilters | None = None,
 ) -> FetchResult:
     """``fetch`` end to end: lots, then their sheets."""
     result = await fetch_lots(
@@ -514,6 +543,7 @@ async def run_fetch(
         max_pages=max_pages,
         headless=headless,
         nearest_day_only=nearest_day_only,
+        lots_filter=lots_filter,
     )
     if sheets:
         await download_sheets(result)

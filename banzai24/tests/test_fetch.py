@@ -5,9 +5,10 @@ import json
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from banzai24 import fetch
+from banzai24 import fetch, lot_filters
 from banzai24.config import AuctionFilters
 from banzai24.fetch import FetchResult
+from banzai24.lot_filters import LotFilters
 
 
 def _lot(number: str = "47-1312-35159", image: str | None = "https://x/img") -> dict:
@@ -199,6 +200,39 @@ def test_nearest_day_complete_stops_paging_once_a_later_day_appears():
     page2 = {"items": MIXED[4:]}          # 08-12 shows up → 08-11 is complete
     assert fetch._nearest_day_complete([page1], TODAY) is False
     assert fetch._nearest_day_complete([page1, page2], TODAY) is True
+
+
+def test_paging_does_not_stop_at_a_day_the_filter_has_emptied():
+    """With a filter on, a boundary only counts once a *wanted* lot is past it.
+
+    Page 1's 08-11 lots are all the wrong model; the DMEJ3P we want is on 08-12.
+    Judging the boundary over unfiltered lots would stop paging on page 1 and
+    return nothing.
+    """
+    wanted = LotFilters(body_model_code=("DMEJ3P",))
+    page1 = {"items": [
+        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3R"},
+        _dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3R"},
+    ]}
+    page2 = {"items": [_dated("c", "2026-08-12") | {"bodyModelCode": "5AA-DMEJ3P"}]}
+
+    assert fetch._nearest_day_complete([page1], TODAY) is True          # unfiltered
+    assert fetch._nearest_day_complete([page1], TODAY, wanted) is False  # keep paging
+    assert fetch._nearest_day_complete([page1, page2], TODAY, wanted) is False
+
+
+def test_the_day_is_chosen_from_the_lots_that_survive_the_filter():
+    """Filter first, then narrow — otherwise a nearest day listing none is empty."""
+    lots = [
+        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3R"},
+        _dated("b", "2026-08-12") | {"bodyModelCode": "5AA-DMEJ3P"},
+        _dated("c", "2026-08-12") | {"bodyModelCode": "DMEJ3P"},
+    ]
+    kept, _ = lot_filters.split(lots, LotFilters(body_model_code=("DMEJ3P",)))
+    selected, day = fetch.lots_on_nearest_day(kept, TODAY)
+
+    assert day == "2026-08-12"       # not 08-11, which holds only the wrong model
+    assert [l["lot"]["number"] for l in selected] == ["b", "c"]
 
 
 def test_summary_names_the_day_and_the_lots_set_aside(tmp_path):

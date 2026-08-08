@@ -13,6 +13,9 @@
 #
 # --no-defaults matters: without it, any filter this script does not set would
 # silently inherit config.DEFAULT_FILTERS' value for it.
+#
+# The --body-model-code lines are the exception to that: they are post-fetch
+# filters, so they are not part of DEFAULT_FILTERS and only apply here.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
@@ -27,4 +30,6 @@ exec uv run python -m banzai24 fetch \
     --engine-capacity-start 1.9 \
     --grade 4 --grade 4.5 --grade 5 \
     --source auctions \
+    --body-model-code DMEJ3R \
+    --body-model-code DMFP \
     "$@"

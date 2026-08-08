@@ -84,6 +84,7 @@ structurally identical to the year/engine-code bootstrap the existing
 | `status` | `{code: "SOLD", name: "Продан"}` | also `AWAITING_TRADE` etc. |
 | `startPrice` / `endPrice` | `"1290000"` / `null` | strings; `currency: "JPY"` |
 | `characteristics` | `{color, mileage, modification, bodyNumber, transmission, engineCapacity, steeringWheelSide, …}` | |
+| `bodyModelCode` | `"5AA-DMEJ3P"` / `"DMEJ3P"` | **top level**, not under `characteristics`; mirrored in `car.shortCodeModel`. The type-designation prefix is present on some lots and absent on others *for the same model* — see the filter note below |
 | `car` | `{mark, model, modelId, shortCodeModel}` | |
 | `registrationYear` / `Month` | `2023` | |
 | `images` / `imagesCount` | 6 photos + sheet | photo gallery, unused by us |
@@ -264,6 +265,26 @@ This is better than reimplementing the API client, not merely more convenient:
     warning.
   - No upcoming day at all (any `archive` search) is a no-op that keeps every
     lot, rather than a run that silently produces zero.
+
+`lot_filters.py` — criteria applied to lots after they arrive, for what the
+site's own search cannot express. Kept separate from `AuctionFilters`, which
+becomes URL parameters: these never reach banzai24. They still cost the fetch,
+but they keep sheet downloads and paid extraction off unwanted lots.
+
+- **`body_model_code`** (`--body-model-code`, repeatable, OR-ed). Substring match
+  on the chassis code. The field is inconsistent — banzai24 writes both
+  `5AA-DMEJ3P` and a bare `DMEJ3P` for the same CX-30 — so **both sides are
+  normalized to the part after the last hyphen**, dropping the type-designation
+  prefix that encodes emissions class. Either spelling can therefore be asked
+  for, and a prefix-only pattern (`5AA`) correctly matches nothing. Falls back
+  to `car.shortCodeModel`, then to `characteristics.bodyNumber` — which is
+  `DMEJ3P-10**32`, the same code split from the *other* end.
+- **Filters run before the day is chosen**, so the day selected is the closest
+  one that actually lists a car you want. Narrowing first would return an empty
+  run whenever the nearest day happens to have none — on the saved CX-30 run,
+  `--body-model-code DMEJ3P` correctly skips 08-11 (only DMEJ3R that day) and
+  lands on 08-12. Page-turning follows the same rule: a day boundary the filter
+  has emptied does not stop paging.
 - Downloads each `auctImage` to `sheets/<lot_number>.jpg` with plain `httpx` —
   **no browser or auth needed**, since those URLs are public. Skips any lot whose
   hash already has an extraction row.

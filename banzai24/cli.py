@@ -9,6 +9,7 @@ Examples:
     uv run python -m banzai24 fetch --make MAZDA --model CX-30 --year-start 2023
     uv run python -m banzai24 fetch --max-pages 4 --no-sheets
     uv run python -m banzai24 fetch --all-days   # don't narrow to the nearest day
+    uv run python -m banzai24 fetch --body-model-code DMEJ3P --body-model-code DMEJ3R
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import asyncio
 import dataclasses
 
 from . import config, fetch, session
+from .lot_filters import LotFilters
 
 
 _OVERRIDABLE = (
@@ -47,6 +49,15 @@ def _filters_from_args(args: argparse.Namespace) -> config.AuctionFilters:
     return dataclasses.replace(base, **overrides)
 
 
+def _lot_filters_from_args(args: argparse.Namespace) -> LotFilters:
+    """Post-fetch filters. Not affected by --no-defaults: they have no defaults.
+
+    Kept apart from :func:`_filters_from_args` because these never reach the
+    site — see :mod:`banzai24.lot_filters`.
+    """
+    return LotFilters(body_model_code=tuple(getattr(args, "body_model_code", None) or ()))
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="banzai24",
@@ -70,6 +81,12 @@ def _build_parser() -> argparse.ArgumentParser:
         p.add_argument("--engine-capacity-end", type=float, dest="engine_capacity_end")
         p.add_argument("--grade", action="append", help="Repeatable, e.g. --grade 4 --grade 4.5")
         p.add_argument("--source", choices=["auctions", "archive"])
+        p.add_argument("--body-model-code", "--model-code", action="append",
+                       dest="body_model_code", metavar="CODE",
+                       help="Keep only lots whose chassis code contains CODE. Repeatable; "
+                            "a lot matching any one is kept. The type prefix banzai24 "
+                            "sometimes attaches is ignored, so DMEJ3P matches both "
+                            "'5AA-DMEJ3P' and 'DMEJ3P'.")
         p.add_argument("--no-defaults", action="store_true", dest="no_defaults",
                        help="Ignore config.DEFAULT_FILTERS; use only the flags given. "
                             "Saved searches use this so they cannot inherit stray filters.")
@@ -108,8 +125,11 @@ def main() -> None:
         return
 
     filters = _filters_from_args(args)
+    lots_filter = _lot_filters_from_args(args)
     print(f"Filters: {config.describe(filters)}")
     print(f"Search:  {config.build_search_url(filters)}")
+    if lots_filter.active:
+        print(f"Keeping: {lots_filter.describe()}")
 
     if args.dry_run:
         print("Dry run — nothing fetched.")
@@ -123,6 +143,7 @@ def main() -> None:
                 sheets=not args.no_sheets,
                 headless=args.headless,
                 nearest_day_only=not args.all_days,
+                lots_filter=lots_filter,
             )
         )
     except (session.SessionExpired, session.ServiceUnavailable) as exc:
@@ -131,6 +152,9 @@ def main() -> None:
         raise SystemExit(str(exc))
 
     print(result.summary())
+    if lots_filter.active and not result.lots:
+        print(f"Note: nothing matched {lots_filter.describe()} in the pages fetched. "
+              "Raise --max-pages, or re-run without the filter to see the codes on offer.")
     if not args.all_days and result.trade_date is None:
         print("Note: no upcoming auction day in these results — kept every lot. "
               "(Expected for --source archive.)")
