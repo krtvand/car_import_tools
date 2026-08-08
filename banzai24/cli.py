@@ -8,6 +8,7 @@ Examples:
     uv run python -m banzai24 fetch --max-pages 1
     uv run python -m banzai24 fetch --make MAZDA --model CX-30 --year-start 2023
     uv run python -m banzai24 fetch --max-pages 4 --no-sheets
+    uv run python -m banzai24 fetch --all-days   # don't narrow to the nearest day
 """
 from __future__ import annotations
 
@@ -77,6 +78,10 @@ def _build_parser() -> argparse.ArgumentParser:
         p.add_argument("--max-pages", type=int, default=1,
                        help="Result pages to fetch (20 lots per page). Default 1.")
         p.add_argument("--no-sheets", action="store_true", help="Skip downloading auction sheets")
+        p.add_argument("--all-days", action="store_true", dest="all_days",
+                       help="Keep every auction day the search returns. By default a run "
+                            "is narrowed to the closest upcoming day — the one still "
+                            "biddable — and later days are skipped.")
         p.add_argument("--headless", action="store_true",
                        help="Hide the browser. Only works when already signed in — "
                             "the default shows a window so you can sign in inline.")
@@ -117,6 +122,7 @@ def main() -> None:
                 max_pages=args.max_pages,
                 sheets=not args.no_sheets,
                 headless=args.headless,
+                nearest_day_only=not args.all_days,
             )
         )
     except (session.SessionExpired, session.ServiceUnavailable) as exc:
@@ -125,6 +131,9 @@ def main() -> None:
         raise SystemExit(str(exc))
 
     print(result.summary())
+    if not args.all_days and result.trade_date is None:
+        print("Note: no upcoming auction day in these results — kept every lot. "
+              "(Expected for --source archive.)")
     if result.truncated:
         print(
             f"Note: {result.total_pages} pages available "

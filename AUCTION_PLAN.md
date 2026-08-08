@@ -243,6 +243,27 @@ This is better than reimplementing the API client, not merely more convenient:
 
 - Writes captured responses verbatim to `runs/<run>/lots.json` before anything
   is normalized.
+- **Narrows the run to the closest upcoming auction day** (`--all-days` opts
+  out). A `source=auctions` search spans every scheduled day — 08-11, 08-12 and
+  beyond — but only the nearest one is still worth reading sheets for. Two
+  details make this non-trivial, both verified against saved runs:
+  - **`min(tradeDate)` is the wrong rule.** Today's lots stay in the result set
+    after they have traded, so on 2026-08-08 the minimum is 08-08, a day that is
+    already over. A lot counts as upcoming only if its `status.code` is not
+    terminal (`SOLD`/`SOLD_BY_NEGO`/`NOT_SOLD`/…) *and* its date is not past.
+    The date check alone would keep this morning's sold lots; the status check
+    alone would trust a stale status on an old lot.
+  - **"Today" is Tokyo's date, not the machine's** (`fetch.japan_today`).
+    `tradeDate` is a Japanese calendar date and Japan rolls over at 18:00 Cyprus
+    time, so for six hours every evening the local date reads a day behind — a
+    JST day that has already finished would compare as upcoming, leaving only
+    the status check to reject it.
+  - **Paging stops as soon as a later day appears.** Lots come back in trade-date
+    order, so a second day showing up means the nearest one is complete. That is
+    a deliberate stop, not truncation, so it does not raise the `--max-pages`
+    warning.
+  - No upcoming day at all (any `archive` search) is a no-op that keeps every
+    lot, rather than a run that silently produces zero.
 - Downloads each `auctImage` to `sheets/<lot_number>.jpg` with plain `httpx` —
   **no browser or auth needed**, since those URLs are public. Skips any lot whose
   hash already has an extraction row.

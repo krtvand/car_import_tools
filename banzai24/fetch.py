@@ -17,8 +17,9 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from playwright.async_api import Page, Response
@@ -49,6 +50,84 @@ RESPONSE_TIMEOUT_MS = 30_000
 # not you sign in right there and the run continues in the same browser.
 FIRST_RESPONSE_TIMEOUT_MS = 300_000
 
+# A lot whose status is one of these has already been through the ring, so it is
+# not "upcoming" however its trade date compares to today. This matters on the
+# day itself: ``source=auctions`` keeps the morning's SOLD lots in the result set
+# alongside the days still to come, so a plain min(tradeDate) would pick a day
+# that is already over.
+CONCLUDED_STATUSES = frozenset({"SOLD", "SOLD_BY_NEGO", "NOT_SOLD", "CANCELED", "CANCELLED", "REMOVED"})
+
+# `tradeDate` is a Japanese calendar date, so "today" must be one too. Using the
+# machine's local date instead would be wrong for six hours every evening: Japan
+# rolls over at 18:00 Cyprus time, and in that window a JST day that has already
+# finished still compares as today — leaving the status check alone to reject it.
+# Deriving it from the data would be worse still, since the lots are the thing
+# being filtered.
+JAPAN_TZ = ZoneInfo("Asia/Tokyo")
+
+
+def japan_today() -> date:
+    """The current date in Japan — the calendar every ``tradeDate`` is written in."""
+    return datetime.now(JAPAN_TZ).date()
+
+
+def trade_date(lot: dict) -> str | None:
+    """``"2026-08-11"`` — the auction day, as the API's ISO string."""
+    return (lot.get("lot") or {}).get("tradeDate") or None
+
+
+def is_upcoming(lot: dict, today: date) -> bool:
+    """Is this lot still to be sold? ``today`` is a *Japanese* date.
+
+    Both halves are load-bearing and neither is redundant: the status rules out
+    lots that have already been through the ring on a day still in progress, and
+    the date rules out a stale non-terminal status left on an old lot.
+    """
+    day = trade_date(lot)
+    if not day:
+        return False
+    status = ((lot.get("status") or {}).get("code") or "").upper()
+    if status in CONCLUDED_STATUSES:
+        return False
+    return day >= today.isoformat()
+
+
+def nearest_trade_date(lots: list[dict], today: date | None = None) -> str | None:
+    """The closest auction day still ahead of us, or ``None`` if there is none."""
+    today = today or japan_today()
+    days = [d for lot in lots if (d := trade_date(lot)) and is_upcoming(lot, today)]
+    return min(days) if days else None
+
+
+def lots_on_nearest_day(
+    lots: list[dict], today: date | None = None
+) -> tuple[list[dict], str | None]:
+    """Keep only the lots trading on the closest upcoming day.
+
+    Returns the lots and the day chosen. When nothing is upcoming — an
+    ``archive`` search, or a filter whose every lot has already sold — the
+    filter is a no-op and every lot is returned, because a run that silently
+    produced zero lots would look like a broken fetch.
+    """
+    today = today or japan_today()
+    day = nearest_trade_date(lots, today)
+    if day is None:
+        return list(lots), None
+    return [lot for lot in lots if trade_date(lot) == day and is_upcoming(lot, today)], day
+
+
+def has_later_day(lots: list[dict], day: str, today: date | None = None) -> bool:
+    """True once a lot beyond ``day`` has been seen — the signal to stop paging.
+
+    ``source=auctions`` returns lots in trade-date order, so a later day showing
+    up means the nearest day is complete and further pages hold only lots we are
+    about to discard anyway.
+    """
+    today = today or japan_today()
+    return any(
+        (d := trade_date(lot)) and d > day and is_upcoming(lot, today) for lot in lots
+    )
+
 
 @dataclass
 class FetchResult:
@@ -61,12 +140,17 @@ class FetchResult:
     sheets_downloaded: int = 0
     sheets_skipped: int = 0
     sheets_missing: int = 0
+    trade_date: str | None = None      # the day we narrowed to, if we did
+    lots_other_days: int = 0           # fetched, then set aside as later/past
 
     def summary(self) -> str:
+        scope = f" on {self.trade_date}" if self.trade_date else ""
         bits = [
-            f"{len(self.lots)} lots from {self.pages_fetched}/{self.total_pages} page(s)",
+            f"{len(self.lots)} lots{scope} from {self.pages_fetched}/{self.total_pages} page(s)",
             f"{self.sheets_downloaded} sheets downloaded",
         ]
+        if self.lots_other_days:
+            bits.append(f"{self.lots_other_days} lots on other days skipped")
         if self.sheets_skipped:
             bits.append(f"{self.sheets_skipped} already present")
         if self.sheets_missing:
@@ -248,13 +332,23 @@ async def fetch_lots(
     max_pages: int = 1,
     run_dir: Path | None = None,
     headless: bool = False,
+    nearest_day_only: bool = True,
 ) -> FetchResult:
-    """Collect lots for ``filters``, writing raw payloads into a run directory."""
+    """Collect lots for ``filters``, writing raw payloads into a run directory.
+
+    By default the run is narrowed to the **closest upcoming auction day**: the
+    later days a search also returns are fetched but set aside, and paging stops
+    as soon as a later day appears. That is the day you can actually still bid
+    on, and it keeps the paid extraction step off lots that are weeks out.
+    """
     filters = filters or config.DEFAULT_FILTERS
     url = config.build_search_url(filters)
     run_dir = run_dir or _new_run_dir(filters)
 
     payloads: list[dict] = []
+    # Pinned once, so a run that crosses midnight in Tokyo cannot change its
+    # mind about which day is nearest halfway through paging.
+    today = japan_today()
 
     async with session.browser_context(headless=headless) as page:
         if not headless:
@@ -270,16 +364,23 @@ async def fetch_lots(
 
         wanted = min(total_pages, max_pages)
         for number in range(2, wanted + 1):
+            if nearest_day_only and _nearest_day_complete(payloads, today):
+                break
             await asyncio.sleep(PAGE_DELAY_S)
             payloads.append(await _goto_page(page, number))
 
-    lots = [item for payload in payloads for item in (payload.get("items") or [])]
+    fetched = [item for payload in payloads for item in (payload.get("items") or [])]
+
+    day = None
+    lots = fetched
+    if nearest_day_only:
+        lots, day = lots_on_nearest_day(fetched, today)
 
     # Page 1 is server-rendered and carries no totals; any later page came from
     # the API and does. Prefer the API's numbers when we have them, so the
     # summary doesn't report page 1's item count as the whole result set.
     api_pagination = next((p["pagination"] for p in payloads if p.get("pagination")), {})
-    total_lots = int(api_pagination.get("total") or 0) or len(lots)
+    total_lots = int(api_pagination.get("total") or 0) or len(fetched)
     total_pages = int(api_pagination.get("totalPages") or 0) or total_pages
 
     result = FetchResult(
@@ -288,10 +389,23 @@ async def fetch_lots(
         pages_fetched=len(payloads),
         total_pages=total_pages,
         total_lots=total_lots,
-        truncated=total_pages > len(payloads),
+        # Stopping early on purpose is not truncation: everything we wanted is
+        # here. Only an unread page that could still hold the chosen day counts.
+        truncated=total_pages > len(payloads)
+        and not (day and _nearest_day_complete(payloads, today)),
+        trade_date=day,
+        lots_other_days=len(fetched) - len(lots),
     )
     _write_lots_json(result, filters, url, payloads)
     return result
+
+
+def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bool:
+    """Have we already seen past the closest upcoming day?"""
+    today = today or japan_today()
+    lots = [item for payload in payloads for item in (payload.get("items") or [])]
+    day = nearest_trade_date(lots, today)
+    return bool(day) and has_later_day(lots, day, today)
 
 
 def _write_lots_json(
@@ -312,6 +426,13 @@ def _write_lots_json(
                 "total_pages": result.total_pages,
                 "total_lots": result.total_lots,
                 "truncated": result.truncated,
+                # The day this run is about; `pages` below still holds every lot
+                # the site returned, including the later days we set aside.
+                "trade_date": result.trade_date,
+                "lots_selected": [
+                    (lot.get("lot") or {}).get("number") for lot in result.lots
+                ],
+                "lots_other_days": result.lots_other_days,
                 # untouched, exactly as the API returned them
                 "pages": payloads,
             },
@@ -385,9 +506,15 @@ async def run_fetch(
     max_pages: int = 1,
     sheets: bool = True,
     headless: bool = False,
+    nearest_day_only: bool = True,
 ) -> FetchResult:
     """``fetch`` end to end: lots, then their sheets."""
-    result = await fetch_lots(filters, max_pages=max_pages, headless=headless)
+    result = await fetch_lots(
+        filters,
+        max_pages=max_pages,
+        headless=headless,
+        nearest_day_only=nearest_day_only,
+    )
     if sheets:
         await download_sheets(result)
     return result
