@@ -5,9 +5,9 @@ flags below override the common ones for one-off runs.
 
 Examples:
     uv run python -m banzai24 login
-    uv run python -m banzai24 fetch --max-pages 1
+    uv run python -m banzai24 fetch --max-lots 20
     uv run python -m banzai24 fetch --make MAZDA --model CX-30 --year-start 2023
-    uv run python -m banzai24 fetch --max-pages 4 --no-sheets
+    uv run python -m banzai24 fetch --max-lots 80 --no-sheets
     uv run python -m banzai24 fetch --all-days   # don't narrow to the nearest day
     uv run python -m banzai24 fetch --body-model-code DMEJ3P --body-model-code DMEJ3R
 """
@@ -92,8 +92,12 @@ def _build_parser() -> argparse.ArgumentParser:
                             "Saved searches use this so they cannot inherit stray filters.")
         p.add_argument("--dry-run", action="store_true", dest="dry_run",
                        help="Print the search URL and exit without opening a browser")
-        p.add_argument("--max-pages", type=int, default=1,
-                       help="Result pages to fetch (20 lots per page). Default 1.")
+        p.add_argument("--max-lots", type=int, default=fetch.DEFAULT_MAX_LOTS,
+                       dest="max_lots", metavar="N",
+                       help=f"Stop once N lots have been kept — after the day narrowing "
+                            f"and any filters, so N is what you will review and pay to "
+                            f"extract. Pages are turned as needed. "
+                            f"Default {fetch.DEFAULT_MAX_LOTS}.")
         p.add_argument("--no-sheets", action="store_true", help="Skip downloading auction sheets")
         p.add_argument("--all-days", action="store_true", dest="all_days",
                        help="Keep every auction day the search returns. By default a run "
@@ -139,7 +143,7 @@ def main() -> None:
         result = asyncio.run(
             fetch.run_fetch(
                 filters,
-                max_pages=args.max_pages,
+                max_lots=args.max_lots,
                 sheets=not args.no_sheets,
                 headless=args.headless,
                 nearest_day_only=not args.all_days,
@@ -160,9 +164,11 @@ def main() -> None:
         print("Note: no upcoming auction day in these results — kept every lot. "
               "(Expected for --source archive.)")
     if result.truncated:
+        knob = "raise --max-lots" if result.truncated_by == "--max-lots" else "narrow the search"
         print(
-            f"Note: {result.total_pages} pages available "
-            f"({result.total_lots} lots) — raise --max-pages to get the rest."
+            f"Note: stopped by {result.truncated_by} with "
+            f"{result.total_pages} pages ({result.total_lots} lots) available — "
+            f"{knob} to get the rest."
         )
 
 

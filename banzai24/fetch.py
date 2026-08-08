@@ -43,6 +43,16 @@ IMAGE_DELAY_S = 0.2
 
 RESPONSE_TIMEOUT_MS = 30_000
 
+# One page of results, which is what a page-count limit used to buy.
+DEFAULT_MAX_LOTS = 20
+
+# `--max-lots` bounds the lots kept, so on its own it cannot bound the crawl: a
+# filter that matches nothing would page to the end of the result set looking
+# for lots it will never find. The day narrowing normally stops long before
+# this; --all-days plus a narrow filter is the case that needs a floor under it.
+# Hitting it is reported, never silent.
+PAGE_SAFETY_LIMIT = 25
+
 # The first page waits far longer than the rest, because it may be waiting for a
 # human. banzai24's session does not survive the browser closing (its auth is
 # bound to the browser lifetime, and only Chrome's "continue where you left off"
@@ -131,6 +141,37 @@ def has_later_day(lots: list[dict], day: str, today: date | None = None) -> bool
 
 
 @dataclass
+class Selection:
+    """What a set of payloads yields, once the day and the filter are applied.
+
+    Computed after every page so the paging loop and the finished run judge
+    "how many lots do we have" by exactly the same rule.
+    """
+
+    fetched: list[dict]      # everything the site returned
+    on_day: list[dict]       # …narrowed to the closest upcoming day
+    kept: list[dict]         # …and matching the lot filter
+    rejected: list[dict]     # on the day, but filtered out
+    day: str | None
+
+
+def select(
+    payloads: list[dict],
+    today: date | None = None,
+    nearest_day_only: bool = True,
+    lots_filter: LotFilters | None = None,
+) -> Selection:
+    """Apply the day narrowing and then the lot filter, in that order."""
+    fetched = [item for payload in payloads for item in (payload.get("items") or [])]
+    day = None
+    on_day = fetched
+    if nearest_day_only:
+        on_day, day = lots_on_nearest_day(fetched, today or japan_today())
+    kept, rejected = lot_filters_mod.split(on_day, lots_filter or LotFilters())
+    return Selection(fetched=fetched, on_day=on_day, kept=kept, rejected=rejected, day=day)
+
+
+@dataclass
 class FetchResult:
     run_dir: Path
     lots: list[dict]
@@ -143,7 +184,8 @@ class FetchResult:
     sheets_missing: int = 0
     trade_date: str | None = None      # the day we narrowed to, if we did
     lots_other_days: int = 0           # fetched, then set aside as later/past
-    lots_filtered_out: int = 0         # fetched, then rejected by LotFilters
+    lots_filtered_out: int = 0         # on the day, then rejected by LotFilters
+    truncated_by: str | None = None    # "--max-lots" | "page safety limit"
 
     def summary(self) -> str:
         scope = f" on {self.trade_date}" if self.trade_date else ""
@@ -160,7 +202,7 @@ class FetchResult:
         if self.sheets_missing:
             bits.append(f"{self.sheets_missing} lots have no sheet")
         if self.truncated:
-            bits.append("TRUNCATED by --max-pages")
+            bits.append(f"TRUNCATED by {self.truncated_by or 'the page limit'}")
         return ", ".join(bits) + f" -> {self.run_dir}"
 
 
@@ -333,7 +375,7 @@ async def _await_first_page(page: Page, headless: bool) -> dict:
 
 async def fetch_lots(
     filters: AuctionFilters | None = None,
-    max_pages: int = 1,
+    max_lots: int = DEFAULT_MAX_LOTS,
     run_dir: Path | None = None,
     headless: bool = False,
     nearest_day_only: bool = True,
@@ -350,6 +392,13 @@ async def fetch_lots(
     chosen from everything on offer, and if nothing on it matches, the run is
     empty — the question being answered is "what should I look at for the next
     auction", so a match three weeks out is not a better answer than none.
+
+    ``max_lots`` bounds **the lots the run keeps**, not the lots it reads. Those
+    are the ones that go on to cost a sheet download and a paid extraction, and
+    they are what a page count was always a clumsy proxy for: with a filter on,
+    one page might yield twenty of them or none. So the run keeps turning pages
+    until it has ``max_lots`` of them, the day is exhausted, or the safety limit
+    below stops it.
     """
     filters = filters or config.DEFAULT_FILTERS
     lots_filter = lots_filter or LotFilters()
@@ -373,28 +422,29 @@ async def fetch_lots(
 
         total_pages = await _dom_total_pages(page)
 
-        wanted = min(total_pages, max_pages)
-        for number in range(2, wanted + 1):
-            if nearest_day_only and _nearest_day_complete(payloads, today):
+        hard_stop = min(total_pages, PAGE_SAFETY_LIMIT)
+        for number in range(2, hard_stop + 1):
+            if _enough(payloads, max_lots, today, nearest_day_only, lots_filter):
                 break
             await asyncio.sleep(PAGE_DELAY_S)
             payloads.append(await _goto_page(page, number))
 
-    fetched = [item for payload in payloads for item in (payload.get("items") or [])]
-
-    day = None
-    on_day = fetched
-    if nearest_day_only:
-        on_day, day = lots_on_nearest_day(fetched, today)
-
-    lots, rejected = lot_filters_mod.split(on_day, lots_filter)
+    chosen = select(payloads, today, nearest_day_only, lots_filter)
+    lots = chosen.kept[:max_lots]
 
     # Page 1 is server-rendered and carries no totals; any later page came from
     # the API and does. Prefer the API's numbers when we have them, so the
     # summary doesn't report page 1's item count as the whole result set.
     api_pagination = next((p["pagination"] for p in payloads if p.get("pagination")), {})
-    total_lots = int(api_pagination.get("total") or 0) or len(fetched)
+    total_lots = int(api_pagination.get("total") or 0) or len(chosen.fetched)
     total_pages = int(api_pagination.get("totalPages") or 0) or total_pages
+
+    truncated_by = _truncation_reason(
+        kept=len(chosen.kept),
+        max_lots=max_lots,
+        unread_pages=total_pages > len(payloads),
+        day_done=bool(chosen.day) and _nearest_day_complete(payloads, today),
+    )
 
     result = FetchResult(
         run_dir=run_dir,
@@ -402,16 +452,52 @@ async def fetch_lots(
         pages_fetched=len(payloads),
         total_pages=total_pages,
         total_lots=total_lots,
-        # Stopping early on purpose is not truncation: everything we wanted is
-        # here. Only an unread page that could still hold the chosen day counts.
-        truncated=total_pages > len(payloads)
-        and not (day and _nearest_day_complete(payloads, today)),
-        trade_date=day,
-        lots_other_days=len(fetched) - len(on_day),
-        lots_filtered_out=len(rejected),
+        truncated=truncated_by is not None,
+        truncated_by=truncated_by,
+        trade_date=chosen.day,
+        lots_other_days=len(chosen.fetched) - len(chosen.on_day),
+        lots_filtered_out=len(chosen.rejected),
     )
     _write_lots_json(result, filters, url, payloads, lots_filter)
     return result
+
+
+def _enough(
+    payloads: list[dict],
+    max_lots: int,
+    today: date | None = None,
+    nearest_day_only: bool = True,
+    lots_filter: LotFilters | None = None,
+) -> bool:
+    """Is there any reason left to turn another page?
+
+    Two reasons to stop, and they are independent: we have the lots we asked
+    for, or the day we care about is over. The second is why a filter matching
+    nothing still terminates quickly instead of chasing ``max_lots`` to the end
+    of the result set.
+    """
+    if len(select(payloads, today, nearest_day_only, lots_filter).kept) >= max_lots:
+        return True
+    return nearest_day_only and _nearest_day_complete(payloads, today)
+
+
+def _truncation_reason(
+    kept: int, max_lots: int, unread_pages: bool, day_done: bool
+) -> str | None:
+    """Why the run stopped short, or ``None`` if it did not.
+
+    Stopping because the day is complete is not truncation — everything the run
+    wanted is in hand, and saying otherwise would train you to ignore the
+    warning. Only a count cutting the results short, or the safety limit firing,
+    leaves something behind.
+    """
+    if kept > max_lots:
+        return "--max-lots"
+    if not unread_pages or day_done:
+        return None
+    if kept >= max_lots:
+        return "--max-lots"
+    return f"the {PAGE_SAFETY_LIMIT}-page safety limit"
 
 
 def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bool:
@@ -526,7 +612,7 @@ async def check_session(filters: AuctionFilters | None = None, headless: bool = 
 
 async def run_fetch(
     filters: AuctionFilters | None = None,
-    max_pages: int = 1,
+    max_lots: int = DEFAULT_MAX_LOTS,
     sheets: bool = True,
     headless: bool = False,
     nearest_day_only: bool = True,
@@ -535,7 +621,7 @@ async def run_fetch(
     """``fetch`` end to end: lots, then their sheets."""
     result = await fetch_lots(
         filters,
-        max_pages=max_pages,
+        max_lots=max_lots,
         headless=headless,
         nearest_day_only=nearest_day_only,
         lots_filter=lots_filter,

@@ -5,8 +5,8 @@
 # Edit the filters below; they are the whole configuration for this car.
 # Extra flags are passed straight through, so:
 #
-#   ./banzai24/searches/mazda-cx30.sh                     # 1 page + sheets
-#   ./banzai24/searches/mazda-cx30.sh --max-pages 5       # more pages
+#   ./banzai24/searches/mazda-cx30.sh                     # up to 20 lots + sheets
+#   ./banzai24/searches/mazda-cx30.sh --max-lots 60       # more lots
 #   ./banzai24/searches/mazda-cx30.sh --no-sheets         # lots only, faster
 #   ./banzai24/searches/mazda-cx30.sh --source archive    # completed sales
 #   ./banzai24/searches/mazda-cx30.sh --dry-run           # just print the URL

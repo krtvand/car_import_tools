@@ -261,7 +261,7 @@ This is better than reimplementing the API client, not merely more convenient:
     the status check to reject it.
   - **Paging stops as soon as a later day appears.** Lots come back in trade-date
     order, so a second day showing up means the nearest one is complete. That is
-    a deliberate stop, not truncation, so it does not raise the `--max-pages`
+    a deliberate stop, not truncation, so it does not raise the truncation
     warning.
   - No upcoming day at all (any `archive` search) is a no-op that keeps every
     lot, rather than a run that silently produces zero.
@@ -288,6 +288,19 @@ but they keep sheet downloads and paid extraction off unwanted lots.
   returns nothing rather than reaching forward to the DMEJ3P on 08-12.
   Page-turning follows the same rule — a day emptied by the filter still stops
   paging. `--all-days` is the way to look further out.
+
+**`--max-lots` replaces `--max-pages`** (default 20, one page's worth). It bounds
+the lots the run **keeps** — after the day narrowing and the filters — because
+those are the ones that cost a sheet download and a paid extraction. A page count
+was only ever a proxy for that, and a bad one once filters exist: one page can
+yield twenty keepers or none. Pages are turned as needed until the count is met
+or the day is exhausted.
+
+Since the count is of kept lots, it cannot bound the crawl on its own — a filter
+matching nothing would page to the end looking for lots it will never find. The
+day narrowing normally stops things long before that; `PAGE_SAFETY_LIMIT` (25
+pages) is the floor under the `--all-days` case, and firing it is reported in the
+summary rather than silently capping the run.
 - Downloads each `auctImage` to `sheets/<lot_number>.jpg` with plain `httpx` —
   **no browser or auth needed**, since those URLs are public. Skips any lot whose
   hash already has an extraction row.
@@ -297,7 +310,7 @@ but they keep sheet downloads and paid extraction off unwanted lots.
 Everything downstream reads from `lots.json` and `sheets/`, so re-normalizing,
 re-extracting and re-reporting never touch the site or the session.
 
-**Test:** `fetch --max-pages 1` produces a run directory with `lots.json` and N
+**Test:** `fetch --max-lots 20` produces a run directory with `lots.json` and N
 sheet images; the saved JSON becomes the Phase 2 fixture.
 
 ---

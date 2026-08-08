@@ -230,6 +230,88 @@ def test_a_filter_never_makes_the_run_turn_another_page():
     assert fetch._nearest_day_complete([page1], TODAY) is True
 
 
+# --- --max-lots: bounding the run by lots kept, not pages read ---------------
+
+def _page(*lots: dict) -> dict:
+    return {"items": list(lots)}
+
+
+def test_select_applies_the_day_then_the_filter():
+    page = _page(
+        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3R"},
+        _dated("b", "2026-08-11") | {"bodyModelCode": "DMEJ3P"},
+        _dated("c", "2026-08-12") | {"bodyModelCode": "DMEJ3R"},
+    )
+    chosen = fetch.select([page], TODAY, True, LotFilters(body_model_code=("DMEJ3R",)))
+
+    assert chosen.day == "2026-08-11"
+    assert len(chosen.fetched) == 3
+    assert len(chosen.on_day) == 2            # 08-12 dropped by the day
+    assert [l["lot"]["number"] for l in chosen.kept] == ["a"]
+    assert len(chosen.rejected) == 1          # the DMEJ3P on the same day
+
+
+def test_paging_stops_once_enough_lots_are_kept():
+    page = _page(*[_dated(f"l{i}", "2026-08-11") for i in range(5)])
+    assert fetch._enough([page], max_lots=5, today=TODAY) is True
+    assert fetch._enough([page], max_lots=6, today=TODAY) is False
+
+
+def test_the_count_is_of_kept_lots_not_lots_read():
+    """A page of twenty the filter rejects is not progress toward --max-lots."""
+    page = _page(*[
+        _dated(f"l{i}", "2026-08-11") | {"bodyModelCode": "DMEJ3P"} for i in range(20)
+    ])
+    wanted = LotFilters(body_model_code=("DMEJ3R",))
+    assert fetch._enough([page], max_lots=3, today=TODAY, lots_filter=wanted) is False
+
+
+def test_an_exhausted_day_stops_paging_even_short_of_the_count():
+    """Otherwise a filter matching nothing would chase max_lots to the last page."""
+    page = _page(
+        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3P"},
+        _dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3P"},
+    )
+    wanted = LotFilters(body_model_code=("DMEJ3R",))
+    assert fetch._enough([page], max_lots=50, today=TODAY, lots_filter=wanted) is True
+
+
+def test_all_days_leaves_only_the_count_to_stop_the_run():
+    page = _page(_dated("a", "2026-08-11"), _dated("b", "2026-08-12"))
+    assert fetch._enough([page], max_lots=50, today=TODAY, nearest_day_only=False) is False
+    assert fetch._enough([page], max_lots=2, today=TODAY, nearest_day_only=False) is True
+
+
+def test_a_completed_day_is_not_truncation():
+    """Everything wanted is in hand — warning here would train you to ignore it."""
+    assert fetch._truncation_reason(kept=3, max_lots=20, unread_pages=True, day_done=True) is None
+
+
+def test_unread_pages_alone_are_not_truncation_once_the_day_is_done():
+    assert fetch._truncation_reason(kept=3, max_lots=20, unread_pages=False, day_done=False) is None
+
+
+def test_more_kept_than_asked_for_is_truncation_by_max_lots():
+    assert fetch._truncation_reason(kept=25, max_lots=20, unread_pages=False, day_done=True) == "--max-lots"
+
+
+def test_stopping_on_the_count_with_pages_left_is_truncation_by_max_lots():
+    assert fetch._truncation_reason(kept=20, max_lots=20, unread_pages=True, day_done=False) == "--max-lots"
+
+
+def test_the_safety_limit_is_named_when_it_is_what_stopped_the_run():
+    reason = fetch._truncation_reason(kept=2, max_lots=20, unread_pages=True, day_done=False)
+    assert reason == f"the {fetch.PAGE_SAFETY_LIMIT}-page safety limit"
+
+
+def test_summary_names_what_truncated_the_run(tmp_path):
+    result = FetchResult(
+        run_dir=tmp_path, lots=[_dated("a", "2026-08-11")], pages_fetched=2,
+        total_pages=9, total_lots=170, truncated=True, truncated_by="--max-lots",
+    )
+    assert "TRUNCATED by --max-lots" in result.summary()
+
+
 def test_summary_names_the_day_and_the_lots_set_aside(tmp_path):
     result = FetchResult(
         run_dir=tmp_path, lots=[_dated("a", "2026-08-11")], pages_fetched=1,
