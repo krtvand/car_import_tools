@@ -141,6 +141,9 @@ Fields present, with the Japanese labels to key the prompt on:
 - `注意事項欄` warnings (`ﾋﾟSD欠品` = navi SD card missing)
 - `検査員記入欄` inspector notes (`ハンドルすれ` = steering wheel scuffed)
 - `セールスポイント` equipment highlights · `純正装備` factory equipment
+- `車歴` vehicle history — `自家用` private use, `レンタカー`/`レンタ` ex-rental,
+  `教習車` driving school, company/lease wording otherwise
+- drivetrain, printed near the model code as `2WD` / `4WD` (sometimes `FF`/`FR`)
 - damage map with codes placed on a car diagram (`A1`, `U1`)
 - code legend printed on every sheet: `A`=scratch `U`=dent `B`=dent w/ scratch
   `P`=needs paint `W`=repair marks `S`=rust `C`=corrosion/hole
@@ -389,12 +392,14 @@ class SheetExtraction(SQLModel, table=True):
     sheet_grade: str | None      # cross-check against grade_origin
     sheet_mileage_km: int | None # exact — 15415 vs API's 15000
     chassis_full: str | None     # unmasked
-    shaken_expiry: str | None
-    damage_marks: str | None     # JSON: [{panel, code, note}]
+    damage_marks: str | None     # JSON: [{panel, code}]
     equipment: str | None        # JSON list
     warnings_ja: str | None      # 注意事項欄
     inspector_notes_ja: str | None
     inspector_notes_en: str | None
+    drivetrain: str | None       # "2WD" | "4WD" | … as printed
+    rental_car_note: str | None  # "レンタカー" if ex-rental, else None
+    private_car_note: str | None # "車歴: 自家用" if private-use, else None
     confidence: float | None
 
 
@@ -406,6 +411,13 @@ class BidRecord(SQLModel, table=True):
     outcome: str | None          # won|lost|error|unknown
     note: str | None
 ```
+
+The two `車歴` fields are mutually exclusive and both nullable: an ex-rental gets
+`rental_car_note` set and `private_car_note` null; a private-use car the reverse;
+a company/lease car or an unreadable field leaves **both** null. Encoding it as
+two nullable notes rather than one enum keeps the printed wording verbatim —
+`レンタカー` and `レンタ` both occur — and makes "the sheet didn't say" distinct
+from "the sheet said neither", which a single `history` column would blur.
 
 Two tables so a re-extraction rewrites only the AI-derived half. `BidRecord` is
 append-only, written *after* a bid by Phase 5 — it exists for auditability and
