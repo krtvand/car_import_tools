@@ -488,22 +488,79 @@ Operational details:
 - **Send at native 800×800.** That's the maximum banzai24 serves — well under
   Opus 5's 2576px ceiling, so there's no downscaling decision to make, and the
   digital-render quality means it's sufficient.
-- **Cost is lower than first estimated.** 800×800 ≈ 850 image tokens, not the
-  ~4.8k a full-resolution photo would cost. With prompt and output that's
-  **≈ $0.02/sheet** on `claude-opus-5`, or **≈ $0.01 batched**. A 200-lot
-  backlog is a couple of dollars — cheap enough that re-extracting everything
-  after a prompt improvement is not a budget decision.
-- **Batch API** (`client.messages.batches`, `custom_id = lot_number`) for
-  backlogs at 50% off; sync path for single lots.
+- **Cost: ≈ $0.015/sheet warm, measured — better than the $0.02 estimated.**
+  Real usage from a live run: **860 input tokens** (the image, as predicted —
+  800×800 is ~850, not the ~4.8k a full-resolution photo would cost), **3,432
+  cached prompt tokens**, **345 output tokens**. Thinking is on by default on
+  Claude Opus 5 (unlike Opus 4.8, where omitting the parameter meant no
+  thinking), but at `effort: medium` on a task this scoped it barely spends —
+  345 output tokens total. The first sheet of a run pays the cache write
+  (≈ $0.035); every one after it reads the prompt at a tenth of input price.
+  A 200-lot backlog is ≈ $3.
+- **The prompt is cached, the image is not.** The instructions are identical for
+  every sheet and comfortably over Claude Opus 5's 512-token cache minimum, so
+  they go in `system` behind a cache breakpoint and the image goes after them.
+  Caching is a prefix match, so that order is what makes it work at all — every
+  sheet after the first reads the prompt at ~10% of input price.
+- **`max_tokens` bounds thinking and answer together.** 8000, almost all of it
+  headroom: a truncated extraction is worse than a slow one, and hitting the cap
+  raises rather than silently returning half a sheet.
 - **Idempotency by hash**; `--force` re-runs.
-- **Cross-checks**, each a cheap signal on both the pipeline and the lot:
-  `sheet_grade` vs `grade_origin` (should match exactly — a mismatch means a
-  misread or a relisted car), and `sheet_mileage_km` vs `mileage_km`
-  **rounded to the nearest 1,000** (the API rounds; a naive comparison flags
-  everything).
+- **Cross-checks — four, each a cheap signal on both the pipeline and the lot:**
+  - `sheet_grade` vs `grade_origin` — should match exactly; a mismatch means a
+    misread or a relisted car.
+  - `sheet_mileage_km` vs `mileage_km` **rounded to the nearest 1,000**. The API
+    rounds and the sheet does not (15,415 vs 15,000); a naive comparison flags
+    every lot and the signal is worth nothing.
+  - **`chassis_full` vs the masked `body_number`, position by position.** The API
+    publishes `DMEJ3P-10**52` and the sheet prints `DMEJ3P-103452`, so every
+    unmasked character must agree. This is the strongest of the four: the chassis
+    is the field with the most value and the least redundancy, and nothing else
+    would catch a hallucinated one.
+  - **`first_registration_raw` vs `registration_year`/`_month`**, via
+    `parse_era_date`. The sheet prints `R5年1月` and the API says 2023/1 — which
+    is what that function was written for. The month is only compared when the
+    API has one, since it is null on most lots.
 
 Results are appended to `runs/<run>/extractions.jsonl` as they land, as well as
-written to the DB.
+written to the DB — written per sheet rather than batched at the end, because
+these cost real money and a crash twenty sheets in should not discard twenty
+sheets' worth of paid extraction.
+
+**Two columns the table above was missing**, both for fields the prose already
+promised the vision step would recover:
+
+- **`shaken_expiry_raw`.** 車検 was listed as a reason the extraction exists but
+  had no column. A blank box is the valuable case — no shaken means the buyer
+  pays to put the car back on the road — so it is stored raw and nullable, and a
+  null means "the sheet said nothing", never "the model gave up".
+- **`first_registration_raw` + `_year` + `_month`.** The raw form is kept
+  alongside the parsed one for the same reason the 車歴 notes are: it is what the
+  sheet actually says. The parsed pair is what the fourth cross-check compares.
+
+**Sheet layouts vary by auction house, and the prompt survives it.** The fixture
+(CAA Chubu) has separate `外装`/`内装` boxes and a `検査員記入欄`; lot 35159
+(GOプライムコーナー) has no exterior grade at all, labels its interior box
+`内装補助評価`, and calls the notes `検査員報告`. The extraction handled both and
+returned `exterior_grade: None` for the sheet that genuinely has no such box —
+which is the "null over guesses" rule doing exactly its job. It also returned a
+damage code not in the legend (`トビA`, a stone chip) verbatim rather than forcing
+it into a known code.
+
+One open semantic question this surfaced: that sheet labels the box
+`車歴(自家用以外は記入)` — "fill in only if **not** private use" — and leaves it
+blank. Blank therefore *means* private use, but the extraction returns null
+because nothing is printed. Null is defensible ("the sheet didn't say") and is
+what the current prompt asks for, but it is a third case the two-nullable-notes
+design did not anticipate. Left as-is deliberately; changing it is a decision
+about what the column means, not a bug fix.
+
+**Batch API is not implemented yet.** The sync path is complete and idempotent,
+so a backlog runs today at full price; `client.messages.batches` with
+`custom_id = lot_number` halves that and is the obvious next increment. It needs
+the schema passed as `output_config.format` rather than through
+`messages.parse()`, which is why it is a separate piece of work rather than a
+flag.
 
 **Test:** golden-file test over the saved fixture sheet. Known-good values from
 lot 33152: grade `5`, exterior `A`, interior `B`, mileage `15415`, chassis

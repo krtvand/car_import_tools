@@ -180,6 +180,71 @@ def test_normalizing_a_run_writes_both_outputs_and_says_so(temp_db, run_dir):
     assert "lots normalized" in result.summary()
 
 
+# --- storing extractions -----------------------------------------------------
+
+def _extraction_row(**overrides) -> dict:
+    row = {
+        "lot_number": "47-1312-35159",
+        "extracted_at": datetime(2026, 8, 9, tzinfo=timezone.utc),
+        "model_id": "claude-opus-5",
+        "sheet_sha256": "abc",
+        "raw_json": "{}",
+        "sheet_grade": "4.5",
+        "sheet_mileage_km": 15415,
+        "chassis_full": "DMEJ3P-103452",
+        "confidence": 0.95,
+    }
+    return {**row, **overrides}
+
+
+def test_writing_an_extraction_marks_its_lot_as_read(temp_db):
+    db.upsert_lots([_row(sheet_sha256="abc")])
+    assert db.upsert_extraction(_extraction_row()) is True
+
+    assert db.all_lots()[0].sheet_status == "extracted"
+    assert db.extraction_for("47-1312-35159").chassis_full == "DMEJ3P-103452"
+
+
+def test_the_same_image_is_never_paid_for_twice(temp_db):
+    db.upsert_lots([_row(sheet_sha256="abc")])
+    db.upsert_extraction(_extraction_row(sheet_sha256="abc"))
+
+    assert db.extraction_is_current("47-1312-35159", "abc") is True
+
+
+def test_a_re_photographed_sheet_counts_as_new_work(temp_db):
+    """Different hash, different image — the old extraction describes something
+    else, so it must be read again."""
+    db.upsert_lots([_row(sheet_sha256="abc")])
+    db.upsert_extraction(_extraction_row(sheet_sha256="abc"))
+
+    assert db.extraction_is_current("47-1312-35159", "different") is False
+
+
+def test_a_lot_never_extracted_is_not_current(temp_db):
+    assert db.extraction_is_current("47-1312-35159", "abc") is False
+    assert db.extraction_is_current("47-1312-35159", None) is False
+
+
+def test_re_extracting_replaces_nulls_instead_of_keeping_stale_values(temp_db):
+    """Unlike lot upserts: a field the new read did not find means the sheet
+    does not say it, and blending two readings would invent a third."""
+    db.upsert_lots([_row(sheet_sha256="abc")])
+    db.upsert_extraction(_extraction_row(warnings_ja="ﾋﾟSD欠品"))
+    db.upsert_extraction(_extraction_row(warnings_ja=None))
+
+    assert db.extraction_for("47-1312-35159").warnings_ja is None
+
+
+def test_a_failed_sheet_is_recorded_and_left_out_of_the_queue(temp_db):
+    db.upsert_lots([_row(sheet_path="runs/x/1.jpg", sheet_status="pending")])
+    db.mark_sheet_status("47-1312-35159", "failed")
+
+    assert db.pending_sheets() == []
+    assert [l.lot_number for l in db.pending_sheets(include_failed=True)] \
+        == ["47-1312-35159"]
+
+
 # --- schema healing ----------------------------------------------------------
 
 def test_a_column_added_after_the_table_was_created_is_backfilled(temp_db):

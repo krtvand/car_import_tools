@@ -109,6 +109,61 @@ def upsert_lots(rows: list[dict], now: datetime | None = None) -> tuple[int, int
     return inserted, len(rows) - inserted
 
 
+def extraction_is_current(lot_number: str, sheet_sha256: str | None) -> bool:
+    """Has *this exact image* already been read by the model?
+
+    The dedup key is the image hash rather than the lot, so a re-photographed or
+    re-listed sheet is correctly treated as new work while a re-run over
+    unchanged sheets costs nothing. This is the guard that makes `extract` safe
+    to run repeatedly.
+    """
+    if not sheet_sha256:
+        return False
+    with Session(_engine) as session:
+        existing = session.get(SheetExtraction, lot_number)
+        return existing is not None and existing.sheet_sha256 == sheet_sha256
+
+
+def upsert_extraction(row: dict) -> bool:
+    """Write one extraction and flag its lot as read. ``True`` if it was new.
+
+    Unlike :func:`upsert_lot` this replaces every field, including the null ones:
+    a field the model no longer reports means the new read did not find it, and
+    carrying the old value forward would silently blend two different readings of
+    the sheet into one row.
+    """
+    with Session(_engine) as session:
+        existing = session.get(SheetExtraction, row["lot_number"])
+        if existing is None:
+            session.add(SheetExtraction(**row))
+            inserted = True
+        else:
+            for key, value in row.items():
+                setattr(existing, key, value)
+            session.add(existing)
+            inserted = False
+
+        if lot := session.get(AuctionLot, row["lot_number"]):
+            lot.sheet_status = "extracted"
+            session.add(lot)
+        session.commit()
+    return inserted
+
+
+def mark_sheet_status(lot_number: str, status: str) -> None:
+    """Record that a sheet could not be read, so a re-run can find it again."""
+    with Session(_engine) as session:
+        if lot := session.get(AuctionLot, lot_number):
+            lot.sheet_status = status
+            session.add(lot)
+            session.commit()
+
+
+def extraction_for(lot_number: str) -> SheetExtraction | None:
+    with Session(_engine) as session:
+        return session.get(SheetExtraction, lot_number)
+
+
 def all_lots() -> list[AuctionLot]:
     with Session(_engine) as session:
         return list(session.exec(select(AuctionLot).order_by(AuctionLot.lot_number)))
@@ -131,13 +186,20 @@ def lots_on(trade_date) -> list[AuctionLot]:
         )
 
 
-def pending_sheets() -> list[AuctionLot]:
-    """Lots with a downloaded sheet that nothing has read yet — Phase 3's queue."""
+def pending_sheets(include_failed: bool = False) -> list[AuctionLot]:
+    """Lots with a downloaded sheet that nothing has read yet — Phase 3's queue.
+
+    ``failed`` lots are excluded by default so a re-run does not keep paying to
+    retry a sheet that is genuinely unreadable, but they are not lost either:
+    most failures are transient (a rate limit, a dropped connection), so
+    ``include_failed`` puts them back in the queue on request.
+    """
+    wanted = ["pending", "failed"] if include_failed else ["pending"]
     with Session(_engine) as session:
         return list(
             session.exec(
                 select(AuctionLot)
-                .where(AuctionLot.sheet_status == "pending")
+                .where(AuctionLot.sheet_status.in_(wanted))
                 .where(AuctionLot.sheet_path != None)  # noqa: E711 — SQL, not Python
                 .order_by(AuctionLot.lot_number)
             )

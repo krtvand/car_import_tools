@@ -18,6 +18,13 @@ re-running it rather than by fetching anything again:
     uv run python -m banzai24 normalize                  # the most recent run
     uv run python -m banzai24 normalize runs/2026-08-08_234439_MAZDA-CX-30
     uv run python -m banzai24 normalize --all            # incl. the later days
+
+`extract` reads the downloaded sheets with Claude. It is the only step that
+costs money (~$0.03/sheet), so it prints the bill first and takes --limit:
+
+    uv run python -m banzai24 extract --dry-run          # what would be read
+    uv run python -m banzai24 extract --limit 1          # try one
+    uv run python -m banzai24 extract                    # the whole queue
 """
 from __future__ import annotations
 
@@ -26,7 +33,7 @@ import asyncio
 import dataclasses
 from pathlib import Path
 
-from . import config, fetch, normalize, session
+from . import config, db, fetch, normalize, session
 from .lot_filters import LotFilters
 
 
@@ -89,6 +96,26 @@ def _build_parser() -> argparse.ArgumentParser:
                            "data, and re-reading them costs nothing.")
     norm.add_argument("--no-db", action="store_true", help="Write lots.csv only")
     norm.add_argument("--no-csv", action="store_true", help="Write to the database only")
+
+    ext = sub.add_parser(
+        "extract",
+        help="Read pending auction sheets with Claude (costs money — see --limit)",
+    )
+    ext.add_argument("run_dir", nargs="?", metavar="RUN_DIR",
+                     help="Run directory to append extractions.jsonl to. "
+                          "Defaults to the most recent one.")
+    ext.add_argument("--limit", type=int, metavar="N",
+                     help="Read at most N sheets. Use this the first time.")
+    ext.add_argument("--force", action="store_true",
+                     help="Re-read sheets already extracted at the same image hash. "
+                          "For after a prompt change, when the image is unchanged "
+                          "but what we can get out of it is not.")
+    ext.add_argument("--retry-failed", action="store_true", dest="retry_failed",
+                     help="Put previously failed sheets back in the queue. Most "
+                          "failures are transient.")
+    ext.add_argument("--dry-run", action="store_true", dest="dry_run",
+                     help="List what would be read, and the estimated cost, "
+                          "without calling the API.")
 
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
@@ -168,6 +195,39 @@ def main() -> None:
         print(result.summary())
         for problem in result.problems:
             print(f"  skipped: {problem}")
+        return
+
+    if args.command == "extract":
+        from . import sheets
+
+        db.init_db()
+        lots = db.pending_sheets(include_failed=args.retry_failed)
+        if args.force:
+            lots = [lot for lot in db.all_lots() if lot.sheet_path]
+        if args.limit:
+            lots = lots[: args.limit]
+
+        if not lots:
+            raise SystemExit(
+                "No sheets waiting. Run `fetch` to download some, or `extract "
+                "--force` to re-read ones already done."
+            )
+
+        # Say the price before spending it. ~$0.03/sheet is the arithmetic in
+        # sheets.py, not a quote — the real figure lands in the summary.
+        print(f"{len(lots)} sheet(s) to read with {sheets.MODEL} "
+              f"(effort={sheets.EFFORT}) — roughly ${0.03 * len(lots):.2f}")
+        if args.dry_run:
+            for lot in lots:
+                print(f"  {lot.lot_short}  {lot.mark} {lot.model}  {lot.sheet_path}")
+            print("Dry run — nothing sent, nothing spent.")
+            return
+
+        run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
+        result = sheets.run_extract(lots, run_dir=run_dir, force=args.force)
+        print(result.summary())
+        for mismatch in result.mismatches:
+            print(f"  cross-check: {mismatch}")
         return
 
     filters = _filters_from_args(args)

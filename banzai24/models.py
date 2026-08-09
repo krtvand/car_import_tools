@@ -102,6 +102,16 @@ class SheetExtraction(SQLModel, table=True):
     inspector_notes_en: str | None = None
     drivetrain: str | None = None       # "2WD" | "4WD" | … as printed
 
+    # 初度登録 and 車検 — on the sheet, absent from the list API. The raw form is
+    # kept alongside the parsed one because it is what the sheet actually says
+    # ("R5年1月"); the parsed year/month is what cross-checks and queries use.
+    # A null shaken expiry is a fact, not a gap: no shaken means the buyer pays
+    # to put the car back on the road.
+    first_registration_raw: str | None = None
+    first_registration_year: int | None = None
+    first_registration_month: int | None = None
+    shaken_expiry_raw: str | None = None
+
     # 車歴. Mutually exclusive and both nullable: an ex-rental sets the first and
     # leaves the second null, a private-use car the reverse, and a company car or
     # an unreadable field leaves both null. Two nullable notes rather than one
