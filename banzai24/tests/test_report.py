@@ -248,6 +248,24 @@ def test_a_lot_without_a_sheet_says_so_rather_than_rendering_a_gap():
     assert "<img" not in html
 
 
+def test_vehicle_history_is_glossed_in_english_beside_the_japanese():
+    """車歴 is the one field where the printed word alone means nothing to a
+    non-Japanese reader — 自家用 is good news, レンタカー is not."""
+    html = _render([_view(extraction=_extraction())])
+    assert "自家用" in html
+    assert "private use" in html
+
+    rental = _render([_view(extraction=_extraction(
+        private_car_note=None, rental_car_note="レンタカー"))])
+    assert "ex-rental" in rental
+    assert "warn" in rental
+
+
+def test_unknown_history_wording_still_renders_without_a_gloss():
+    html = _render([_view(extraction=_extraction(private_car_note="移動販売車"))])
+    assert re.search(r"移動販売車\s*</dd>", html)   # printed, with no gloss appended
+
+
 def test_japanese_is_escaped_not_mangled():
     """Autoescape must not touch the Japanese, and must still escape markup."""
     view = _view(extraction=_extraction(warnings_ja="<b>取保</b> & 後送"))

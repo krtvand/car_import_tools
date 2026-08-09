@@ -241,14 +241,14 @@
         {% endif %}
 
         {% if view.extraction.inspector_notes_ja %}
-        <dt>検査員記入欄</dt>
+        <dt>Inspector's notes 検査員記入欄</dt>
         <dd class="ja">{{ view.extraction.inspector_notes_ja }}{% if view.extraction.inspector_notes_en %}<span class="note translation">{{ view.extraction.inspector_notes_en }}</span>{% endif %}</dd>
         {% endif %}
 
-        {% if view.extraction.rental_car_note or view.extraction.private_car_note %}
-        <dt>車歴</dt>
-        <dd class="ja {{ 'warn' if view.extraction.rental_car_note }}">
-          {{ view.extraction.rental_car_note or view.extraction.private_car_note }}
+        {% if view.history_note %}
+        <dt>Vehicle history 車歴</dt>
+        <dd class="ja {{ 'warn' if view.history_note.rental }}">
+          {{ view.history_note.ja }}{% if view.history_note.en %}<span class="note translation">{{ view.history_note.en }}</span>{% endif %}
         </dd>
         {% endif %}
 

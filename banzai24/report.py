@@ -310,6 +310,24 @@ class LotView:
         return marks
 
     @property
+    def history_note(self) -> dict | None:
+        """``{ja, en, rental}`` for 車歴, or ``None`` if the sheet said neither.
+
+        The two nullable notes collapse to one line here because the card shows
+        one line; ``rental`` keeps the distinction the colour depends on.
+        """
+        if self.extraction is None:
+            return None
+        ja = self.extraction.rental_car_note or self.extraction.private_car_note
+        if not ja:
+            return None
+        return {
+            "ja": ja,
+            "en": sheets.translate_history(ja),
+            "rental": bool(self.extraction.rental_car_note),
+        }
+
+    @property
     def equipment(self) -> list[str]:
         return [str(item) for item in _json_list(self.extraction.equipment if self.extraction else None)]
 

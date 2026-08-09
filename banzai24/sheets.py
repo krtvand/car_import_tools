@@ -62,6 +62,34 @@ DAMAGE_CODES = {
     "欠": "欠品 — part missing",
 }
 
+# 車歴 wording, glossed for the report. The extraction keeps the printed
+# Japanese verbatim, so this matches by substring rather than by equality: a
+# sheet may print 自家用 on its own or inside a longer phrase. Order matters —
+# レンタカー is checked before the レンタ abbreviation it contains.
+HISTORY_TERMS = {
+    "自家用": "private use — one owner's own car, not a rental, lease or fleet car",
+    "レンタカー": "ex-rental",
+    "レンタ": "ex-rental",
+    "教習車": "ex-driving-school car",
+    "リース": "ex-lease",
+    "事業用": "business use — commercially operated",
+    "社用車": "ex-company car",
+    "デモカー": "ex-demonstrator",
+    "官公庁": "ex-government fleet",
+}
+
+
+def translate_history(note: str | None) -> str | None:
+    """English gloss for a 車歴 value, or ``None`` for wording not in the map.
+
+    ``None`` is the honest answer for an unrecognised phrase: the report still
+    prints the Japanese, and a missing gloss is better than a wrong one.
+    """
+    for term, meaning in HISTORY_TERMS.items():
+        if term in (note or ""):
+            return meaning
+    return None
+
 
 class DamageMark(BaseModel):
     """One code placed on the car diagram, e.g. ``A1`` on the right rear."""
