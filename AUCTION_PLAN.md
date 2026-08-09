@@ -189,6 +189,7 @@ banzai24/                 # this project
   templates/      # report.html.j2 — the only template; all CSS inline
   cli.py          # `uv run python -m banzai24 <command>`
   searches/       # one saved search per car — the run configuration
+    daily.sh        # the morning: check, both cars, a report each
     mazda-cx30.sh
     toyota-rav4.sh
 bazaraki.db  auction.db   # both at repo root, so the report can join across them
@@ -767,6 +768,67 @@ the chassis line prints the unmasked number beside the API's `DMEJ3P-10**55`.
 The Cyprus join returned `€21,900 · n=126 · high · ±1y ±15k km` against a
 `¥1,290,000` start — 126 comparable CX-30 adverts is a thick enough sample to
 be worth putting on the page, which was not obvious before it ran.
+
+## The daily run (2026-08-09)
+
+The actual use case: **bid on a RAV4 and a CX-30 most days, so every morning
+needs the analysed lots for each car's closest upcoming auction.**
+`banzai24/searches/daily.sh` is that morning, and it is a script rather than two
+commands typed in a row for one reason:
+
+```bash
+./banzai24/searches/daily.sh              # 20 lots per car + sheets
+./banzai24/searches/daily.sh --headless   # no browser window
+./banzai24/searches/daily.sh --dry-run    # both search URLs, fetch nothing
+```
+
+**Session first, once, before either fetch.** Login is SMS 2FA, so a dead
+session costs a phone round-trip: learning that before the first car costs one
+SMS, learning it between the two costs the same SMS *plus* a half-finished
+morning. The script owns only the running order — each car's filters stay in its
+own saved search, and extra flags pass through to both.
+
+**It fetches and reports; it does not extract.** Reading sheets is the only step
+that costs money, and it is worth deciding on *after* seeing what the morning
+turned up. The reports built by `daily.sh` already carry grades, prices, Cyprus
+comparables and a "sheet pending" badge on every lot — enough to choose what to
+pay to read. The script ends by printing the two commands that finish the job.
+
+Three things this exposed, none of them visible from one car:
+
+- **`check` was broken by the very trap Phase 1 documented.** It waited for a
+  `/lots` response that page 1 never makes, so it timed out against a perfectly
+  healthy session and reported it expired. The fetch path was fixed for this in
+  Phase 1; `check_session` was not, and nothing caught it because nobody runs
+  `check` on its own — until a script made it step one. It now reads page 1 from
+  the hydration state exactly as `fetch_lots` does. **A check whose failure mode
+  is "your session is fine, and I say it is dead" is worse than no check**: it
+  sends you to re-authenticate by SMS for nothing.
+  It also stopped reporting a total it could not know — the SSR payload carries
+  no `pagination` block, so it returns `SessionCheck(lots_on_first_page, pages)`
+  and says "20 lots on page 1 of 17" rather than multiplying to a fake total.
+- **Extraction results were being written to the wrong run directory.** The
+  queue is global — every pending sheet in the database — but every result was
+  appended to whichever single run directory the caller passed. One car a day
+  hides this completely; two runs in one morning means one run's
+  `extractions.jsonl` describes lots it never saw and the other is missing its
+  own. The database was right either way, which is exactly why it could go
+  unnoticed: the damage was only to the run directory, the artifact whose whole
+  job is to be an honest record of one run. Results now route per lot via
+  `sheets.run_dir_of`, read off `sheet_path`.
+- **`extract` with no arguments pays to read history.** The queue is every
+  pending sheet ever downloaded, so on day three it includes lots that traded
+  last week. `--today` scopes it to sheets from today's runs, and a run
+  directory scopes it to one car. On the first real morning that was the
+  difference between $0.30 and $0.21, and between reading stale lots and
+  current ones.
+
+`--today` is on both `extract` and `report` for the same reason: **one morning
+is now several runs**, so `latest_run()` answers the wrong question — it would
+report on the second car and silently skip the first.
+
+**First real morning:** 1 CX-30 and 6 RAV4 lots, both on 2026-08-11, 7 sheets
+downloaded, three reports written, nothing spent.
 
 ## Saved searches
 

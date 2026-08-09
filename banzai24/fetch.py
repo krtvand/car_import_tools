@@ -595,19 +595,53 @@ def sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-async def check_session(filters: AuctionFilters | None = None, headless: bool = True) -> int:
-    """Confirm the saved session still authenticates; return the matching lot count.
+@dataclass
+class SessionCheck:
+    """What a session check saw. ``pages`` is 1 when the search fits one page.
+
+    Deliberately not a single "total": the SSR payload that page 1 arrives in
+    carries no ``pagination`` block, so multiplying page 1's count by the page
+    count would be a guess dressed up as a total. Reporting both numbers says
+    exactly what is known.
+    """
+
+    lots_on_first_page: int
+    pages: int
+
+    def describe(self) -> str:
+        if self.pages <= 1:
+            return f"{self.lots_on_first_page} lots match"
+        return f"{self.lots_on_first_page} lots on page 1 of {self.pages}"
+
+
+async def check_session(
+    filters: AuctionFilters | None = None, headless: bool = True
+) -> SessionCheck:
+    """Confirm the saved session still authenticates; report what it matched.
 
     Raises :class:`session.SessionExpired` otherwise. Worth running before a long
     crawl — re-authenticating costs an SMS, so it is better to learn about a dead
     session deliberately than halfway through a run.
+
+    Reads page 1 the same way :func:`fetch_lots` does — out of the hydration
+    state, via :func:`_await_first_page` — and for the same reason: **page 1
+    makes no API call**, so waiting for a ``/lots`` response here times out on a
+    perfectly healthy session and reports it as expired. That is the Phase 1
+    trap, and this function kept falling into it after the fetch path stopped:
+    a check whose failure mode is "your session is fine, and I say it is dead"
+    is worse than no check, because it sends you to re-authenticate by SMS for
+    nothing.
     """
     filters = filters or config.DEFAULT_FILTERS
     url = config.build_search_url(filters)
     async with session.browser_context(headless=headless) as page:
-        payload = await _lots_from(page, lambda: page.goto(url, wait_until="commit"))
-    pagination = payload.get("pagination") or {}
-    return int(pagination.get("total") or len(payload.get("items") or []))
+        await page.goto(url, wait_until="commit")
+        payload = await _await_first_page(page, headless)
+        # The SSR payload carries items but no `pagination` block, so the total
+        # comes off the rendered pagination buttons — one page's worth of lots
+        # is the floor when there is only one page.
+        pages = await _dom_total_pages(page)
+    return SessionCheck(lots_on_first_page=len(payload.get("items") or []), pages=pages)
 
 
 async def run_fetch(

@@ -30,8 +30,9 @@ from pathlib import Path
 
 import anthropic
 import pytest
+from sqlmodel import create_engine
 
-from banzai24 import sheets
+from banzai24 import db, normalize, sheets
 from banzai24.models import AuctionLot
 from banzai24.sheets import DamageMark, SheetData
 
@@ -407,3 +408,79 @@ def test_the_live_extraction_agrees_with_what_the_api_said():
     data, _ = sheets.extract_sheet(SHEET)
     checks = sheets.cross_check(data, _lot())
     assert checks.disagreements == []
+
+
+# --- which run directory owns a result ---------------------------------------
+#
+# The extraction queue is global — every pending sheet in the database, from
+# whichever run downloaded it. That is right (you want to read the sheets, not
+# think about directories), but it means the *results* have to be routed back
+# per lot. A morning that fetches two cars is the case that makes it bite.
+
+
+@pytest.fixture
+def runs_root(tmp_path, monkeypatch):
+    """A project root with a runs/ tree, since sheet_path is stored relative to it."""
+    monkeypatch.setattr(normalize, "PROJECT_ROOT", tmp_path)
+    return tmp_path
+
+
+def _downloaded(root: Path, run: str, lot_number: str) -> AuctionLot:
+    """A lot whose sheet is on disk inside ``runs/<run>/sheets/``."""
+    sheets_dir = root / "runs" / run / "sheets"
+    sheets_dir.mkdir(parents=True, exist_ok=True)
+    (sheets_dir / f"{lot_number}.jpg").write_bytes(b"not-really-a-jpeg")
+    return _lot(
+        lot_number=lot_number, lot_short=lot_number.rsplit("-", 1)[-1],
+        sheet_path=f"runs/{run}/sheets/{lot_number}.jpg",
+        sheet_sha256=f"hash-{lot_number}",
+    )
+
+
+def test_a_results_run_directory_is_read_off_the_sheet_it_came_from(runs_root):
+    lot = _downloaded(runs_root, "2026-08-09_090000_MAZDA-CX-30", "47-1312-35159")
+    owner = sheets.run_dir_of(lot)
+
+    assert owner == runs_root / "runs" / "2026-08-09_090000_MAZDA-CX-30"
+    assert sheets.owned_by(lot, owner)
+    assert not sheets.owned_by(lot, runs_root / "runs" / "2026-08-09_090412_TOYOTA-RAV4")
+
+
+def test_a_lot_with_no_downloaded_sheet_has_no_owning_run(runs_root):
+    assert sheets.run_dir_of(_lot(sheet_path=None)) is None
+    assert sheets.run_dir_of(_lot(sheet_path="runs/gone/sheets/nope.jpg")) is None
+
+
+def test_each_extraction_is_written_to_the_run_that_downloaded_its_sheet(
+    runs_root, monkeypatch, tmp_path
+):
+    """The two-car morning: one queue, two runs, two extractions.jsonl files.
+
+    Before this, both results were appended to whichever single run directory
+    the caller passed — so one run's file described lots it had never seen, and
+    the other run's file was missing its own. The database was right either way,
+    which is exactly why it could go unnoticed: the damage was only to the run
+    directory, the artifact whose whole job is to be an honest record of one run.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    monkeypatch.setattr(db, "_engine", engine)
+    db.init_db()
+
+    cx30 = _downloaded(runs_root, "2026-08-09_090000_MAZDA-CX-30", "47-1312-35159")
+    rav4 = _downloaded(runs_root, "2026-08-09_090412_TOYOTA-RAV4", "65-1953-02391")
+
+    monkeypatch.setattr(sheets, "extract_lot", lambda lot, **kw: sheets.Extraction(
+        lot_number=lot.lot_number, data=_sheet_data(), raw_json="{}",
+        sheet_sha256=lot.sheet_sha256, model_id="claude-opus-5",
+    ))
+
+    sheets.run_extract([cx30, rav4], run_dir=None, client=object())
+
+    def lines(run: str) -> list[dict]:
+        path = runs_root / "runs" / run / "extractions.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    assert [r["lot_number"] for r in lines("2026-08-09_090000_MAZDA-CX-30")] == [
+        "47-1312-35159"]
+    assert [r["lot_number"] for r in lines("2026-08-09_090412_TOYOTA-RAV4")] == [
+        "65-1953-02391"]

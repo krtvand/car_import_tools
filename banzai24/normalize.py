@@ -364,12 +364,32 @@ def load_run(
     return [attach_sheet(row, run_dir) for row in rows], problems
 
 
+def _runs(root: Path | None = None) -> list[Path]:
+    root = root or PROJECT_ROOT / "runs"
+    return [d for d in root.glob("*") if (d / "lots.json").exists()]
+
+
 def latest_run(root: Path | None = None) -> Path | None:
     """The most recent run directory. Run names start with a timestamp, so
     lexical order is chronological order."""
-    root = root or PROJECT_ROOT / "runs"
-    runs = [d for d in root.glob("*") if (d / "lots.json").exists()]
+    runs = _runs(root)
     return max(runs, key=lambda d: d.name) if runs else None
+
+
+def runs_from(day: date, root: Path | None = None) -> list[Path]:
+    """Every run started on ``day``, oldest first.
+
+    Matched on the directory name's date prefix rather than the filesystem
+    mtime, which a later ``report`` or ``extract`` would have moved. The date is
+    the *local* one the fetch ran at — deliberately not Japan's, unlike
+    ``fetch.japan_today``: this answers "what did I fetch this morning", not
+    "which auction day is it in Japan".
+
+    Exists because one morning is now several runs: a two-car day has a run per
+    car, and "re-render today's reports" should not mean naming both by hand.
+    """
+    prefix = day.isoformat()
+    return sorted(d for d in _runs(root) if d.name.startswith(prefix))
 
 
 @dataclass

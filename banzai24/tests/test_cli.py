@@ -65,3 +65,29 @@ def test_every_overridable_name_exists_on_the_dataclass():
 def test_neutral_base_has_no_model_or_transmission():
     assert cli.NEUTRAL_FILTERS.model is None
     assert cli.NEUTRAL_FILTERS.transmission is None
+
+
+def test_the_flags_the_daily_script_recommends_actually_exist():
+    """``searches/daily.sh`` ends by printing the commands for the rest of the
+    morning. A renamed or removed flag would make that advice wrong in the one
+    place nothing else looks — a shell script's here-doc.
+
+    argparse exits non-zero on an unknown flag, so parsing is the assertion.
+    """
+    parser = cli._build_parser()
+
+    parser.parse_args(["check"])
+    parser.parse_args(["extract", "--today", "--dry-run"])
+    parser.parse_args(["extract", "--today", "--limit", "5"])
+    parser.parse_args(["extract", "runs/2026-08-09_222421_TOYOTA-RAV4"])
+    parser.parse_args(["report", "--today", "--open"])
+
+
+def test_extract_and_report_both_understand_today():
+    """The two commands scope by day the same way, so the daily flow reads the
+    sheets it fetched this morning and re-renders the reports for those runs."""
+    parser = cli._build_parser()
+    assert parser.parse_args(["extract", "--today"]).today is True
+    assert parser.parse_args(["report", "--today"]).today is True
+    assert parser.parse_args(["extract"]).today is False
+    assert parser.parse_args(["report"]).today is False

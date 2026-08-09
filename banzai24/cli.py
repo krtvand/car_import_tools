@@ -39,6 +39,7 @@ import argparse
 import asyncio
 import dataclasses
 import webbrowser
+from datetime import date
 from pathlib import Path
 
 from . import config, db, fetch, normalize, session
@@ -110,8 +111,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Read pending auction sheets with Claude (costs money — see --limit)",
     )
     ext.add_argument("run_dir", nargs="?", metavar="RUN_DIR",
-                     help="Run directory to append extractions.jsonl to. "
-                          "Defaults to the most recent one.")
+                     help="Read only the sheets this run downloaded. Without it "
+                          "the queue is every pending sheet in the database — "
+                          "which after a two-car morning is both cars. Results "
+                          "always go to the run directory that owns the sheet.")
+    ext.add_argument("--today", action="store_true",
+                     help="Read only sheets downloaded by today's runs. The queue is "
+                          "otherwise every pending sheet ever downloaded, which after "
+                          "a few days means paying to read lots that have already "
+                          "traded.")
     ext.add_argument("--limit", type=int, metavar="N",
                      help="Read at most N sheets. Use this the first time.")
     ext.add_argument("--force", action="store_true",
@@ -131,6 +139,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     rep.add_argument("run_dir", nargs="?", metavar="RUN_DIR",
                      help="Run directory to report on. Defaults to the most recent one.")
+    rep.add_argument("--today", action="store_true",
+                     help="Report every run started today, one report.html each. "
+                          "A two-car morning is two runs, and this re-renders both "
+                          "after `extract` without naming either.")
     rep.add_argument("--all", action="store_true", dest="all_lots",
                      help="Include every lot the fetch saw, not just the ones it kept.")
     rep.add_argument("-o", "--output", metavar="PATH",
@@ -199,10 +211,10 @@ def main() -> None:
 
     if args.command == "check":
         try:
-            total = asyncio.run(fetch.check_session())
+            checked = asyncio.run(fetch.check_session())
         except (session.SessionExpired, session.ServiceUnavailable) as exc:
             raise SystemExit(str(exc))
-        print(f"Session OK — {total} lots match DEFAULT_FILTERS.")
+        print(f"Session OK — {checked.describe()} DEFAULT_FILTERS.")
         return
 
     if args.command == "normalize":
@@ -229,13 +241,25 @@ def main() -> None:
         lots = db.pending_sheets(include_failed=args.retry_failed)
         if args.force:
             lots = [lot for lot in db.all_lots() if lot.sheet_path]
+
+        # Narrowing happens before --limit, so `extract <rav4-run> --limit 5`
+        # reads five RAV4 sheets rather than five lots off the front of a queue
+        # that also holds this morning's CX-30 run.
+        run_dir = Path(args.run_dir) if args.run_dir else None
+        if run_dir:
+            lots = [lot for lot in lots if sheets.owned_by(lot, run_dir)]
+        if args.today:
+            today = {d.resolve() for d in normalize.runs_from(date.today())}
+            lots = [lot for lot in lots
+                    if (owner := sheets.run_dir_of(lot)) and owner.resolve() in today]
         if args.limit:
             lots = lots[: args.limit]
 
         if not lots:
+            where = f" in {run_dir}" if run_dir else " from today's runs" if args.today else ""
             raise SystemExit(
-                "No sheets waiting. Run `fetch` to download some, or `extract "
-                "--force` to re-read ones already done."
+                f"No sheets waiting{where}. Run `fetch` to download some, or "
+                "`extract --force` to re-read ones already done."
             )
 
         # Say the price before spending it. ~$0.03/sheet is the arithmetic in
@@ -248,7 +272,6 @@ def main() -> None:
             print("Dry run — nothing sent, nothing spent.")
             return
 
-        run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
         result = sheets.run_extract(lots, run_dir=run_dir, force=args.force)
         print(result.summary())
         for mismatch in result.mismatches:
@@ -258,27 +281,38 @@ def main() -> None:
     if args.command == "report":
         from . import report as report_module
 
-        run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
-        if run_dir is None:
-            raise SystemExit("No run directories found — run `fetch` first.")
-        if not (run_dir / "lots.json").exists():
-            raise SystemExit(f"{run_dir} has no lots.json.")
+        if args.today:
+            if args.run_dir:
+                raise SystemExit("Give a RUN_DIR or --today, not both.")
+            if args.output:
+                raise SystemExit("--output writes one file; it cannot combine with --today.")
+            run_dirs = normalize.runs_from(date.today())
+            if not run_dirs:
+                raise SystemExit("No runs started today — run `fetch` first.")
+        else:
+            run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
+            if run_dir is None:
+                raise SystemExit("No run directories found — run `fetch` first.")
+            if not (run_dir / "lots.json").exists():
+                raise SystemExit(f"{run_dir} has no lots.json.")
+            run_dirs = [run_dir]
 
         db.init_db()
-        built = report_module.run_report(
-            run_dir,
-            output=Path(args.output) if args.output else None,
-            all_lots=args.all_lots,
-            jpy_per_eur=args.jpy_per_eur,
-        )
-        print(built.summary())
-        if built.missing:
-            print(f"  {len(built.missing)} lot(s) rendered from the run file only — "
-                  f"run `normalize {run_dir}` to fill them in.")
-        if built.cyprus_reason:
-            print(f"  no Cyprus comparables: {built.cyprus_reason}")
-        if args.open_report:
-            webbrowser.open(built.output.resolve().as_uri())
+        for run_dir in run_dirs:
+            built = report_module.run_report(
+                run_dir,
+                output=Path(args.output) if args.output else None,
+                all_lots=args.all_lots,
+                jpy_per_eur=args.jpy_per_eur,
+            )
+            print(built.summary())
+            if built.missing:
+                print(f"  {len(built.missing)} lot(s) rendered from the run file only — "
+                      f"run `normalize {run_dir}` to fill them in.")
+            if built.cyprus_reason:
+                print(f"  no Cyprus comparables: {built.cyprus_reason}")
+            if args.open_report:
+                webbrowser.open(built.output.resolve().as_uri())
         return
 
     filters = _filters_from_args(args)

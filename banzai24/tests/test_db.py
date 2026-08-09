@@ -265,3 +265,23 @@ def test_the_latest_run_is_the_newest_timestamped_directory(tmp_path):
     (tmp_path / "not-a-run").mkdir()
 
     assert normalize.latest_run(tmp_path).name == "2026-08-09_090000_B"
+
+
+def test_one_morning_is_several_runs_and_runs_from_finds_all_of_them(tmp_path):
+    """A two-car morning leaves two run directories, and both are today's.
+
+    ``latest_run`` answers the wrong question there — it would report on the
+    second car and quietly skip the first.
+    """
+    for name in ("2026-08-09_090000_MAZDA-CX-30", "2026-08-09_090412_TOYOTA-RAV4",
+                 "2026-08-08_235959_MAZDA-CX-30"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "lots.json").write_text("{}", encoding="utf-8")
+
+    found = normalize.runs_from(date(2026, 8, 9), tmp_path)
+
+    assert [d.name for d in found] == [
+        "2026-08-09_090000_MAZDA-CX-30",
+        "2026-08-09_090412_TOYOTA-RAV4",
+    ]
+    assert normalize.runs_from(date(2026, 8, 7), tmp_path) == []

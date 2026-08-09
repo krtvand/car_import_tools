@@ -155,6 +155,21 @@ uv run pytest bazaraki/tests     # one project
 Run either project as a module — `python -m bazaraki`, `python -m banzai24`.
 `main.py` remains as a shim for the `python main.py …` commands above.
 
+### The auction morning
+
+```bash
+./banzai24/searches/daily.sh --headless     # both cars, nearest auction day
+uv run python -m banzai24 extract --today --limit 5   # read sheets (~$0.015 each)
+uv run python -m banzai24 report --today             # re-render, free
+```
+
+`daily.sh` checks the session once, fetches the RAV4 and the CX-30 — each
+narrowing itself to its own closest upcoming auction day — and writes a
+`report.html` per run. It deliberately spends nothing: reading auction sheets is
+a separate, explicit step, and the reports are already enough to decide which
+sheets are worth reading. See `AUCTION_PLAN.md` for why `--today` matters on
+both of the follow-up commands.
+
 ## How it works
 
 - `bazaraki/config.py` — `CarFilters` dataclass (the filter schema) + label→code

@@ -467,6 +467,31 @@ def _sheet_file(lot: AuctionLot) -> Path | None:
     return path if path.exists() else None
 
 
+def run_dir_of(lot: AuctionLot) -> Path | None:
+    """The run directory that owns this lot's sheet, from ``sheet_path``.
+
+    ``runs/<run>/sheets/47-1312-35159.jpg`` -> ``runs/<run>``.
+
+    The queue is global — it is every pending sheet in the database, from
+    whichever run downloaded it — so "which run does this result belong to" has
+    to be answered per lot rather than once for the batch. Fetching two cars on
+    the same morning is enough to make that matter: both runs have pending
+    sheets, and without this every extraction's line lands in whichever run
+    directory happened to be passed, describing lots that run never saw.
+    """
+    path = _sheet_file(lot)
+    if path is None or path.parent.name != "sheets":
+        return None
+    return path.parent.parent
+
+
+def owned_by(lot: AuctionLot, run_dir: Path) -> bool:
+    """Is this lot's sheet inside ``run_dir``? Resolved, since one side is
+    stored relative to the project root and the other is typed on a command line."""
+    owner = run_dir_of(lot)
+    return owner is not None and owner.resolve() == run_dir.resolve()
+
+
 def extract_lot(
     lot: AuctionLot,
     client: anthropic.Anthropic | None = None,
@@ -514,6 +539,10 @@ def run_extract(
     database as each one completes, rather than batched at the end: these cost
     real money, and a crash twenty sheets in should not throw away twenty
     sheets' worth of paid extraction.
+
+    Each result goes to **the run directory that downloaded that sheet** (see
+    :func:`run_dir_of`), not to one directory for the batch. ``run_dir`` is only
+    the fallback for a lot whose sheet is not under a run directory at all.
     """
     client = client or anthropic.Anthropic()
     lots = lots if lots is not None else db.pending_sheets()
@@ -521,7 +550,6 @@ def run_extract(
         lots = lots[:limit]
 
     result = ExtractResult()
-    jsonl = (run_dir / "extractions.jsonl") if run_dir else None
 
     for lot in lots:
         try:
@@ -545,8 +573,8 @@ def run_extract(
         if bad := checks.disagreements:
             result.mismatches.append(f"{lot.lot_short}: {', '.join(bad)}")
 
-        if jsonl:
-            with jsonl.open("a", encoding="utf-8") as handle:
+        if target := (run_dir_of(lot) or run_dir):
+            with (target / "extractions.jsonl").open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(
                     {k: v for k, v in row.items() if k != "raw_json"},
                     ensure_ascii=False, default=str) + "\n")
