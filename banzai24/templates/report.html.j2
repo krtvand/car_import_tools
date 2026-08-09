@@ -1,0 +1,328 @@
+{# One card per lot: the auction sheet on the left, everything read off it on
+   the right. Self-contained by construction — the only <img> is a data URI and
+   the only external URLs are hyperlinks back to banzai24, which the page never
+   needs to load. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ run_name }} · auction review</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #6b6b6b; --line: #e0ddd7; --paper: #faf9f7;
+    --card: #ffffff; --bad: #b3261e; --ok: #1f7a4d; --warn: #9a6700;
+    --bid: #1a4f8a; --flat: #6b6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.5rem 4rem; background: var(--paper); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+
+  header h1 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 600; }
+  header .meta { margin: 0; color: var(--muted); font-size: .875rem; }
+  header .notes { margin: .75rem 0 0; padding: 0; list-style: none;
+                  color: var(--warn); font-size: .8125rem; }
+
+  .lot {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    margin: 1.25rem 0; overflow: hidden;
+  }
+  .lot.flagged { border-left: 4px solid var(--warn); }
+  .lot.mismatch { border-left-color: var(--bad); }
+  .lot.bid { border-left-color: var(--bid); }
+
+  .head {
+    display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline;
+    padding: .75rem 1rem; border-bottom: 1px solid var(--line); background: #fcfbfa;
+  }
+  .head .lotno { font-weight: 600; font-size: 1.05rem; }
+  .head .where { color: var(--muted); font-size: .875rem; }
+  .head .status { margin-left: auto; color: var(--muted); font-size: .75rem;
+                  letter-spacing: .04em; text-transform: uppercase; }
+
+  .badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .badge {
+    font-size: .6875rem; font-weight: 600; letter-spacing: .02em;
+    padding: .15rem .45rem; border-radius: 4px; color: #fff; background: var(--flat);
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .badge.mismatch { background: var(--bad); }
+  .badge.bid { background: var(--bid); }
+  .badge.low-confidence, .badge.no-shaken { background: var(--warn); }
+  .badge.not-read { background: var(--flat); }
+
+  .body { display: flex; flex-wrap: wrap; gap: 1.25rem; padding: 1rem; align-items: flex-start; }
+  .sheet { flex: 0 0 auto; }
+  .sheet img {
+    /* `height: auto` is load-bearing: the img carries width/height attributes so
+       the page reserves the right box before the (large, inline) data URI
+       decodes, and without this the 800px height attribute wins over the CSS
+       width and every sheet renders stretched to a tall ribbon. */
+    display: block; width: 320px; height: auto; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; background: #fff;
+  }
+  /* CSS-only zoom: no JavaScript, so the page is inert wherever it is opened. */
+  .zoom { position: absolute; opacity: 0; pointer-events: none; }
+  .zoom:checked + .sheet img { width: 800px; cursor: zoom-out; }
+  /* An 800px sheet leaves the fields column a squeezed strip beside it, so the
+     zoomed state drops the fields onto their own full-width row instead. */
+  .zoom:checked ~ .fields { flex: 1 1 100%; }
+  .sheet .nosheet {
+    width: 320px; height: 240px; display: flex; align-items: center;
+    justify-content: center; border: 1px dashed var(--line); border-radius: 4px;
+    color: var(--muted); font-size: .875rem; text-align: center; padding: 1rem;
+  }
+
+  .fields { flex: 1 1 20rem; min-width: 0; }
+  .fields h2 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 600; }
+  .fields h2 .year { color: var(--muted); font-weight: 400; }
+  dl { display: grid; grid-template-columns: 8.5rem 1fr; gap: .3rem .75rem; margin: 0; }
+  dt { color: var(--muted); font-size: .8125rem; }
+  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  dd.ja { font-size: .9375rem; white-space: pre-wrap; }
+
+  .ok::after   { content: " ✓"; color: var(--ok); }
+  .bad::after  { content: " ✗"; color: var(--bad); font-weight: 700; }
+  .note { color: var(--muted); font-size: .8125rem; }
+  .bad + .note, .note.bad { color: var(--bad); }
+  /* The English rendering sits under the Japanese it translates, never beside
+     it — the two run together otherwise, and the ja text is pre-wrapped. */
+  .note.translation { display: block; margin-top: .25rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9375rem; }
+
+  .marks { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .mark {
+    border: 1px solid var(--line); border-radius: 4px; padding: .1rem .4rem;
+    font-size: .8125rem; background: #fbfaf8;
+  }
+  .mark b { font-family: ui-monospace, Menlo, monospace; }
+
+  .warn { color: var(--warn); font-weight: 600; }
+  details summary { cursor: pointer; color: var(--muted); font-size: .8125rem; }
+  details ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .875rem; }
+
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .8125rem; }
+  footer dl { grid-template-columns: 2.5rem 1fr; gap: .2rem .5rem; max-width: 26rem; }
+
+  @media (max-width: 720px) {
+    .body { flex-direction: column; }
+    .zoom:checked + .sheet img { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>{{ run_name }}</h1>
+  <p class="meta">
+    {{ views | length }} lot{{ '' if views | length == 1 else 's' }} ·
+    {{ report.flagged }} flagged ·
+    {{ report.extracted }} with sheet data{% if report.unread %} ·
+    {{ report.unread }} sheet{{ '' if report.unread == 1 else 's' }} not read yet{% endif %} ·
+    generated {{ generated_at }}
+  </p>
+  <ul class="notes">
+    {% if report.missing %}
+    <li>{{ report.missing | length }} lot(s) in this run are not in the database yet —
+        run <code>normalize</code> to fill in what is known about them.</li>
+    {% endif %}
+    {% if report.cyprus_reason %}
+    <li>No Cyprus comparables: {{ report.cyprus_reason }}</li>
+    {% endif %}
+  </ul>
+</header>
+
+<main>
+{% for view in views %}
+  {% set lot = view.lot %}
+  {% set top = view.flags[0].key if view.flags else '' %}
+<article class="lot {{ 'flagged' if view.flags }} {{ top }}">
+
+  <div class="head">
+    <span class="lotno">Lot {{ lot.lot_short }}</span>
+    <span class="where">
+      {{ lot.auction_name }} · {{ lot.trade_date }}{% if lot.trade_time %} {{ lot.trade_time }}{% endif %}
+    </span>
+    <span class="badges">
+      {% for flag in view.flags %}
+      <span class="badge {{ flag.key }}">{{ flag.label }}</span>
+      {% endfor %}
+    </span>
+    <span class="status">{{ lot.status_code or '—' }}</span>
+  </div>
+
+  <div class="body">
+    {# The checkbox precedes .sheet so `:checked +` can reach it; it is visually
+       hidden but still keyboard-reachable. #}
+    <input type="checkbox" class="zoom" id="zoom-{{ loop.index }}"
+           aria-label="Enlarge the auction sheet for lot {{ lot.lot_short }}">
+    <label class="sheet" for="zoom-{{ loop.index }}">
+      {% if view.sheet_uri %}
+      <img src="{{ view.sheet_uri }}" alt="Auction sheet for lot {{ lot.lot_short }}"
+           width="800" height="800">
+      {% else %}
+      <span class="nosheet">
+        {% if lot.sheet_status == 'no_sheet' %}
+        banzai24 published no sheet for this lot
+        {% else %}
+        sheet not downloaded ({{ lot.sheet_status }})
+        {% endif %}
+      </span>
+      {% endif %}
+    </label>
+
+    <div class="fields">
+      <h2>
+        {{ view.title }}
+        {% if view.registration %}<span class="year">· {{ view.registration }}</span>{% endif %}
+      </h2>
+
+      <dl>
+        <dt>Grade</dt>
+        <dd>
+          <span class="{{ view.checks.grade | check if view.checks else '' }}">
+            {{ (view.extraction.sheet_grade if view.extraction else None) or lot.grade_origin or '—' }}
+          </span>
+          {% if view.extraction %}
+            {% if view.extraction.exterior_grade %}· exterior {{ view.extraction.exterior_grade }}{% endif %}
+            {% if view.extraction.interior_grade %}· interior {{ view.extraction.interior_grade }}{% endif %}
+          {% endif %}
+          {% if view.grade_note %}<span class="note bad">({{ view.grade_note }})</span>{% endif %}
+        </dd>
+
+        <dt>Mileage</dt>
+        <dd>
+          {% if view.extraction and view.extraction.sheet_mileage_km is not none %}
+          <span class="{{ view.checks.mileage | check }}">{{ view.extraction.sheet_mileage_km | km }}</span>
+          {% if view.mileage_note %}<span class="note">({{ view.mileage_note }})</span>{% endif %}
+          {% else %}
+          {{ lot.mileage_km | km or '—' }} <span class="note">(API, rounded)</span>
+          {% endif %}
+        </dd>
+
+        {% if view.extraction %}
+        <dt>Chassis</dt>
+        <dd>
+          <code class="{{ view.checks.chassis | check }}">{{ view.extraction.chassis_full or '—' }}</code>
+          {% if view.chassis_note %}<span class="note">({{ view.chassis_note }})</span>{% endif %}
+        </dd>
+
+        <dt>Shaken 車検</dt>
+        <dd>
+          {% if view.extraction.shaken_expiry_raw %}
+          {{ view.extraction.shaken_expiry_raw }}
+          {% else %}
+          <span class="warn">none — the buyer re-registers</span>
+          {% endif %}
+        </dd>
+
+        {% if view.damage_marks %}
+        <dt>Damage</dt>
+        <dd>
+          <div class="marks">
+            {% for mark in view.damage_marks %}
+            <span class="mark" title="{{ mark.meaning or 'not in the printed legend' }}">
+              <b>{{ mark.code }}</b> {{ mark.panel }}
+            </span>
+            {% endfor %}
+          </div>
+        </dd>
+        {% endif %}
+
+        {% if view.extraction.warnings_ja %}
+        <dt>注意事項欄</dt>
+        <dd class="ja warn">{{ view.extraction.warnings_ja }}</dd>
+        {% endif %}
+
+        {% if view.extraction.inspector_notes_ja %}
+        <dt>検査員記入欄</dt>
+        <dd class="ja">{{ view.extraction.inspector_notes_ja }}{% if view.extraction.inspector_notes_en %}<span class="note translation">{{ view.extraction.inspector_notes_en }}</span>{% endif %}</dd>
+        {% endif %}
+
+        {% if view.extraction.rental_car_note or view.extraction.private_car_note %}
+        <dt>車歴</dt>
+        <dd class="ja {{ 'warn' if view.extraction.rental_car_note }}">
+          {{ view.extraction.rental_car_note or view.extraction.private_car_note }}
+        </dd>
+        {% endif %}
+
+        {% if view.equipment %}
+        <dt>Equipment</dt>
+        <dd>
+          <details>
+            <summary>{{ view.equipment | length }} items</summary>
+            <ul>{% for item in view.equipment %}<li class="ja">{{ item }}</li>{% endfor %}</ul>
+          </details>
+        </dd>
+        {% endif %}
+        {% endif %}{# view.extraction #}
+
+        <dt>Cyprus</dt>
+        <dd>
+          {% if view.comp %}
+          {{ view.comp.describe() }}
+          {% else %}
+          <span class="note">no comparable query (needs year + mileage)</span>
+          {% endif %}
+        </dd>
+
+        <dt>Price</dt>
+        <dd>
+          start {{ lot.start_price_jpy | yen or '—' }}
+          {% if jpy_per_eur and lot.start_price_jpy %}
+          <span class="note">(≈ €{{ '{:,.0f}'.format(lot.start_price_jpy / jpy_per_eur) }}
+            at {{ jpy_per_eur }} ¥/€)</span>
+          {% endif %}
+          {% if lot.end_price_jpy %}· sold {{ lot.end_price_jpy | yen }}{% endif %}
+        </dd>
+
+        <dt>Bids</dt>
+        <dd>
+          {% if view.bids %}
+          {% for bid in view.bids %}
+          {{ bid.amount_jpy | yen }} on {{ bid.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+          — {{ bid.outcome or 'outcome unknown' }}{% if bid.note %} ({{ bid.note }}){% endif %}<br>
+          {% endfor %}
+          {% else %}
+          <span class="note">not yet bid</span>
+          {% endif %}
+        </dd>
+
+        <dt>Links</dt>
+        <dd class="note">
+          {% if view.lot_url %}<a href="{{ view.lot_url }}">banzai24 lot page</a> · {% endif %}
+          <code>{{ lot.lot_number }}</code>
+          {% if view.extraction %}· read by {{ view.extraction.model_id }}
+          {% if view.extraction.confidence is not none %}at confidence {{ '%.2f' % view.extraction.confidence }}{% endif %}
+          {% endif %}
+        </dd>
+      </dl>
+    </div>
+  </div>
+</article>
+{% else %}
+<p>No lots in this run.</p>
+{% endfor %}
+</main>
+
+<footer>
+  <p>Damage codes, as printed at the foot of every auction sheet:</p>
+  <dl>
+    {% for code, meaning in damage_codes.items() %}
+    <dt><code>{{ code }}</code></dt><dd>{{ meaning }}</dd>
+    {% endfor %}
+  </dl>
+  <p>A code carries a severity digit 1–4: <code>A1</code> is a light scratch,
+     <code>U2</code> a more significant dent. Cyprus figures are median
+     <em>asking</em> prices from bazaraki.db, not sale prices.</p>
+</footer>
+
+</div>
+</body>
+</html>

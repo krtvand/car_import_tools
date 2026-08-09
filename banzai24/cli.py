@@ -25,12 +25,20 @@ costs money (~$0.03/sheet), so it prints the bill first and takes --limit:
     uv run python -m banzai24 extract --dry-run          # what would be read
     uv run python -m banzai24 extract --limit 1          # try one
     uv run python -m banzai24 extract                    # the whole queue
+
+`report` joins the run directory and the database into one self-contained
+report.html. It costs nothing to regenerate — no network, no model call — so a
+template tweak is a re-run of this, never a re-fetch:
+
+    uv run python -m banzai24 report                     # the most recent run
+    uv run python -m banzai24 report --open              # and open it
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import dataclasses
+import webbrowser
 from pathlib import Path
 
 from . import config, db, fetch, normalize, session
@@ -116,6 +124,23 @@ def _build_parser() -> argparse.ArgumentParser:
     ext.add_argument("--dry-run", action="store_true", dest="dry_run",
                      help="List what would be read, and the estimated cost, "
                           "without calling the API.")
+
+    rep = sub.add_parser(
+        "report",
+        help="Build a self-contained report.html for a run (no network, free to re-run)",
+    )
+    rep.add_argument("run_dir", nargs="?", metavar="RUN_DIR",
+                     help="Run directory to report on. Defaults to the most recent one.")
+    rep.add_argument("--all", action="store_true", dest="all_lots",
+                     help="Include every lot the fetch saw, not just the ones it kept.")
+    rep.add_argument("-o", "--output", metavar="PATH",
+                     help="Write somewhere other than <run>/report.html.")
+    rep.add_argument("--open", action="store_true", dest="open_report",
+                     help="Open the report in your browser when it is written.")
+    rep.add_argument("--jpy-per-eur", type=float, metavar="RATE", dest="jpy_per_eur",
+                     help="Also show start prices in euro at this rate, so they compare "
+                          "with the Cyprus figures. No default: a hard-coded rate would "
+                          "go stale silently, and a wrong one is worse than none.")
 
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
@@ -228,6 +253,32 @@ def main() -> None:
         print(result.summary())
         for mismatch in result.mismatches:
             print(f"  cross-check: {mismatch}")
+        return
+
+    if args.command == "report":
+        from . import report as report_module
+
+        run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
+        if run_dir is None:
+            raise SystemExit("No run directories found — run `fetch` first.")
+        if not (run_dir / "lots.json").exists():
+            raise SystemExit(f"{run_dir} has no lots.json.")
+
+        db.init_db()
+        built = report_module.run_report(
+            run_dir,
+            output=Path(args.output) if args.output else None,
+            all_lots=args.all_lots,
+            jpy_per_eur=args.jpy_per_eur,
+        )
+        print(built.summary())
+        if built.missing:
+            print(f"  {len(built.missing)} lot(s) rendered from the run file only — "
+                  f"run `normalize {run_dir}` to fill them in.")
+        if built.cyprus_reason:
+            print(f"  no Cyprus comparables: {built.cyprus_reason}")
+        if args.open_report:
+            webbrowser.open(built.output.resolve().as_uri())
         return
 
     filters = _filters_from_args(args)

@@ -373,8 +373,14 @@ class CrossCheck:
         return f"{checked}/4 cross-checks agree" if checked else "nothing to check"
 
 
-def cross_check(data: SheetData, lot: AuctionLot) -> CrossCheck:
-    """Compare an extraction against what the list API said about the same lot."""
+def cross_check(data: SheetData | SheetExtraction, lot: AuctionLot) -> CrossCheck:
+    """Compare an extraction against what the list API said about the same lot.
+
+    Takes a fresh :class:`SheetData` or a stored :class:`SheetExtraction` — the
+    four fields compared are spelled the same on both, deliberately, so the
+    report can re-run the checks over the database months later without
+    reconstructing the model's output from ``raw_json``.
+    """
     return CrossCheck(
         grade=grade_matches(data.sheet_grade, lot.grade_origin),
         mileage=mileage_matches(data.sheet_mileage_km, lot.mileage_km),

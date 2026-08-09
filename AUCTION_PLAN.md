@@ -186,6 +186,7 @@ banzai24/                 # this project
   db.py           # upsert / query layer
   sheets.py       # Claude vision extraction
   report.py       # run directory + auction.db → report.html
+  templates/      # report.html.j2 — the only template; all CSS inline
   cli.py          # `uv run python -m banzai24 <command>`
   searches/       # one saved search per car — the run configuration
     mazda-cx30.sh
@@ -205,6 +206,16 @@ real — but they differ where it counts (Crawlee + HTML vs Playwright + JSON,
 different keys, different lifecycles). Duplicating ~30 lines of engine setup is
 cheaper than committing to the wrong abstraction before `banzai24` exists. Revisit
 once Phase 4 is running.
+
+**Revisited at the end of Phase 4: still no `common/`.** The two packages did
+finally meet, and the meeting says the opposite of what it looked like it would:
+`report.py` imports `bazaraki.analysis` directly and calls
+`filter_model`/`clean`/`comparables` on plain `CarRecord`s. That worked
+first try *because* `analysis.py` was already free of database and network
+dependencies — the useful sharing turned out to be one project importing
+another's pure functions, which needs no third package. What is still duplicated
+(engine setup, `_ensure_columns`, a filters dataclass) is the part that was
+never worth extracting.
 
 New dependencies: `playwright`, `anthropic`, `jinja2`.
 
@@ -601,8 +612,81 @@ Jinja2 from the run directory plus a DB query for bid history and the Cyprus
 comparable. `report` is its own command — regenerating is free, so a template
 tweak never means re-fetching or re-extracting.
 
-**Test:** render against fixture data; assert flagged rows sort first and no
-external image references remain.
+    uv run python -m banzai24 report                    # the most recent run
+    uv run python -m banzai24 report --open
+    uv run python -m banzai24 report --jpy-per-eur 172  # also price in euro
+
+**Which lots, and from where.** The run directory decides *which* lots — it is
+the record of what the fetch was about — and the database decides *what is
+known* about them, since extractions and bids accumulate across runs and a lot
+seen twice should show both. A lot in the run but not yet in the database is
+rendered from `lots.json` anyway, with a banner naming `normalize` as the fix:
+the reason a card is thin belongs on the page, not in the operator's memory.
+
+**Five flags, ranked, and the ranking is the sort key** — one ordering rather
+than a severity scale plus a separate sort rule that can drift out of step:
+
+| | Flag | Why it outranks the next |
+|---|---|---|
+| 50 | cross-check mismatch | the sheet and the API disagree about the same car |
+| 40 | bid placed | money is already committed here |
+| 30 | confidence < 0.9 | the model is telling you to look at the scan yourself |
+| 20 | no shaken | a real cost to fold into the bid, not missing data |
+| 10 | sheet not read | unfinished work, not a finding |
+
+**"Not read" sorts above a clean lot but is not counted as flagged.** Both
+halves matter. It sorts high because an unextracted sheet is outstanding work
+and a clean extracted lot is the one needing you least. It is excluded from the
+header's flagged count because it says nothing about the *car* — counted, a
+freshly fetched run would report every lot as flagged and the number would stop
+meaning anything. The header says `1 flagged · 4 sheets not read yet` instead.
+
+Four things the build turned up, three of them only visible on the rendered page:
+
+- **`autoescape=True`, not `select_autoescape`.** That helper keys on the file
+  extension, sees `.j2` rather than `.html`, and silently leaves escaping *off*.
+  Silently is the problem: the page renders and looks right, and half of what
+  goes into it is model-transcribed sheet text where one `<` would eat the rest
+  of the card. A test asserting a `<b>` in an inspector's note comes out escaped
+  is what caught it.
+- **`height: auto` on the sheet image is load-bearing.** The `<img>` carries
+  `width`/`height` attributes so the page reserves the right box before a
+  ~180 KB inline data URI decodes — but with only `width` set in CSS, the 800px
+  *height attribute* wins and every 800×800 sheet renders as a stretched
+  ribbon. Visibly wrong, and invisible to every assertion worth writing.
+- **Zooming a sheet has to reflow the card, not just the image.** At 800px the
+  fields column is squeezed into a two-word-wide strip beside it; the zoomed
+  state drops the fields onto their own full-width row. The zoom itself is a
+  checkbox and a `:checked ~` selector — no JavaScript, so the file stays inert
+  wherever it is opened.
+- **`sheets.cross_check` now takes a stored `SheetExtraction` as well as a fresh
+  `SheetData`.** The four compared fields are spelled identically on both, so
+  the report re-runs the same tested comparisons over the database months later
+  rather than reconstructing the model's output from `raw_json`. The marks are
+  printed *against the value they qualify* — `22,895 km ✓ (API said 23,000 km)`
+  — because a cross-check collected into a separate block is a fact about the
+  pipeline, while one printed next to the number is a fact about the car.
+
+**The Cyprus join is a median asking price, and says so.** It goes through
+`bazaraki.analysis.filter_model`, which normalises case and punctuation — that
+is exactly the gap between banzai24's `MAZDA`/`CX-30` and bazaraki's
+`Mazda`/`CX-30`, so the two databases join on nothing but strings and survive
+it. Listings load once per report and the per-model subsets are cached, so a
+one-model run is one query however many lots it holds. `comparables()` rather
+than `estimate_sale_price()`: the report shows the median of real nearby
+adverts with its `n` and band (`€21,900 · n=126 · high · ±1y ±15k km`), and a
+fitted sale estimate would look more precise than the input deserves. **A
+missing or unreadable `bazaraki.db` is reported, not raised** — the Cyprus
+number is context, and a report without it is still the sheet next to the
+fields, which is the point of the page.
+
+**No default yen/euro rate.** `--jpy-per-eur` is opt-in and prints the rate it
+used next to the figure. A hard-coded rate goes stale silently and a stale one
+is worse than none, on the one number the whole exercise turns on.
+
+**Test:** render against fixture data; assert flagged rows sort first, that
+every `src` is a `data:` URI (hyperlinks to banzai24 lot pages are fine — the
+browser never fetches them), and that the sheet's own numbers reach the page.
 
 ---
 
@@ -633,7 +717,7 @@ step that commits funds stays human-confirmed, one lot at a time.
 | 1 | Session + fetch | 0 | ✅ **done** — 5 lots + 5 sheets; pagination verified over 2/17 pages |
 | 2 | Normalize + store | 1 | fixture round-trips; `lots.csv` + `auction.db` populated |
 | 3 | Sheet extraction | 2 | golden-file test green on lot 33152's known values |
-| 4 | Report | 3 | `report.html` opens standalone; flagged rows first |
+| 4 | Report | 3 | ✅ **done** — `report.html` opens standalone; flagged rows first |
 | 5 | Bidding runbook | 4 | dry-run walkthrough on one lot |
 
 Phase 3 can be built immediately from the saved fixture sheet, in parallel with
@@ -663,6 +747,26 @@ Lessons worth keeping, since both cost real time:
    symptoms all surfaced as `TimeoutError waiting for response`. Distinct
    exception types (`SessionExpired`, `ServiceUnavailable`) plus the page dump
    are what make them tellable apart.
+
+## Phase 4 result (2026-08-09)
+
+`report runs/2026-08-08_223155_MAZDA-CX-30 --jpy-per-eur 172` → a 910 KB
+self-contained `report.html`: 5 lots, 1 flagged, 1 with sheet data, 4 sheets not
+read yet. Every `src` in it is a `data:` URI; the only external URLs are
+hyperlinks to the banzai24 lot pages, which are never fetched.
+
+**The page is also the first end-to-end check of the extraction, because you can
+read the sheet next to what was read off it.** Zooming lot 35159 confirmed by
+eye: `22,895 km`, `DMEJ3P-109555`, grade `4.5`, interior `B`, no exterior box on
+that layout, a blank 車検, and `トビA` sitting on the bonnet in the damage
+diagram — all exactly as the extraction stored them. Two Phase 1–3 decisions
+show their value here rather than in any test: the mileage cross-check reads
+`22,895 km ✓ (API said 23,000 km)` instead of flagging a lot that is fine, and
+the chassis line prints the unmasked number beside the API's `DMEJ3P-10**55`.
+
+The Cyprus join returned `€21,900 · n=126 · high · ±1y ±15k km` against a
+`¥1,290,000` start — 126 comparable CX-30 adverts is a thick enough sample to
+be worth putting on the page, which was not obvious before it ran.
 
 ## Saved searches
 

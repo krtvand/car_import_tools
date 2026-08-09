@@ -164,6 +164,50 @@ def extraction_for(lot_number: str) -> SheetExtraction | None:
         return session.get(SheetExtraction, lot_number)
 
 
+# --- batched lookups, for the report ----------------------------------------
+#
+# A report over one run wants three tables for the same twenty lots. Fetching
+# them per lot would be sixty queries and sixty sessions; these are three. The
+# dict returns also make "this lot has no extraction / no bids" a plain
+# ``.get()`` rather than a second round trip.
+
+
+def lots_by_numbers(lot_numbers: list[str]) -> dict[str, AuctionLot]:
+    if not lot_numbers:
+        return {}
+    with Session(_engine) as session:
+        rows = session.exec(
+            select(AuctionLot).where(AuctionLot.lot_number.in_(lot_numbers))
+        )
+        return {row.lot_number: row for row in rows}
+
+
+def extractions_by_numbers(lot_numbers: list[str]) -> dict[str, SheetExtraction]:
+    if not lot_numbers:
+        return {}
+    with Session(_engine) as session:
+        rows = session.exec(
+            select(SheetExtraction).where(SheetExtraction.lot_number.in_(lot_numbers))
+        )
+        return {row.lot_number: row for row in rows}
+
+
+def bids_by_numbers(lot_numbers: list[str]) -> dict[str, list[BidRecord]]:
+    """Every bid on each lot, oldest first. Lots without bids are absent."""
+    if not lot_numbers:
+        return {}
+    bids: dict[str, list[BidRecord]] = {}
+    with Session(_engine) as session:
+        rows = session.exec(
+            select(BidRecord)
+            .where(BidRecord.lot_number.in_(lot_numbers))
+            .order_by(BidRecord.submitted_at)
+        )
+        for row in rows:
+            bids.setdefault(row.lot_number, []).append(row)
+    return bids
+
+
 def all_lots() -> list[AuctionLot]:
     with Session(_engine) as session:
         return list(session.exec(select(AuctionLot).order_by(AuctionLot.lot_number)))
