@@ -597,7 +597,7 @@ fields. Grade 4.5 with an `A1` mark means nothing without the image.
 │ │            │  Grade 5 · exterior A · interior B         │
 │ │   sheet    │  15,415 km  ✓ (API said 15,000)            │
 │ │   800×800  │  A1 right rear · U1 roof                   │
-│ │            │  ⚠ no shaken · ⚠ navi SD card missing      │
+│ │            │  ⚠ navi SD card missing                   │
 │ └────────────┘  steering wheel scuffed                    │
 │                 chassis DMEJ3P-103452 (API masked)        │
 │                 Cyprus comparable: €18,400 (n=7)          │
@@ -605,9 +605,9 @@ fields. Grade 4.5 with an `A1` mark means nothing without the image.
 └───────────────────────────────────────────────────────────┘
 ```
 
-Sorting and flagging carry the load: low confidence, grade mismatches, missing
-shaken and lots with a `BidRecord` all surface at the top with colour flags, so
-the lots needing your eyes aren't buried behind clean ones.
+Sorting and flagging carry the load: low confidence, grade mismatches and lots
+with a `BidRecord` all surface at the top with colour flags, so the lots needing
+your eyes aren't buried behind clean ones.
 
 Jinja2 from the run directory plus a DB query for bid history and the Cyprus
 comparable. `report` is its own command — regenerating is free, so a template
@@ -624,7 +624,7 @@ seen twice should show both. A lot in the run but not yet in the database is
 rendered from `lots.json` anyway, with a banner naming `normalize` as the fix:
 the reason a card is thin belongs on the page, not in the operator's memory.
 
-**Five flags, ranked, and the ranking is the sort key** — one ordering rather
+**Four flags, ranked, and the ranking is the sort key** — one ordering rather
 than a severity scale plus a separate sort rule that can drift out of step:
 
 | | Flag | Why it outranks the next |
@@ -632,8 +632,12 @@ than a severity scale plus a separate sort rule that can drift out of step:
 | 50 | cross-check mismatch | the sheet and the API disagree about the same car |
 | 40 | bid placed | money is already committed here |
 | 30 | confidence < 0.9 | the model is telling you to look at the scan yourself |
-| 20 | no shaken | a real cost to fold into the bid, not missing data |
 | 10 | sheet not read | unfinished work, not a finding |
+
+**No shaken is not among them**, though it was at first. It is a real cost, but
+a blank 車検 box is the ordinary state of an export lot — the badge fired on most
+of the page, which is the same as flagging nothing. The fact stays in the card,
+printed against the 車検 field where the money is worked out.
 
 **"Not read" sorts above a clean lot but is not counted as flagged.** Both
 halves matter. It sorts high because an unextracted sheet is outstanding work

@@ -63,8 +63,8 @@ class Flag:
 # :data:`NEEDS_EYES` on purpose — an unextracted sheet is a gap in the report,
 # not a finding about the car, and counting it as one would mean a freshly
 # fetched run reports every lot as flagged and the count stops meaning anything.
-MISMATCH, BID, LOW_CONFIDENCE_SEV, NO_SHAKEN, NOT_READ = 50, 40, 30, 20, 10
-NEEDS_EYES = NO_SHAKEN
+MISMATCH, BID, LOW_CONFIDENCE_SEV, NOT_READ = 50, 40, 30, 10
+NEEDS_EYES = LOW_CONFIDENCE_SEV
 
 
 def _flags(
@@ -77,8 +77,8 @@ def _flags(
 
     Deliberately not deduplicated into one "needs review" boolean: *why* a lot
     is flagged decides what you do about it. A chassis mismatch is a different
-    car; a low confidence score is a legible-sheet problem; no shaken is a real
-    cost to add to the bid.
+    car; a low confidence score is a legible-sheet problem; a placed bid is money
+    already committed.
     """
     flags = []
 
@@ -97,10 +97,11 @@ def _flags(
         flags.append(Flag("low-confidence", f"confidence {extraction.confidence:.2f}",
                           LOW_CONFIDENCE_SEV))
 
-    if extraction and not extraction.shaken_expiry_raw:
-        # A blank 車検 box is a fact, not a gap: no valid shaken means the buyer
-        # pays to put the car back on the road, which belongs in the bid.
-        flags.append(Flag("no-shaken", "no shaken", NO_SHAKEN))
+    # A blank 車検 box is deliberately not flagged. It is a real cost — the buyer
+    # pays to put the car back on the road — but it is also the common case on
+    # export lots, so a badge for it fired on most of the page and crowded out
+    # the findings that are actually unusual. The fact still shows in the card,
+    # against the 車検 field where the price of it is read off.
 
     if extraction is None:
         # Not a problem with the lot — a gap in the report. Flagged low so it

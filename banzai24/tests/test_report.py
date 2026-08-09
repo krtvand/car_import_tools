@@ -124,11 +124,11 @@ def test_chassis_mismatch_is_flagged():
     assert "chassis" in view.flags[0].label
 
 
-def test_blank_shaken_is_flagged_but_a_present_one_is_not():
-    """A blank 車検 box is a real cost to add to the bid, not missing data."""
-    assert "no-shaken" in {f.key for f in _view(
-        extraction=_extraction(shaken_expiry_raw=None)).flags}
-    assert "no-shaken" not in {f.key for f in _view(extraction=_extraction()).flags}
+def test_blank_shaken_is_not_a_flag():
+    """A real cost, but the common case on export lots — it would badge most of
+    the page and bury the findings that are actually unusual. The card still
+    prints it against the 車検 field."""
+    assert _view(extraction=_extraction(shaken_expiry_raw=None)).flags == []
 
 
 def test_low_confidence_is_flagged():
