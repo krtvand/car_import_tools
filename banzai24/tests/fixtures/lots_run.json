@@ -1,0 +1,536 @@
+{
+ "fetched_at": "2026-08-08T20:44:42.342589+00:00",
+ "search_url": "https://banzai24.com/MAZDA/CX-30/transmissions-auto?yearStart=2023&yearEnd=2023&mileageEnd=55000&engineCapacityStart=1.9&source=auctions&countryISO=JP&gradeOrigin=4&gradeOrigin=4.5&gradeOrigin=5",
+ "filters": {
+  "make": "MAZDA",
+  "model": "CX-30",
+  "transmission": "auto",
+  "year_start": 2023,
+  "year_end": 2023,
+  "mileage_start": null,
+  "mileage_end": 55000,
+  "engine_capacity_start": 1.9,
+  "engine_capacity_end": null,
+  "grade_origin": [
+   "4",
+   "4.5",
+   "5"
+  ],
+  "source": "auctions",
+  "country_iso": "JP"
+ },
+ "lot_filters": {
+  "body_model_code": [
+   "DMEJ3R",
+   "DMFP"
+  ]
+ },
+ "pages_fetched": 1,
+ "total_pages": 1,
+ "total_lots": 5,
+ "truncated": false,
+ "trade_date": "2026-08-11",
+ "lots_selected": [
+  "69-1252-30013"
+ ],
+ "lots_other_days": 4,
+ "lots_filtered_out": 0,
+ "pages": [
+  {
+   "items": [
+    {
+     "auctImage": "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUC8GYaEpo2tUXeblInE28RSohlYfiEeliv_BR4QzojYmm-B359N8NficPo32DSHM6xKHHWkFi06ZpPli5jIyNqcmttqOzaf891H2P",
+     "blockReport": null,
+     "bodyModelCode": "DMEJ3P",
+     "car": {
+      "eq": "AAC",
+      "mark": "MAZDA",
+      "model": "CX-30",
+      "modelId": 11528,
+      "shortCodeModel": "DMEJ3P",
+      "year": "2023",
+      "fullName": "MAZDA CX-30, 20S PROACTIVE TOURING"
+     },
+     "characteristics": {
+      "color": "BLACK",
+      "engine": "2.0 л",
+      "mileage": 23000,
+      "modification": "20S PROACTIVE TOURING",
+      "transmission": "Автомат",
+      "bodyNumber": "DMEJ3P-10**55",
+      "drivetrain": "",
+      "year": "2023",
+      "sourceUrl": null,
+      "fuelType": "",
+      "enginePower": "",
+      "engineCapacity": "2.0",
+      "steeringWheelSide": "RIGHT"
+     },
+     "currency": "JPY",
+     "endPrice": null,
+     "grade": "4.5",
+     "gradeOrigin": "4.5",
+     "id": "019fcb04-9037-7359-a888-2f054a91cdea",
+     "images": [
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXwfd359b9Lg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXwcF359b9Lg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXwZx359b9Lg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXxud359b9Lg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXxvd359b9Lg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oKo29KnShPGb_zdHvWiLUE6-rT2hupBEDEYC-1cJN4KAOvrlDaydNBHBmQvDGJ6K7yRZ0CxTNguXxsF359b9Lg"
+     ],
+     "imagesCount": 7,
+     "img360": null,
+     "isFavorite": false,
+     "isNotification": false,
+     "isUss": true,
+     "isTaa": false,
+     "isOnePrice": false,
+     "isVisible": true,
+     "linkedLotId": null,
+     "lot": {
+      "auction": {
+       "id": 47,
+       "name": "HAA Kobe"
+      },
+      "number": "47-1312-35159",
+      "onlyBanzai": false,
+      "shortNumber": "35159",
+      "tradeDate": "2026-08-08",
+      "tradeTime": "11:17",
+      "fullName": "35159, HAA Kobe, 08.08.2026 11:17"
+     },
+     "onePrice": "0.00",
+     "onePriceDate": "",
+     "registrationMonth": null,
+     "registrationYear": 2023,
+     "selectionLists": [],
+     "source": "archive",
+     "startPrice": "1 290 000 ¥",
+     "statisticsCount": 0,
+     "status": {
+      "code": "SOLD",
+      "name": "Продан"
+     },
+     "tags": [
+      {
+       "id": 1,
+       "title": "Ранее торговался"
+      },
+      {
+       "id": 7,
+       "title": "Только на BANZAI24"
+      },
+      {
+       "id": 6,
+       "title": "Проверенно JapanStat"
+      }
+     ],
+     "tradeDateTime": "2026-08-08 11:17:00",
+     "translationAL": null,
+     "updatedAt": "2026-08-08T02:43:03Z",
+     "videos": null,
+     "predicate": null,
+     "countryISO": "JP",
+     "japanStatReportUrl": null,
+     "priceWithTax": null,
+     "priceWithoutTax": null
+    },
+    {
+     "auctImage": "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUC8GYaEpo2tUXeblInE28RSohlYfiEeliv_BR4Vrg0Y_z_BX1pthaL-hLor2Xjtitw34t6bvRNNSgd0FYUpMwG97jzqWjS8haDNMz",
+     "blockReport": null,
+     "bodyModelCode": "DMEJ3R",
+     "car": {
+      "eq": "AAC",
+      "mark": "MAZDA",
+      "model": "CX-30",
+      "modelId": 11528,
+      "shortCodeModel": "DMEJ3R",
+      "year": "2023",
+      "fullName": "MAZDA CX-30, 20S BLACK TONE ED"
+     },
+     "characteristics": {
+      "color": "GRAY",
+      "engine": "2.0 л",
+      "mileage": 15000,
+      "modification": "20S BLACK TONE ED",
+      "transmission": "Автомат",
+      "bodyNumber": "DMEJ3R-10**10",
+      "drivetrain": "",
+      "year": "2023",
+      "sourceUrl": null,
+      "fuelType": "",
+      "enginePower": "",
+      "engineCapacity": "2.0",
+      "steeringWheelSide": "RIGHT"
+     },
+     "currency": "JPY",
+     "endPrice": null,
+     "grade": "4.5",
+     "gradeOrigin": "4.5",
+     "id": "019fc5a3-a043-7cfe-b2be-1da8fbdb6e7c",
+     "images": [
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBBjgFWIZ6sw",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBBloFWIZ6sw",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBBgIFWIZ6sw",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBCRIFWIZ6sw",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBCTgFWIZ6sw",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMY2fjRuVv_mrensQO7LoYIKxuf8ojO9TMAoY7d7t8EnByvhB3-dnO14EK4DR2ubJ3t0BXkaYHBCVoFWIZ6sw"
+     ],
+     "imagesCount": 7,
+     "img360": null,
+     "isFavorite": false,
+     "isNotification": false,
+     "isUss": true,
+     "isTaa": false,
+     "isOnePrice": false,
+     "isVisible": true,
+     "linkedLotId": null,
+     "lot": {
+      "auction": {
+       "id": 50,
+       "name": "U Kyushu"
+      },
+      "number": "50-1555-53023",
+      "onlyBanzai": false,
+      "shortNumber": "53023",
+      "tradeDate": "2026-08-08",
+      "tradeTime": "11:27",
+      "fullName": "53023, U Kyushu, 08.08.2026 11:27"
+     },
+     "onePrice": "0.00",
+     "onePriceDate": "",
+     "registrationMonth": null,
+     "registrationYear": 2023,
+     "selectionLists": [],
+     "source": "archive",
+     "startPrice": "1 280 000 ¥",
+     "statisticsCount": 0,
+     "status": {
+      "code": "SOLD_BY_NEGO",
+      "name": "Продан по переговорам"
+     },
+     "tags": [
+      {
+       "id": 8,
+       "title": "Впервые на торгах"
+      },
+      {
+       "id": 7,
+       "title": "Только на BANZAI24"
+      },
+      {
+       "id": 6,
+       "title": "Проверенно JapanStat"
+      }
+     ],
+     "tradeDateTime": "2026-08-08 11:27:00",
+     "translationAL": null,
+     "updatedAt": "2026-08-08T08:23:02Z",
+     "videos": null,
+     "predicate": null,
+     "countryISO": "JP",
+     "japanStatReportUrl": null,
+     "priceWithTax": null,
+     "priceWithoutTax": null
+    },
+    {
+     "auctImage": "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUC8GYaEpo2tUXeblInE28RSohlYfiEeliv_BR4Vm0g4igqxn4p4wLf4GYxWynB2DWVLa8oTGmtZjJzGlFk5h7NGtJMWIVx8G1mm23",
+     "blockReport": null,
+     "bodyModelCode": "DMFP",
+     "car": {
+      "eq": "AC",
+      "mark": "MAZDA",
+      "model": "CX-30",
+      "modelId": 11528,
+      "shortCodeModel": "DMFP",
+      "year": "2023",
+      "fullName": "MAZDA CX-30, X BLACK TONE ED"
+     },
+     "characteristics": {
+      "color": "OTHER",
+      "engine": "2.0 л",
+      "mileage": 31000,
+      "modification": "X BLACK TONE ED",
+      "transmission": "Автомат",
+      "bodyNumber": "DMFP-20**89",
+      "drivetrain": "",
+      "year": "2023",
+      "sourceUrl": null,
+      "fuelType": "",
+      "enginePower": "",
+      "engineCapacity": "2.0",
+      "steeringWheelSide": "RIGHT"
+     },
+     "currency": "JPY",
+     "endPrice": null,
+     "grade": "4.5",
+     "gradeOrigin": "4.5",
+     "id": "019fca69-e4a7-705a-ad11-fff353f6196e",
+     "images": [
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVVsO_bMHCaQ",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVVtO_bMHCaQ",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVVvm_bMHCaQ",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVWZu_bMHCaQ",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVWcO_bMHCaQ",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogy78oIMlyurSrpf4E_AJvZUQBX-GRDmJ0sJAoZWrT2D4TsI02WjybsMcHhQOTHoL3iTamnzvBdxokkYVWdO_bMHCaQ"
+     ],
+     "imagesCount": 7,
+     "img360": null,
+     "isFavorite": false,
+     "isNotification": false,
+     "isUss": true,
+     "isTaa": false,
+     "isOnePrice": false,
+     "isVisible": true,
+     "linkedLotId": null,
+     "lot": {
+      "auction": {
+       "id": 50,
+       "name": "U Kyushu"
+      },
+      "number": "50-1555-53057",
+      "onlyBanzai": false,
+      "shortNumber": "53057",
+      "tradeDate": "2026-08-08",
+      "tradeTime": "11:38",
+      "fullName": "53057, U Kyushu, 08.08.2026 11:38"
+     },
+     "onePrice": "0.00",
+     "onePriceDate": "",
+     "registrationMonth": null,
+     "registrationYear": 2023,
+     "selectionLists": [],
+     "source": "archive",
+     "startPrice": "950 000 ¥",
+     "statisticsCount": 0,
+     "status": {
+      "code": "SOLD",
+      "name": "Продан"
+     },
+     "tags": [
+      {
+       "id": 8,
+       "title": "Впервые на торгах"
+      },
+      {
+       "id": 7,
+       "title": "Только на BANZAI24"
+      },
+      {
+       "id": 6,
+       "title": "Проверенно JapanStat"
+      }
+     ],
+     "tradeDateTime": "2026-08-08 11:38:00",
+     "translationAL": null,
+     "updatedAt": "2026-08-08T07:43:03Z",
+     "videos": null,
+     "predicate": null,
+     "countryISO": "JP",
+     "japanStatReportUrl": null,
+     "priceWithTax": null,
+     "priceWithoutTax": null
+    },
+    {
+     "auctImage": "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUC8GYaEpo2tUXeblInE28RSohlYfiEeliv_FY4ViyjNqj8RrzpIgBfSN9xKbgS08laHdddmWBks3d26MiACGR9LLyssKdBKvUwJAM",
+     "blockReport": null,
+     "bodyModelCode": "DMEJ3R",
+     "car": {
+      "eq": "AC",
+      "mark": "MAZDA",
+      "model": "CX-30",
+      "modelId": 11528,
+      "shortCodeModel": "DMEJ3R",
+      "year": "2023.12",
+      "fullName": "MAZDA CX-30, 20S 4WD"
+     },
+     "characteristics": {
+      "color": "RED",
+      "engine": "2.0 л",
+      "mileage": 19000,
+      "modification": "20S 4WD",
+      "transmission": "Автомат",
+      "bodyNumber": "DMEJ3R-10**92",
+      "drivetrain": "",
+      "year": "2023.12",
+      "sourceUrl": null,
+      "fuelType": "",
+      "enginePower": "",
+      "engineCapacity": "2.0",
+      "steeringWheelSide": "RIGHT"
+     },
+     "currency": "JPY",
+     "endPrice": "0 ¥",
+     "grade": "4",
+     "gradeOrigin": "4",
+     "id": "019fdb00-10f2-7e31-8f44-a6bd1eef71c6",
+     "images": [
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjGGJt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjGFRt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjGERt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjB3Jt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjB2Jt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjB1Rt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjB0Rt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjBnJt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxjBmJt1dSwfA",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTWoIM1l6jG5jWmsuHNTwljApyT8zYzFm2L4KNa8I0wrkmVf4XlC_POnFm_LCwbtDKXnxrYKXZMiHxiGHJt1dSwfA"
+     ],
+     "imagesCount": 11,
+     "img360": null,
+     "isFavorite": false,
+     "isNotification": false,
+     "isUss": false,
+     "isTaa": true,
+     "isOnePrice": false,
+     "isVisible": true,
+     "linkedLotId": null,
+     "lot": {
+      "auction": {
+       "id": 69,
+       "name": "TAA Kyushu"
+      },
+      "number": "69-1252-30013",
+      "onlyBanzai": false,
+      "shortNumber": "30013",
+      "tradeDate": "2026-08-11",
+      "tradeTime": "12:00",
+      "fullName": "30013, TAA Kyushu, 11.08.2026 12:00"
+     },
+     "onePrice": "0.00",
+     "onePriceDate": "",
+     "registrationMonth": 12,
+     "registrationYear": 2023,
+     "selectionLists": [],
+     "source": "auctions",
+     "startPrice": "1 350 000 ¥",
+     "statisticsCount": 0,
+     "status": {
+      "code": "LISTED",
+      "name": "Ожидает торгов"
+     },
+     "tags": [
+      {
+       "id": 8,
+       "title": "Впервые на торгах"
+      },
+      {
+       "id": 6,
+       "title": "Проверенно JapanStat"
+      }
+     ],
+     "tradeDateTime": "2026-08-11 12:00:00",
+     "translationAL": null,
+     "updatedAt": "2026-08-07T09:15:03Z",
+     "videos": null,
+     "predicate": null,
+     "countryISO": "JP",
+     "japanStatReportUrl": null,
+     "priceWithTax": null,
+     "priceWithoutTax": null
+    },
+    {
+     "auctImage": "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUC8GYaEpo2tUXeblInE28RSohlYfiEeliv_Fb4Q2wgYj0qx6iro5dcrmbvwGJ2LuG9q_jHvVH2YwJvSLmSzLsLEGYNhCKrdps3yIi",
+     "blockReport": null,
+     "bodyModelCode": "DMEJ3P",
+     "car": {
+      "eq": "AAC",
+      "mark": "MAZDA",
+      "model": "CX-30",
+      "modelId": 11528,
+      "shortCodeModel": "DMEJ3P",
+      "year": "2023.01",
+      "fullName": "MAZDA CX-30, 20S"
+     },
+     "characteristics": {
+      "color": "BLUE",
+      "engine": "2.0 л",
+      "mileage": 15000,
+      "modification": "20S",
+      "transmission": "Автомат",
+      "bodyNumber": "DMEJ3P-10**52",
+      "drivetrain": "",
+      "year": "2023.01",
+      "sourceUrl": null,
+      "fuelType": "",
+      "enginePower": "",
+      "engineCapacity": "2.0",
+      "steeringWheelSide": "RIGHT"
+     },
+     "currency": "JPY",
+     "endPrice": "0 ¥",
+     "grade": "5",
+     "gradeOrigin": "5",
+     "id": "019fded9-2a2a-714c-96e3-fcff2823fcb7",
+     "images": [
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXZMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXYMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXa0UvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXtYUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXpMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXoMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHXq0UvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHZdYUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwHZZMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwYXdYUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwYXZMUvV91Pg",
+      "https://banzai24.com/api/image-service/v2_AAECAwQFBgcICQoLDA0ODwrokxFmqnaUAM2RPEFxxYAhSk8V_ucmJ_9WjW5T3dTR-T4_C8R0eN4Q2EHfHsFb_12IhMmVJ9oxsXpGERzL5jmxwlZLk6qejPsLj_u7EJbTwC1MB-we0k5VkFaIR2KLInDH0_aOGXFyPu_VPD2DN7rN46YsL71diSIAQ3j6hdWe7VMGvx6ogwTaoKol2ujSqT0gFFRWYdMBIcwbXXXkRk2YrR6FdtAabAlaOIY3RbEWWQ__B-jn9w1qZfmmGvq8PCwYXYMUvV91Pg"
+     ],
+     "imagesCount": 13,
+     "img360": null,
+     "isFavorite": false,
+     "isNotification": false,
+     "isUss": false,
+     "isTaa": false,
+     "isOnePrice": false,
+     "isVisible": true,
+     "linkedLotId": "019fa6d0-bbb6-7390-ae06-2ac779f40046",
+     "lot": {
+      "auction": {
+       "id": 55,
+       "name": "CAA Chubu"
+      },
+      "number": "55-1850-33152",
+      "onlyBanzai": false,
+      "shortNumber": "33152",
+      "tradeDate": "2026-08-12",
+      "tradeTime": "12:00",
+      "fullName": "33152, CAA Chubu, 12.08.2026 12:00"
+     },
+     "onePrice": "0.00",
+     "onePriceDate": "",
+     "registrationMonth": 1,
+     "registrationYear": 2023,
+     "selectionLists": [],
+     "source": "auctions",
+     "startPrice": "390 000 ¥",
+     "statisticsCount": 0,
+     "status": {
+      "code": "LISTED",
+      "name": "Ожидает торгов"
+     },
+     "tags": [
+      {
+       "id": 1,
+       "title": "Ранее торговался"
+      },
+      {
+       "id": 6,
+       "title": "Проверенно JapanStat"
+      }
+     ],
+     "tradeDateTime": "2026-08-12 12:00:00",
+     "translationAL": null,
+     "updatedAt": "2026-08-08T01:19:02Z",
+     "videos": null,
+     "predicate": null,
+     "countryISO": "JP",
+     "japanStatReportUrl": null,
+     "priceWithTax": null,
+     "priceWithoutTax": null
+    }
+   ]
+  }
+ ]
+}

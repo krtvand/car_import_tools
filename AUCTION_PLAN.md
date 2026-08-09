@@ -350,6 +350,7 @@ class AuctionLot(SQLModel, table=True):
     registration_month: int | None
     mileage_km: int | None        # API value — rounded
     engine_capacity: str | None
+    fuel_type: str | None         # "petrol" | "hybrid" — null on most lots
     transmission: str | None
     colour: str | None
     steering: str | None
@@ -441,6 +442,18 @@ Three decisions the schema above does not show, each forced by the real data:
 
 `sheet_path` is stored relative to the project root, since Phase 4 expects a run
 directory to survive being copied elsewhere.
+
+**`fuel_type` is left null rather than inferred.** It is blank on 72 of the 112
+saved lots, and `characteristics.engine` only looks like a second source: it
+names the fuel (`"2.5 л / Гибрид"`) in exactly the cases `fuelType` already
+does, so falling back to it would recover nothing. Engine size is not evidence
+of fuel. Where it *is* recorded it earns its column — RAV4 lot `65-1953-2391`
+is a hybrid whose `modification` string ("Z 4WD") never says so.
+
+Adding it also needed `db._ensure_columns`: `create_all` creates missing tables
+but never alters an existing one, so a model gaining a field breaks every read
+of a database created before it. That diffs models against tables and adds what
+is missing, so the next added column costs nothing.
 
 **Test:** normalize the saved `lots.json` fixture → upsert → re-upsert is
 idempotent.
