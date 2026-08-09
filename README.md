@@ -52,12 +52,29 @@ Quick overrides for the common filters (no need to edit `bazaraki/config.py`):
 uv run python main.py scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
 ```
 
+### Saved searches
+
+One script per car, in `bazaraki/searches/`, each pinning its own filters with
+`--no-defaults` so it can't inherit anything from `DEFAULT_FILTERS`:
+
+```bash
+./bazaraki/searches/mazda-cx30.sh --export
+./bazaraki/searches/toyota-rav4.sh --dry-run
+```
+
+Extra flags are passed through to `scrape`. To add a car, copy a script and edit
+the filter block. Watch the model slug: bazaraki prefixes the make on some models
+(`toyota/toyota-rav4/`, not `toyota/rav4/`) — open the model's page and read the
+last path segment.
+
 Options for `scrape`:
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--make` / `--model` | from config | Make/model slugs (override `DEFAULT_FILTERS`) |
-| `--price-min/max`, `--year-min/max` | from config | Range overrides |
+| `--price-min/max`, `--year-min/max`, `--mileage-min/max` | from config | Range overrides |
+| `--no-defaults` | off | Ignore `DEFAULT_FILTERS` entirely and use only the flags given |
+| `--dry-run` | off | Print the filters and search URL, then exit without crawling |
 | `--max-pages N` | 3 | How many listing pages to crawl (~60 ads/page) |
 | `--no-details` | off | Skip per-ad detail pages — faster, but only the fields shown in the list view (price, mileage, gearbox, fuel, location, date) |
 | `--concurrency N` | 1 | Concurrent requests (kept low to be polite) |

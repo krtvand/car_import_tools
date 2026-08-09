@@ -8,6 +8,9 @@ Examples:
     uv run python main.py scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
     uv run python main.py scrape --max-pages 10 --no-details
     uv run python main.py export --out cars.xlsx
+
+Saved searches live in ``bazaraki/searches/*.sh`` — one script per car, each
+pinning its own filters with --no-defaults.
 """
 from __future__ import annotations
 
@@ -21,14 +24,53 @@ from .crawler import run_scrape
 from .export import export_xlsx
 
 
+_OVERRIDABLE = (
+    "make", "model",
+    "price_min", "price_max",
+    "year_min", "year_max",
+    "mileage_min", "mileage_max",
+)
+
+# Base for --no-defaults: every filter unset. Without it, a saved search that
+# omits a filter would silently inherit DEFAULT_FILTERS' value for it — e.g. a
+# RAV4 search picking up the CX-30's mileage ceiling.
+NEUTRAL_FILTERS = config.CarFilters()
+
+
 def _filters_from_args(args: argparse.Namespace) -> config.CarFilters:
-    """Start from DEFAULT_FILTERS and apply any provided CLI overrides."""
+    """Apply CLI overrides on top of DEFAULT_FILTERS, or of nothing."""
+    base = NEUTRAL_FILTERS if getattr(args, "no_defaults", False) else config.DEFAULT_FILTERS
     overrides = {
         name: getattr(args, name)
-        for name in ("make", "model", "price_min", "price_max", "year_min", "year_max")
-        if getattr(args, name) is not None
+        for name in _OVERRIDABLE
+        if getattr(args, name, None) is not None
     }
-    return dataclasses.replace(config.DEFAULT_FILTERS, **overrides)
+    return dataclasses.replace(base, **overrides)
+
+
+def _describe(filters: config.CarFilters) -> str:
+    """One-line summary of the filters actually set, for the run log."""
+    parts = [
+        f"{f.name}={value}"
+        for f in dataclasses.fields(filters)
+        if (value := getattr(filters, f.name)) not in (None, [], "")
+    ]
+    return ", ".join(parts) or "none (whole cars category)"
+
+
+def _plan_url(filters: config.CarFilters) -> str:
+    """The URL --dry-run shows.
+
+    Year and engine-size codes are site-specific and only readable from the live
+    category page, so a search using them can't be spelled out ahead of the
+    crawl; say so rather than print a URL missing those filters.
+    """
+    if config.needs_option_resolution(filters):
+        return (
+            config.BASE_URL + config.base_path(filters)
+            + "  (+ year/engine-size codes resolved from the live page)"
+        )
+    return config.build_search_url(filters)
 
 
 def main() -> None:
@@ -42,7 +84,22 @@ def main() -> None:
     p_scrape.add_argument("--price-max", type=int, dest="price_max")
     p_scrape.add_argument("--year-min", type=int, dest="year_min")
     p_scrape.add_argument("--year-max", type=int, dest="year_max")
+    p_scrape.add_argument("--mileage-min", type=int, dest="mileage_min", metavar="KM")
+    p_scrape.add_argument("--mileage-max", type=int, dest="mileage_max", metavar="KM")
+    p_scrape.add_argument(
+        "--no-defaults",
+        action="store_true",
+        dest="no_defaults",
+        help="Ignore config.DEFAULT_FILTERS; use only the flags given. Saved "
+             "searches use this so they cannot inherit stray filters.",
+    )
     p_scrape.add_argument("--max-pages", type=int, default=3, help="Listing pages to crawl")
+    p_scrape.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Print the filters and the search URL, then exit without crawling",
+    )
     p_scrape.add_argument(
         "--no-details",
         dest="details",
@@ -59,6 +116,11 @@ def main() -> None:
 
     if args.command == "scrape":
         filters = _filters_from_args(args)
+        print(f"Filters: {_describe(filters)}")
+        if args.dry_run:
+            print(f"Search:  {_plan_url(filters)}")
+            print("Dry run — nothing scraped.")
+            return
         summary = asyncio.run(
             run_scrape(
                 filters=filters,
