@@ -10,14 +10,23 @@ Examples:
     uv run python -m banzai24 fetch --max-lots 80 --no-sheets
     uv run python -m banzai24 fetch --all-days   # don't narrow to the nearest day
     uv run python -m banzai24 fetch --body-model-code DMEJ3P --body-model-code DMEJ3R
+
+`fetch` normalizes what it collected on the way out. `normalize` re-does that
+over an already-saved run and touches no network, so a parser fix is applied by
+re-running it rather than by fetching anything again:
+
+    uv run python -m banzai24 normalize                  # the most recent run
+    uv run python -m banzai24 normalize runs/2026-08-08_234439_MAZDA-CX-30
+    uv run python -m banzai24 normalize --all            # incl. the later days
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import dataclasses
+from pathlib import Path
 
-from . import config, fetch, session
+from . import config, fetch, normalize, session
 from .lot_filters import LotFilters
 
 
@@ -68,6 +77,19 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("login", help="Sign in by hand once and save the browser session")
     sub.add_parser("check", help="Verify the saved session still authenticates")
 
+    norm = sub.add_parser(
+        "normalize",
+        help="Turn a saved run's lots.json into DB rows and lots.csv (no network)",
+    )
+    norm.add_argument("run_dir", nargs="?", metavar="RUN_DIR",
+                      help="Run directory to normalize. Defaults to the most recent one.")
+    norm.add_argument("--all", action="store_true", dest="all_lots",
+                      help="Normalize every lot the fetch saw, not just the ones it kept. "
+                           "The later auction days a run set aside are still real market "
+                           "data, and re-reading them costs nothing.")
+    norm.add_argument("--no-db", action="store_true", help="Write lots.csv only")
+    norm.add_argument("--no-csv", action="store_true", help="Write to the database only")
+
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--make")
@@ -99,6 +121,9 @@ def _build_parser() -> argparse.ArgumentParser:
                             f"extract. Pages are turned as needed. "
                             f"Default {fetch.DEFAULT_MAX_LOTS}.")
         p.add_argument("--no-sheets", action="store_true", help="Skip downloading auction sheets")
+        p.add_argument("--no-normalize", action="store_true", dest="no_normalize",
+                       help="Stop after writing lots.json. The run can be normalized "
+                            "later with `normalize` — it needs no network.")
         p.add_argument("--all-days", action="store_true", dest="all_days",
                        help="Keep every auction day the search returns. By default a run "
                             "is narrowed to the closest upcoming day — the one still "
@@ -126,6 +151,23 @@ def main() -> None:
         except (session.SessionExpired, session.ServiceUnavailable) as exc:
             raise SystemExit(str(exc))
         print(f"Session OK — {total} lots match DEFAULT_FILTERS.")
+        return
+
+    if args.command == "normalize":
+        run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
+        if run_dir is None:
+            raise SystemExit("No run directories found — run `fetch` first.")
+        if not (run_dir / "lots.json").exists():
+            raise SystemExit(f"{run_dir} has no lots.json.")
+        result = normalize.run_normalize(
+            run_dir,
+            all_lots=args.all_lots,
+            to_db=not args.no_db,
+            to_csv=not args.no_csv,
+        )
+        print(result.summary())
+        for problem in result.problems:
+            print(f"  skipped: {problem}")
         return
 
     filters = _filters_from_args(args)
@@ -170,6 +212,12 @@ def main() -> None:
             f"{result.total_pages} pages ({result.total_lots} lots) available — "
             f"{knob} to get the rest."
         )
+
+    if not args.no_normalize and result.lots:
+        normalized = normalize.run_normalize(result.run_dir)
+        print(normalized.summary())
+        for problem in normalized.problems:
+            print(f"  skipped: {problem}")
 
 
 if __name__ == "__main__":

@@ -423,6 +423,25 @@ Two tables so a re-extraction rewrites only the AI-derived half. `BidRecord` is
 append-only, written *after* a bid by Phase 5 — it exists for auditability and
 double-bid prevention, not to plan bids.
 
+Three decisions the schema above does not show, each forced by the real data:
+
+- **`"0 ¥"` normalizes to `None`, not `0`.** banzai24 writes a zero end price
+  for a lot that has not sold. Storing the zero would drag every average and
+  minimum computed over the column toward nothing — and "did not sell" is
+  already carried, correctly, by `status_code`.
+- **Re-normalizing must not undo Phase 3.** Normalizing only knows an image is
+  on disk, so it always proposes `sheet_status="pending"`. The upsert refuses
+  that when the row is already `extracted` **and the hash is unchanged** —
+  otherwise every re-normalize would silently re-queue the whole database at
+  $0.02 a sheet. A *changed* hash does go back in the queue, which is right: it
+  is a different photograph, and the old extraction describes something else.
+- **A run normalizes the lots it kept**, not every lot it saw; `--all` widens
+  it. The kept lots are the run's subject and the only ones with sheets. The
+  later days are still saved in `lots.json`, so widening later costs nothing.
+
+`sheet_path` is stored relative to the project root, since Phase 4 expects a run
+directory to survive being copied elsewhere.
+
 **Test:** normalize the saved `lots.json` fixture → upsert → re-upsert is
 idempotent.
 
