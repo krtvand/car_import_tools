@@ -28,4 +28,13 @@ pythonpath = ["."]
 testpaths = ["bazaraki/tests", "banzai24/tests"]
 # importlib mode lets both projects hold a test_db.py without the
 # duplicate-basename collision the default prepend mode causes.
-addopts = "--import-mode=importlib"
+#
+# `-m 'not live'` keeps the paid tests out of the default run. A test suite that
+# spends money every time it is run is a suite people stop running, and the
+# feedback it gives — "the model still reads this one sheet correctly" — is only
+# worth buying when the prompt or the schema has actually changed.
+addopts = "--import-mode=importlib -m 'not live'"
+
+markers = [
+    "live: calls the Claude API — costs ~$0.015 a sheet. Excluded by default; run with `pytest -m live`.",
+]

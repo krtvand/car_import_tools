@@ -1,9 +1,25 @@
 """Reading auction sheets with Claude.
 
 Split deliberately: everything that does not need the network is an ordinary
-test, and the one test that actually spends money is opt-in. The cross-checks
-are the part most worth testing offline — they are what tells you an extraction
-went wrong, so a bug there is a bug in the only thing watching the model.
+test, and the two that actually call the model are marked ``live`` and excluded
+from the default run (see ``addopts`` in pyproject.toml).
+
+    uv run pytest                 # everything except the paid tests
+    uv run pytest -m live         # just the paid ones, ~$0.03
+
+**Run the live tests when you change what is sent or what comes back** — the
+prompt, :class:`~banzai24.sheets.SheetData`, ``MODEL``, or ``EFFORT``. Those are
+the only edits that can change whether the model still reads a sheet correctly,
+and they are exactly what the offline tests cannot check: everything below
+verifies our side of the exchange against a fixed expectation, so all of it
+would keep passing while a reworded prompt quietly started misreading grades.
+
+Editing storage, the CLI, or the cross-check arithmetic does not need them —
+those are covered offline, including against real recorded values.
+
+The cross-checks are the part most worth testing offline: they are what tells
+you an extraction went wrong, so a bug there is a bug in the only thing watching
+the model.
 """
 from __future__ import annotations
 
@@ -340,9 +356,10 @@ def test_the_first_sheet_pays_the_cache_write_and_later_ones_do_not():
 
 # --- the live golden-file test -----------------------------------------------
 
+@pytest.mark.live
 @pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="live extraction: needs ANTHROPIC_API_KEY (costs ~$0.03)",
+    reason="needs ANTHROPIC_API_KEY",
 )
 def test_the_model_reads_the_fixture_sheet_correctly():
     """The plan's acceptance test: assert on known-good values, not on prose.
@@ -380,9 +397,10 @@ def test_the_model_reads_the_fixture_sheet_correctly():
     assert sheets.chassis_matches(data.chassis_full, "DMEJ3P-10**52") is True
 
 
+@pytest.mark.live
 @pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="live extraction: needs ANTHROPIC_API_KEY (costs ~$0.03)",
+    reason="needs ANTHROPIC_API_KEY",
 )
 def test_the_live_extraction_agrees_with_what_the_api_said():
     """The cross-checks, end to end — the fixture lot is the 15,415 vs 15,000 case."""
