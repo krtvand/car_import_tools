@@ -135,6 +135,10 @@ class SheetData(BaseModel):
                                              "verbatim. Empty list if none.")
 
     warnings_ja: str | None = Field(description="注意事項欄 box, verbatim Japanese")
+    warnings_en: str | None = Field(description="Your English translation of 注意事項欄, "
+                                                "with the trade shorthand spelled out "
+                                                "('ﾋﾟSD欠品' -> 'navi SD card missing'). "
+                                                "Null if that box is empty.")
     inspector_notes_ja: str | None = Field(description="検査員記入欄 box, verbatim "
                                                        "Japanese")
     inspector_notes_en: str | None = Field(description="Your English translation of "
@@ -186,6 +190,12 @@ Rules:
   that is a real, valuable fact. Do not invent a date to fill the field.
 - Copy Japanese text **verbatim** into the _ja fields, including half-width
   katakana (ﾋﾟSD欠品 stays exactly that). Translate only where asked.
+- 注意事項欄 is written in dealer shorthand — abbreviations and half-width
+  katakana, not sentences. Spell it out in warnings_en so a buyer who reads no
+  Japanese knows what is wrong: ﾋﾟSD欠品 is "navi SD card missing", 取保 is
+  "owner's handbook and warranty booklet", 後送 is "documents to follow". If
+  part of the box is illegible or you do not know the abbreviation, translate
+  what you can read and leave the rest out rather than inventing a meaning.
 - Do not convert the era date. Return 初度登録 as printed; conversion happens
   downstream.
 - Mileage is digits only, no separators or units.
@@ -448,6 +458,7 @@ def to_row(extraction: Extraction) -> dict:
                                    ensure_ascii=False),
         "equipment": json.dumps(data.equipment, ensure_ascii=False),
         "warnings_ja": data.warnings_ja,
+        "warnings_en": data.warnings_en,
         "inspector_notes_ja": data.inspector_notes_ja,
         "inspector_notes_en": data.inspector_notes_en,
         "drivetrain": data.drivetrain,

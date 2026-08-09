@@ -98,6 +98,8 @@ class SheetExtraction(SQLModel, table=True):
     damage_marks: str | None = None     # JSON: [{panel, code}]
     equipment: str | None = None        # JSON list
     warnings_ja: str | None = None      # 注意事項欄
+    warnings_en: str | None = None      # …translated; null on rows extracted
+                                        # before the prompt asked for it
     inspector_notes_ja: str | None = None
     inspector_notes_en: str | None = None
     drivetrain: str | None = None       # "2WD" | "4WD" | … as printed

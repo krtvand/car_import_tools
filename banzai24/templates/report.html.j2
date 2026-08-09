@@ -236,8 +236,8 @@
         {% endif %}
 
         {% if view.extraction.warnings_ja %}
-        <dt>注意事項欄</dt>
-        <dd class="ja warn">{{ view.extraction.warnings_ja }}</dd>
+        <dt>Warnings 注意事項欄</dt>
+        <dd class="ja warn">{{ view.extraction.warnings_ja }}{% if view.extraction.warnings_en %}<span class="note translation">{{ view.extraction.warnings_en }}</span>{% endif %}</dd>
         {% endif %}
 
         {% if view.extraction.inspector_notes_ja %}

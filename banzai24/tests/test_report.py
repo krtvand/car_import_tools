@@ -90,7 +90,8 @@ def _extraction(lot_number: str = "55-1850-33152", **overrides) -> SheetExtracti
                                     {"panel": "bonnet", "code": "トビA"}],
                                    ensure_ascii=False),
         "equipment": json.dumps(["純正メーカーナビTV"], ensure_ascii=False),
-        "warnings_ja": "ﾋﾟSD欠品", "inspector_notes_ja": "ハンドルすれ",
+        "warnings_ja": "ﾋﾟSD欠品", "warnings_en": "Navi SD card missing",
+        "inspector_notes_ja": "ハンドルすれ",
         "inspector_notes_en": "Steering wheel scuffed",
         "private_car_note": "自家用", "confidence": 0.95,
     }
@@ -259,6 +260,22 @@ def test_vehicle_history_is_glossed_in_english_beside_the_japanese():
         private_car_note=None, rental_car_note="レンタカー"))])
     assert "ex-rental" in rental
     assert "warn" in rental
+
+
+def test_the_warnings_box_is_translated_beside_the_japanese():
+    """ﾋﾟSD欠品 is the box that costs the buyer money, written in shorthand no
+    non-Japanese reader can price. The Japanese still prints beside it."""
+    html = _render([_view(extraction=_extraction())])
+    assert "ﾋﾟSD欠品" in html
+    assert "Navi SD card missing" in html
+    assert "Warnings 注意事項欄" in html
+
+
+def test_a_warnings_box_extracted_before_the_translation_still_renders():
+    """Rows stored by the earlier prompt have no warnings_en, and re-reading a
+    sheet costs money — the Japanese must stand on its own until then."""
+    html = _render([_view(extraction=_extraction(warnings_en=None))])
+    assert re.search(r"ﾋﾟSD欠品\s*</dd>", html)
 
 
 def test_unknown_history_wording_still_renders_without_a_gloss():

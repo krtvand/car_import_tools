@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -62,7 +63,8 @@ def _sheet_data(**overrides) -> SheetData:
         "first_registration_raw": "R5年1月", "shaken_expiry_raw": None,
         "damage_marks": [DamageMark(panel="right rear", code="A1")],
         "equipment": ["純正メーカーナビTV"],
-        "warnings_ja": "ﾋﾟSD欠品", "inspector_notes_ja": "ハンドルすれ",
+        "warnings_ja": "ﾋﾟSD欠品", "warnings_en": "Navi SD card missing",
+        "inspector_notes_ja": "ハンドルすれ",
         "inspector_notes_en": "Steering wheel scuffed", "drivetrain": None,
         "rental_car_note": None, "private_car_note": "自家用", "confidence": 0.95,
     }
@@ -389,6 +391,11 @@ def test_the_model_reads_the_fixture_sheet_correctly():
     assert {m.code for m in data.damage_marks} == GOLDEN["damage_codes"]
 
     assert GOLDEN["warnings_contains"] in (data.warnings_ja or "")
+    # The shorthand spelled out. Asserted on the meaning that has to survive —
+    # the card is missing — not on a wording the model is free to vary.
+    assert "SD" in (data.warnings_en or "")
+    assert re.search(r"missing|absent|not (included|present)", data.warnings_en or "",
+                     re.IGNORECASE)
     assert GOLDEN["inspector_notes_contains"] in (data.inspector_notes_ja or "")
     assert GOLDEN["private_car_note_contains"] in (data.private_car_note or "")
     assert data.rental_car_note is None      # 車歴 is mutually exclusive
