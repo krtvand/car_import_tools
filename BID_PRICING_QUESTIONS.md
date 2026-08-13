@@ -225,3 +225,103 @@ when null (`no table row for 2017`). Not in the header summary (Q7: no flag, no 
 - Whether the `_2026` in the filename is picked by year or is just a default path.
 - Test seams: pure lookup against fixture tables vs a rendered-report assertion —
   depends on Q13's error semantics.
+---
+
+# Round 3
+
+## Facts established (looked up, not to be answered)
+
+- `bidrecord` holds **0 rows**. Removing it costs no data.
+- `BidRecord` is referenced in 5 places in code (`models.py:129`, `db.py:195`
+  `bids_by_numbers`, `report.py:34/74/258/432`), 5 in the template (the `--bid`
+  CSS var, `.lot.bid`, `.badge.bid`, the bid block at `report.html.j2:287-293`
+  and its `not yet bid` fallback), and 3 in `test_report.py`.
+- The `report` command already takes `--jpy-per-eur`, used for start prices.
+
+## Q18 — Q16 reversed the arithmetic Q2 fixed. Which is it?
+
+Q2: `bid_ceiling = max_bid − extra_costs`. Q16: `bid ¥X · area −¥Y · **total
+cost** ¥Z`. "Total cost" reads as `X + Y`, not `X − Y`.
+
+- **(A) Ceiling** — `X` is the table's all-in max bid, `Z = X − Y` is what you may
+  hammer at this house. Z < X. This is Q2.
+- **(B) Total cost** — `X` is what you would bid, `Z = X + Y` is what that bid
+  costs you landed. Z > X. This is what Q16's label says.
+
+➡️ **(A)**, label fixed to `ceiling`. Under (B), `max_bid_jpy` would have to mean
+"hammer price", which contradicts Q2's all-in definition — so if you want (B),
+Q2's answer needs rewriting too. State which, and what `X` is labelled.
+
+**Answer:**
+
+## Q19 — `year` is singular now; edges and duplicates still open
+
+➡️ **Exact year match** — one row per year per mileage band. No "does 2018 mean
+2018+" ambiguity, and an unpriced year returns null rather than borrowing a
+neighbouring year's number. **`mileage_min`/`mileage_max` inclusive both ends**,
+blank = open-ended. **Two rows matching one lot = load-time error** (Q15).
+
+**Answer:**
+
+## Q20 — What may the `rental` column hold?
+
+Under Q12 a blank cell can never match: every lot either has a sheet note or gets
+a null ceiling without consulting the table.
+
+➡️ **Exactly `rental` or `private`; blank is a load-time error** — a row that can
+never match is a typo, and Q15 says catch edits loudly. Accepted consequence:
+with 7 private and 0 rental extractions today, at most 7 of 62 lots can show a
+ceiling.
+
+**Answer:**
+
+## Q21 — Alias CSV: path, columns, unmatched houses
+
+Do we still fold-normalise (uppercase, strip punctuation/spaces), or is the alias
+file the only mechanism? Normalising alone fixes `BAY AUC`→`BAYAUC`.
+
+➡️ `banzai24/inputs/auction_aliases.csv`, columns `db_name,area_price_name`,
+**plus** fold-normalisation — the file then carries only the six that genuinely
+differ, not all seventeen. A house with neither alias nor fold-match gets a
+**null ceiling and a reason, not an error**: new houses appear over time and a
+report should not start failing because banzai24 added one.
+
+**Answer:**
+
+## Q22 — Flags, defaults, and the `_2026` in the filename
+
+➡️ `--bid-prices` and `--area-prices` on `report`, defaulting to
+`banzai24/inputs/bid_prices.csv` and
+`banzai24/inputs/auction_area_prices_2026.csv`. **The year is not computed** — a
+clock-derived path silently loses every ceiling on 1 January.
+
+**Answer:**
+
+## Q23 — How far does removing `BidRecord` go?
+
+➡️ **Delete the code, leave the physical table.** Model, `db.bids_by_numbers`,
+`LotView.bids`, the `BID` flag and its severity constant, the template block and
+its CSS, and the three test references all go; the empty table stays in
+`auction.db` (dropping it needs a migration to buy nothing). Confirm `not yet
+bid` disappears rather than folding into the new money block.
+
+**Answer:**
+
+## Q24 — EUR, or JPY only?
+
+➡️ **JPY only.** The ceiling is a JPY decision and the row is three numbers wide
+already; the euro comparison stays next to the Cyprus median where it earns its
+place.
+
+**Answer:**
+
+## Q25 — Test seams
+
+➡️ New `banzai24/tests/test_bidding.py` against tiny fixture CSVs: band edges
+(min and max both hit), exact-year miss, alias hit, fold-only hit, unknown house,
+duplicate row raising, absent file returning "not loaded", each null reason. Plus
+**two** assertions in `test_report.py` — the money block's three numbers, and a
+null ceiling's reason. The lookup is pure, so nothing expensive enters the render
+path.
+
+**Answer:**
