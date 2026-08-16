@@ -278,72 +278,67 @@ Q16's block is relabelled accordingly.
 
 ## Q19 — `year` is singular now; edges and duplicates still open
 
-➡️ **Exact year match** — one row per year per mileage band. No "does 2018 mean
+**Answer:** **Exact year match** — one row per year per mileage band. No "does 2018 mean
 2018+" ambiguity, and an unpriced year returns null rather than borrowing a
 neighbouring year's number. **`mileage_min`/`mileage_max` inclusive both ends**,
 blank = open-ended. **Two rows matching one lot = load-time error** (Q15).
 
-**Answer:**
 
 ## Q20 — What may the `rental` column hold?
 
 Under Q12 a blank cell can never match: every lot either has a sheet note or gets
 a null `bid_reduced` without consulting the table.
 
-➡️ **Exactly `rental` or `private`; blank is a load-time error** — a row that can
+**Answer:** **Exactly `rental` or `private`; blank is a load-time error** — a row that can
 never match is a typo, and Q15 says catch edits loudly. Accepted consequence:
 with 7 private and 0 rental extractions today, at most 7 of 62 lots can show a
 `bid_reduced`.
 
-**Answer:**
 
 ## Q21 — Alias CSV: path, columns, unmatched houses
 
 Do we still fold-normalise (uppercase, strip punctuation/spaces), or is the alias
 file the only mechanism? Normalising alone fixes `BAY AUC`→`BAYAUC`.
 
-➡️ `banzai24/inputs/auction_aliases.csv`, columns `db_name,area_price_name`,
+**Answer:** `banzai24/inputs/auction_aliases.csv`, columns `db_name,area_price_name`,
 **plus** fold-normalisation — the file then carries only the six that genuinely
 differ, not all seventeen. A house with neither alias nor fold-match gets a
 **null `bid_reduced` and a reason, not an error**: new houses appear over time and a
 report should not start failing because banzai24 added one.
 
-**Answer:**
+
 
 ## Q22 — Flags, defaults, and the `_2026` in the filename
 
-➡️ `--bid-prices` and `--area-prices` on `report`, defaulting to
+**Answer:** `--bid-prices` and `--area-prices` on `report`, defaulting to
 `banzai24/inputs/bid_prices.csv` and
 `banzai24/inputs/auction_area_prices_2026.csv`. **The year is not computed** — a
 clock-derived path silently loses every `bid_reduced` on 1 January.
 
-**Answer:**
+
 
 ## Q23 — How far does removing `BidRecord` go?
 
-➡️ **Delete the code, leave the physical table.** Model, `db.bids_by_numbers`,
+**Answer:** **Delete the code, delete the physical table.** Model, `db.bids_by_numbers`,
 `LotView.bids`, the `BID` flag and its severity constant, the template block and
-its CSS, and the three test references all go; the empty table stays in
-`auction.db` (dropping it needs a migration to buy nothing). Confirm `not yet
-bid` disappears rather than folding into the new money block.
+its CSS, and the three test references all go; write migration.
 
-**Answer:**
+
 
 ## Q24 — EUR, or JPY only?
 
-➡️ **JPY only.** `bid_reduced` is a JPY decision and the row is three numbers wide
-already; the euro comparison stays next to the Cyprus median where it earns its
-place.
+**Answer:** **JPY only.** `bid_reduced` is a JPY decision and the row is three numbers wide
+already;
 
-**Answer:**
+
 
 ## Q25 — Test seams
 
-➡️ New `banzai24/tests/test_bidding.py` against tiny fixture CSVs: band edges
+**Answer:** New `banzai24/tests/test_bidding.py` against tiny fixture CSVs: band edges
 (min and max both hit), exact-year miss, alias hit, fold-only hit, unknown house,
 duplicate row raising, absent file returning "not loaded", each null reason. Plus
 **two** assertions in `test_report.py` — the money block's three numbers, and a
 null `bid_reduced`'s reason. The lookup is pure, so nothing expensive enters the render
 path.
 
-**Answer:**
+
