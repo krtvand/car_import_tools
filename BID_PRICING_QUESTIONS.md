@@ -341,4 +341,284 @@ duplicate row raising, absent file returning "not loaded", each null reason. Plu
 null `bid_reduced`'s reason. The lookup is pure, so nothing expensive enters the render
 path.
 
+---
+
+## Round 4 (blocked on the above)
+
+- The one unconfirmed assumption in the document (`U ` = USS), and what else keys
+  a max bid — depends on Q9/Q13/Q21.
+- Failure semantics not yet pinned: negative `bid_reduced`, the closed set of null
+  reasons, what "duplicate row" means at load time — depends on Q4/Q15/Q19/Q28.
+- Mechanics: shipping the two new CSVs, dropping the physical `bidrecord` table,
+  the reach of the plan-document edit, and `bidding.py`'s signature — depends on
+  Q22/Q23/Q6.
+
+---
+
+# Round 4
+
+## Facts established (looked up, not to be answered)
+
+**Two facts asserted in earlier rounds are wrong:**
+
+- **`mileage_km` is not always rounded to 1,000.** `auction.db` holds a lot at
+  **7,497 km**. Round 1's "API, rounded to 1,000" is not a property of the field;
+  the API value is simply what banzai24 reports, sometimes exact. Q3/Q14's rule
+  ("prefer the API") stands, but its stated rationale does not.
+- **The fold-miss list is smaller than Round 2 says.** Under Q21's fold
+  (uppercase, strip non-alphanumerics) `BAY AUC`→`BAYAUC` matches. Exactly **six
+  houses miss, covering 27 of 62 lots**: `U Tokyo` (10), `U Nagoya` (7),
+  `U Kyushu` (6), `U Osaka` (2), `U Yokohama` (1), `Honda AA Tokyo` (1). Round 2's
+  "7 houses / 30 lots" counted `BAY AUC` as a miss, which an uppercase-only fold
+  would make true.
+
+New:
+
+- **`auction.db` holds one year and two cars**: every one of the 62 lots is
+  `registration_year` **2023**, and they are MAZDA CX-30 (45) and TOYOTA RAV4 (17).
+  Trim (`modification`) and auction grade (`grade_origin`) vary within each.
+- **No lot is missing a year or a mileage.** Q14's sheet fallback fires on nothing
+  in today's database.
+- **`bid_prices.csv` does not exist yet.** `banzai24/inputs/` holds only
+  `auction_area_prices_2026.csv` and the `.numbers` it was exported from.
+- `auction_area_prices_2026.csv` is **123 rows**, names unique after folding, both
+  price columns plain integers with no separators, one title line above the header.
+- **There is no migration framework.** `db.init_db()` is `create_all` plus a
+  column-healing pass that only adds nullable columns. The repo's precedent for a
+  schema change is a standalone script (`bazaraki/migrate_make_model.py`).
+- **`record_bid()` exists only in `AUCTION_PLAN.md`**, never in code. `BidRecord` is
+  also documented at `AUCTION_PLAN.md:419` (storage model) and `:609` (report flags),
+  and Phase 5 has a row in the Build-order table at `:717`.
+
+## Q26 — Confirm `U ` = USS, on the record
+
+This is the single unconfirmed assumption in the document and it decides 26 of
+62 lots. Rounds 2 and 3 both proposed the mapping and neither answer states it.
+`U Tokyo` fold-matches nothing; the file offers `USS TOKYO`, `JU TOKYO`,
+`NPS TOKYO`, `CAA TOKYO`, `LUM TOKYO`, `NAA TOKYO`, `ZIP TOKYO`, `HONDA TOKYO` —
+seven wrong answers next to the right one, and a wrong pick is a silently wrong
+`bid_reduced`, not an error.
+
+**Answer:** Ship `auction_aliases.csv` pre-filled with exactly six rows:
+`U Tokyo→USS TOKYO`, `U Nagoya→USS NAGOYA`, `U Kyushu→USS KYUSHU`,
+`U Osaka→USS OSAKA`, `U Yokohama→USS YOKOHAMA`, `Honda AA Tokyo→HONDA TOKYO`.
+Confirm each, especially that banzai24's `U ` prefix is USS and not JU.
+
+
+
+## Q27 — What keys a max bid, beyond make/model/year/mileage/rental?
+
+Q13 fixed the columns, but the data says one `max_bid` row would cover **45
+CX-30s that differ in two ways money cares about**: `modification` (trim —
+"20S PROACTIVE TOURING" and others) and `grade_origin` (auction grade 3.5 vs 4.5
+vs R). A CX-30 at grade 3.5 and one at 4.5 are not worth the same, and today they
+would read the same `bid_reduced`.
+
+**Answer:** Keep Q13's columns as answered — **trim and grade stay out of the key** —
+because you can price the *worst* case per (model, year, mileage) and let the
+grade badge on the card be the thing you eyeball. But say so explicitly, because
+the alternative is a `grade_min` column now rather than a schema change later. If
+you disagree on either, name which column you want.
+
+
+
+## Q28 — Negative `bid_reduced`
+
+`extra_costs` runs ¥4,000–¥47,000. A cheap car in Okinawa can make
+`max_bid − extra_costs` zero or negative. Print the negative number, print ¥0, or
+print null with a reason?
+
+**Answer:** **Null with a reason** (`area cost ¥47,000 exceeds max bid ¥30,000`). A
+negative number typed into a bidding platform is meaningless, and ¥0 reads like a
+valid bid of nothing. This is the "don't buy this car at this house" signal and it
+should look different from a price.
+
+
+
+## Q29 — The exact set of null reasons
+
+Q25 wants a test per reason, so the set has to be closed. Proposed, in evaluation
+order:
+
+1. `bid prices not loaded` — file absent (global, Q15)
+2. `area prices not loaded` — file absent (global, Q15)
+3. `unknown auction house: U Tokyo` — no alias, no fold match (Q21)
+4. `sheet does not say rental or private` — no extraction, or both notes null
+   (Q12/Q20) — **54 of 62 lots today**
+5. `no table row for MAZDA CX-30 2023 · 15,000 km · private` — lookup miss (Q4)
+6. `missing year` / `missing mileage` — lot field null (Q4)
+7. `area cost ¥X exceeds max bid ¥Y` — Q28
+
+**Answer:** These seven, first match wins, verbatim strings tested. Add or cut any.
+
+
+
+## Q30 — "Two rows matching one lot = load-time error" — against what?
+
+At load time there is no lot. What is actually detectable is **row overlap**: two
+rows sharing (make, model, year, rental) whose mileage bands intersect. That is a
+strictly stronger check — it catches a shadowed row even when no lot currently
+falls in the overlap.
+
+**Answer:** **Overlap check at load**, on the normalised (make, model, year, rental) key,
+with open-ended bands treated as ±∞. Rows differing only in `rental` never
+conflict. The error names both line numbers.
+
+
+
+## Q31 — Missing `bid_prices.csv`, and what you actually get on day one
+
+The file doesn't exist. Under Q15 the report renders with a reason — so until you
+author it, the money block shows only the area price. Two sub-decisions: (a) does
+the repo ship a `bid_prices.csv` at all, and (b) where does the global "not
+loaded" reason appear?
+
+**Answer:**  **One line in the report header next to `cyprus_reason`**, plus per-card
+silence — repeating "bid prices not loaded" 62 times is noise. The per-card
+reasons in Q29 items 3–7 stay on the card.
+
+
+
+## Q32 — How does the `bidrecord` table actually get dropped?
+
+There is no migration framework; `init_db()` does `create_all` plus a
+column-healing pass. Precedent is a standalone script
+(`bazaraki/migrate_make_model.py`). Options: (a) a one-shot
+`banzai24/migrate_drop_bidrecord.py` you run once, (b) `DROP TABLE IF EXISTS
+bidrecord` inside `init_db()`, permanent.
+
+**Answer:** **(a), a one-shot script.** 
+
+
+
+## Q33 — How far into `AUCTION_PLAN.md` does the Phase 5 removal cut?
+
+Beyond the Phase 5 section itself, `BidRecord` is documented at `:419` (storage
+model) and `:609` (report flags), Phase 5 has a row in the Build-order table at
+`:717`, and "Still open #1" is the bidding-site URL.
+
+**Answer:** **All of it**: delete the Phase 5 section and its Build-order row, delete the
+`BidRecord` class from the storage model, drop the `BidRecord` mention from the
+Phase 4 flag description, delete "Still open #1", and rewrite "Still open #2" to
+record that the report now computes `bid_reduced` while placing a bid remains
+manual and unscoped. Confirm you want #1 gone rather than parked — the bidding
+site URL is knowledge you'd otherwise re-derive.
+
+
+
+## Q34 — `bidding.py`'s shape and the test seam
+
+Q6 says "same shape as `CyprusPricer`". Concretely: a `BidPricer` holding both
+tables, constructed once per report, `for_lot(lot, extraction) -> BidQuote(max_bid,
+extra_costs, bid_reduced, reason)`; `LotView` gains `quote: BidQuote | None`;
+`Report` gains a global reason field. `collect()` currently takes
+`pricer: CyprusPricer | None = None` purely as a test seam.
+
+**Answer:** Mirror it exactly: `collect(run_dir, all_lots=False, pricer=None,
+bid_pricer=None)`, and `run_report`/CLI pass the two paths through. `BidQuote` is a
+frozen dataclass with a `describe()` like `CyprusComp` — the Q16 money-block string
+is formatted there, so `test_bidding.py` asserts on it without rendering, and
+`test_report.py`'s two assertions just check it reached the page.
+
+---
+
+## Round 5 (blocked on the above)
+
+- Q31(a) was dropped when Q31 was answered — does the repo ship a starter
+  `bid_prices.csv`?
+- Alias-file failure modes (dangling target, duplicate `db_name`) — depends on Q26.
+- Whether an explicitly-flagged path that does not exist is quiet or fatal —
+  depends on Q15/Q22.
+- Whether the money block renders at all for the 54 lots that hit Q29 reason #4 —
+  depends on Q16/Q29.
+
+---
+
+# Round 5
+
+## Facts established (looked up, not to be answered)
+
+**Q26 is settled by evidence, not by a further answer.** The Q26 answer was the
+recommendation copied verbatim, ending "Confirm each" — so the confirmation was
+never given. Rather than ask a third time:
+
+- The **raw API payload carries nothing more than `{"id": 39, "name": "U Tokyo"}`** —
+  no fuller name, no code. `lots.json` cannot settle it.
+- The **sheet scans are stored at 800×800 and lose the footer** where the auction
+  house prints its own name. `50-1555-53023.jpg` (U Kyushu) shows a
+  「プライムRV&Dコーナー」 header and no house name. Scans cannot settle it either.
+- **The cost file's own structure does.** `USS` is the only house family among the
+  123 rows holding all five `U ` cities — `USS TOKYO`, `USS NAGOYA`, `USS KYUSHU`,
+  `USS OSAKA`, `USS YOKOHAMA`. `JU` has TOKYO but AICHI and KANAGAWA where `U `
+  needs Nagoya and Yokohama; `NAA` has no KYUSHU and no YOKOHAMA; `NPS` and `LUM`
+  cover neither. `TAA Kyushu` and `TAA Yokohama` already exist as separate DB
+  houses that fold-match their own rows, so `U Kyushu` cannot be TAA. And
+  `HONDA TOKYO` is the only `HONDA * TOKYO` in the file, for `Honda AA Tokyo`.
+- A five-way coincidence that only USS satisfies. **The six aliases stand as
+  written in Q26.** If you ever learn otherwise, it is one CSV row to fix — which
+  is itself an argument for Q21's alias file over Q9's hard-coded dict.
+
+New:
+
+- **`banzai24/inputs/` is untracked in git** (`?? banzai24/inputs/`). The cost CSV
+  the feature depends on is not committed yet.
+- Q1 says `banzai24/bid_prices.csv`, Q22 says `banzai24/inputs/bid_prices.csv`.
+  **Q22 wins** — later round, and it matches where the cost file already lives.
+- **Today the feature would display a `bid_reduced` on zero lots**: `bid_prices.csv`
+  does not exist, so Q29 reason #1 fires on all 62. Once you author it, Q20's
+  accepted ceiling is **7 of 62** — the 7 lots with a `private_car_note`. The other
+  54 hit Q29 reason #4.
+
+## Q35 — Does the repo ship a starter `bid_prices.csv`? (Q31(a), unanswered)
+
+Q31 had two halves; the answer kept (b) and dropped (a). Options: ship nothing and
+let Q29 reason #1 fire until you create the file; ship a header-only file; or ship
+it with real rows for the two cars actually in the database (MAZDA CX-30 2023,
+TOYOTA RAV4 2023).
+
+➡️ **Header-only, committed.** Your first edit is then adding a line rather than
+inventing a schema from the parser's error messages, and `git diff` on the file
+reads as price changes from day one. Not real rows: I do not know your numbers, and
+a placeholder max bid is the one kind of wrong value this feature must never
+invent.
+
+## Q36 — Alias file failure modes
+
+Three cases the answers do not cover: (a) an alias whose `area_price_name` matches
+no row in the cost CSV (`U Tokyo → USS TOKIO`, a typo); (b) the same `db_name`
+twice with different targets; (c) whether `db_name` is compared folded or literally
+(`U  Tokyo` with two spaces).
+
+➡️ (a) and (b) are **load-time errors** — the alias file is operator-authored, and
+Q15 says catch your edits loudly. Note this differs from an *unaliased* unknown
+house, which stays a quiet null per Q21: the distinction is that a house banzai24
+just invented is not your mistake, and a broken alias is. (c) **fold both sides**,
+same fold as everywhere else.
+
+## Q37 — An explicit `--bid-prices` path that does not exist
+
+Q15's "absent = quiet, with a reason" was decided about *default* paths, on the
+`bazaraki.db` precedent. But if you type `--bid-prices ./prices.csv` and that file
+is not there, quietly rendering 62 lots with "bid prices not loaded" hides a typo
+behind a legitimate-looking state.
+
+➡️ **Default path absent → quiet reason (Q15 unchanged). Explicit flag pointing at
+a missing file → `SystemExit`.** Naming a path is a statement that it exists. Same
+rule for `--area-prices`.
+
+## Q38 — Does the money block render for the 54 lots that cannot be priced?
+
+Q16 puts a three-line money block on every card. For 54 of 62 lots two of those
+three numbers are absent and the line reads `sheet does not say rental or private`
+— the same sentence, 54 times down the page. Q31(b) already rejected repeating a
+global reason 62 times for exactly this reason.
+
+➡️ **Show the block whenever the house is known** — `area (U Tokyo) −¥9,000` is a
+real fact about that lot and worth printing on its own — and print the reason
+**once** in the header alongside the other global reasons (`54 lots unpriced: sheet
+does not say rental or private`), not per card. Cards keep only the reasons that
+are specific to them (Q29 #5, #6, #7). Alternative if you disagree: keep every
+reason on its card and accept the repetition.
+
+
 
