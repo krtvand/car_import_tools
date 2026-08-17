@@ -1,13 +1,18 @@
 """SQLModel tables for Japanese auction lots.
 
-Three tables, split by who writes them and how often:
+Two tables, split by who writes them and how often:
 
 * :class:`AuctionLot` — one row per lot, from the banzai24 list API. Rewritten
   every time a run sees the lot again.
 * :class:`SheetExtraction` — the AI-derived half, keyed 1:1 to a lot. Separate
   so re-extracting a sheet rewrites only what the model produced and never
   touches the API-derived fields.
-* :class:`BidRecord` — append-only, written after a bid is placed.
+
+There is deliberately no bid table. Placing a bid is manual and unscoped, so a
+``BidRecord`` had nothing to write to it — it held zero rows for as long as it
+existed. What the pipeline *does* know about money is derived, never stored:
+see :mod:`banzai24.bidding`, whose price tables change far more often than the
+lots do and whose stored answer would go stale silently.
 
 Mirrors :mod:`bazaraki.models` in shape; the field-level reasoning is in
 ``AUCTION_PLAN.md`` Phase 2.
@@ -124,15 +129,3 @@ class SheetExtraction(SQLModel, table=True):
     private_car_note: str | None = None
 
     confidence: float | None = None
-
-
-class BidRecord(SQLModel, table=True):
-    """Append-only log of bids placed. For auditability and double-bid
-    prevention — not an input to deciding what to bid."""
-
-    id: int | None = Field(default=None, primary_key=True)
-    lot_number: str = Field(index=True, foreign_key="auctionlot.lot_number")
-    submitted_at: datetime
-    amount_jpy: int
-    outcome: str | None = None   # won | lost | error | unknown
-    note: str | None = None

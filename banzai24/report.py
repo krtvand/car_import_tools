@@ -13,9 +13,11 @@ Three sources meet here, and each answers something the others cannot:
 
 * the **run directory** says which lots this run is about (``lots.json``);
 * **auction.db** holds what is known about them across every run — the API
-  fields, the paid extraction, the bid ledger;
+  fields and the paid extraction;
 * **bazaraki.db** holds the Cyprus asking prices, which is the only thing that
-  turns a grade and a mileage into a decision about money.
+  turns a grade and a mileage into a decision about money;
+* the **bid tables** under ``inputs/`` turn that into the number you type into
+  the bidding platform — see :mod:`banzai24.bidding`.
 
 Regenerating is free — no network, no browser, no model call — so a template
 tweak is a re-run of ``report``, never a re-fetch or a re-extract.
@@ -31,7 +33,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from . import db, normalize, sheets
-from .models import AuctionLot, BidRecord, SheetExtraction
+from .bidding import BidPricer, BidQuote
+from .models import AuctionLot, SheetExtraction
 from .sheets import CrossCheck
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -63,7 +66,12 @@ class Flag:
 # :data:`NEEDS_EYES` on purpose — an unextracted sheet is a gap in the report,
 # not a finding about the car, and counting it as one would mean a freshly
 # fetched run reports every lot as flagged and the count stops meaning anything.
-MISMATCH, BID, LOW_CONFIDENCE_SEV, NOT_READ = 50, 40, 30, 10
+#
+# ``bid_reduced`` deliberately flags nothing and changes no ordering. It is a
+# number to read off the card you are already looking at, not a finding — and a
+# report that re-sorted itself every time the price table was re-tuned would stop
+# being the stable page you scroll.
+MISMATCH, LOW_CONFIDENCE_SEV, NOT_READ = 50, 30, 10
 NEEDS_EYES = LOW_CONFIDENCE_SEV
 
 
@@ -71,14 +79,12 @@ def _flags(
     lot: AuctionLot,
     extraction: SheetExtraction | None,
     checks: CrossCheck | None,
-    bids: list[BidRecord],
 ) -> list[Flag]:
     """Every reason this lot wants your attention, most urgent first.
 
     Deliberately not deduplicated into one "needs review" boolean: *why* a lot
     is flagged decides what you do about it. A chassis mismatch is a different
-    car; a low confidence score is a legible-sheet problem; a placed bid is money
-    already committed.
+    car; a low confidence score is a legible-sheet problem.
     """
     flags = []
 
@@ -87,11 +93,6 @@ def _flags(
         # the model misread it or the lot is not the lot the listing describes —
         # and the chassis case means the second.
         flags.append(Flag("mismatch", f"{', '.join(bad)} mismatch", MISMATCH))
-
-    if bids:
-        # You have already committed money here. It stays at the top of the page
-        # for as long as the run exists.
-        flags.append(Flag("bid", f"{len(bids)} bid{'s' if len(bids) > 1 else ''} placed", BID))
 
     if extraction and extraction.confidence is not None and extraction.confidence < LOW_CONFIDENCE:
         flags.append(Flag("low-confidence", f"confidence {extraction.confidence:.2f}",
@@ -255,9 +256,9 @@ class LotView:
 
     lot: AuctionLot
     extraction: SheetExtraction | None = None
-    bids: list[BidRecord] = field(default_factory=list)
     checks: CrossCheck | None = None
     comp: CyprusComp | None = None
+    quote: BidQuote | None = None      # None only when a bid table is missing
     flags: list[Flag] = field(default_factory=list)
     sheet_uri: str | None = None
 
@@ -378,6 +379,7 @@ class Report:
     views: list[LotView]
     missing: list[str] = field(default_factory=list)   # in the run, not in the DB
     cyprus_reason: str | None = None                   # why the € column is empty
+    bid_reason: str | None = None                      # why *no* card has a bid price
     output: Path | None = None
 
     @property
@@ -395,6 +397,17 @@ class Report:
     @property
     def unread(self) -> int:
         return len(self.views) - self.extracted
+
+    @property
+    def quoted(self) -> int:
+        """Cards carrying a bid block — priced *or* explained.
+
+        Distinct from "cards showing a number": a card saying "no table row for
+        2017" is still doing this feature's job. Zero is the case where a table
+        is missing entirely, and the only case where the header may claim that
+        nothing below has a bid price.
+        """
+        return sum(1 for view in self.views if view.quote)
 
     def summary(self) -> str:
         bits = [f"{len(self.views)} lot{'' if len(self.views) == 1 else 's'}"]
@@ -414,6 +427,7 @@ def collect(
     run_dir: Path,
     all_lots: bool = False,
     pricer: CyprusPricer | None = None,
+    bid_pricer: BidPricer | None = None,
 ) -> Report:
     """Gather one run's lots into sorted, render-ready views.
 
@@ -429,8 +443,8 @@ def collect(
 
     stored = db.lots_by_numbers(numbers)
     extractions = db.extractions_by_numbers(numbers)
-    bids = db.bids_by_numbers(numbers)
     pricer = pricer or CyprusPricer()
+    bid_pricer = bid_pricer or BidPricer()
 
     views, missing = [], []
     for row in rows:
@@ -442,21 +456,20 @@ def collect(
 
         extraction = extractions.get(number)
         checks = sheets.cross_check(extraction, lot) if extraction else None
-        lot_bids = bids.get(number, [])
 
         views.append(LotView(
             lot=lot,
             extraction=extraction,
-            bids=lot_bids,
             checks=checks,
             comp=pricer.for_lot(lot),
-            flags=_flags(lot, extraction, checks, lot_bids),
+            quote=bid_pricer.for_lot(lot, extraction),
+            flags=_flags(lot, extraction, checks),
             sheet_uri=_data_uri(_sheet_file(lot)),
         ))
 
     views.sort(key=lambda view: view.sort_key)
     return Report(run_dir=run_dir, views=views, missing=missing,
-                  cyprus_reason=pricer.reason)
+                  cyprus_reason=pricer.reason, bid_reason=bid_pricer.reason)
 
 
 # --- rendering ---------------------------------------------------------------
@@ -501,9 +514,15 @@ def run_report(
     output: Path | None = None,
     all_lots: bool = False,
     jpy_per_eur: float | None = None,
+    bid_prices: Path | None = None,
+    area_prices: Path | None = None,
 ) -> Report:
     """Build ``<run>/report.html``. Overwrites — regenerating is the normal case."""
-    report = collect(run_dir, all_lots=all_lots)
+    report = collect(
+        run_dir,
+        all_lots=all_lots,
+        bid_pricer=BidPricer(bid_prices_path=bid_prices, area_prices_path=area_prices),
+    )
     output = output or run_dir / "report.html"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render(report, jpy_per_eur=jpy_per_eur), encoding="utf-8")

@@ -170,6 +170,21 @@ a separate, explicit step, and the reports are already enough to decide which
 sheets are worth reading. See `AUCTION_PLAN.md` for why `--today` matters on
 both of the follow-up commands.
 
+### What to bid
+
+Each card carries `max bid ¥X · area (house) −¥Y · bid reduced ¥Z`, where **`Z`
+is the number to type into the bidding platform**. `X` comes from
+`banzai24/inputs/bid_prices.csv` — your all-in maximum per make/model/year/
+mileage band/rental-or-private, edited in a spreadsheet, never in code. `Y` is
+that auction house's area cost from `banzai24/inputs/auction_area_prices_2026.csv`.
+Override either with `report --bid-prices PATH` / `--area-prices PATH`.
+
+Where `Z` cannot be computed the card prints **why** instead of a number —
+"sheet does not say rental or private", "no table row for TOYOTA RAV4 2023 ·
+21,000 km · private", "unknown auction house: …". Nothing here guesses, and
+nothing here can fail a report: a missing or mis-edited table costs you the bid
+column and says so at the top of the page. See `banzai24/bidding.py`.
+
 ## How it works
 
 - `bazaraki/config.py` — `CarFilters` dataclass (the filter schema) + label→code

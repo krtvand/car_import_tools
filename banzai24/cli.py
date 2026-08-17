@@ -32,6 +32,11 @@ template tweak is a re-run of this, never a re-fetch:
 
     uv run python -m banzai24 report                     # the most recent run
     uv run python -m banzai24 report --open              # and open it
+    uv run python -m banzai24 report --bid-prices my.csv # try a re-tuned price table
+
+Each card's bid block is `max bid − area cost = bid reduced`, read out of the two
+CSVs under `banzai24/inputs/`. Editing one of those is the normal way to change
+what the report says to bid; `report` is free to re-run afterwards.
 """
 from __future__ import annotations
 
@@ -42,8 +47,10 @@ import webbrowser
 from datetime import date
 from pathlib import Path
 
-from . import config, db, fetch, normalize, session
+from . import bidding, config, db, fetch, normalize, session
 from .lot_filters import LotFilters
+
+_ROOT = Path(__file__).parent.parent   # only to print the default paths readably
 
 
 _OVERRIDABLE = (
@@ -153,6 +160,16 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="Also show start prices in euro at this rate, so they compare "
                           "with the Cyprus figures. No default: a hard-coded rate would "
                           "go stale silently, and a wrong one is worse than none.")
+    rep.add_argument("--bid-prices", metavar="PATH", dest="bid_prices",
+                     help=f"Your max bids, keyed by make/model/year/mileage/rental. "
+                          f"Default {bidding.BID_PRICES_PATH.relative_to(_ROOT)}. "
+                          f"Absent or mis-edited costs the bid column and says so on "
+                          f"the report — it never stops one being written.")
+    rep.add_argument("--area-prices", metavar="PATH", dest="area_prices",
+                     help=f"The auction houses' area costs, subtracted from the max bid. "
+                          f"Default {bidding.AREA_PRICES_PATH.relative_to(_ROOT)} — the "
+                          f"year in that name is part of the path, not read off the "
+                          f"clock, so nothing silently changes file on 1 January.")
 
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
@@ -304,6 +321,8 @@ def main() -> None:
                 output=Path(args.output) if args.output else None,
                 all_lots=args.all_lots,
                 jpy_per_eur=args.jpy_per_eur,
+                bid_prices=Path(args.bid_prices) if args.bid_prices else None,
+                area_prices=Path(args.area_prices) if args.area_prices else None,
             )
             print(built.summary())
             if built.missing:
@@ -311,6 +330,17 @@ def main() -> None:
                       f"run `normalize {run_dir}` to fill them in.")
             if built.cyprus_reason:
                 print(f"  no Cyprus comparables: {built.cyprus_reason}")
+            if built.bid_reason:
+                # Said here as well as on the page: a mis-edited price table is
+                # your own edit, and you want to hear about it in the terminal
+                # you just typed in rather than three scrolls into the HTML.
+                #
+                # The consequence clause is conditional for the same reason it is
+                # in the template — a broken *alias* file suppresses nothing, and
+                # telling you the bid column is gone when it is not is how you
+                # learn to ignore this line.
+                gone = "" if built.quoted else " — no bid price on any card"
+                print(f"  {built.bid_reason}{gone}")
             if args.open_report:
                 webbrowser.open(built.output.resolve().as_uri())
         return

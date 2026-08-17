@@ -24,7 +24,7 @@ import pytest
 from sqlmodel import Session, create_engine
 
 from banzai24 import db, report
-from banzai24.models import AuctionLot, BidRecord, SheetExtraction
+from banzai24.models import AuctionLot, SheetExtraction
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -49,11 +49,23 @@ def no_cyprus(monkeypatch):
     return None
 
 
+@pytest.fixture
+def no_bid_prices(monkeypatch):
+    """Report without the bid tables.
+
+    Same reasoning as :func:`no_cyprus`: the price tables are operator-authored
+    files that tests not about them should neither depend on nor be perturbed by
+    when you re-tune a number in one.
+    """
+    monkeypatch.setattr(report, "BidPricer", lambda *a, **kw: _EmptyPricer())
+    return None
+
+
 class _EmptyPricer:
     available = False
     reason = None
 
-    def for_lot(self, lot):
+    def for_lot(self, lot, extraction=None):
         return None
 
 
@@ -98,15 +110,15 @@ def _extraction(lot_number: str = "55-1850-33152", **overrides) -> SheetExtracti
     return SheetExtraction(**{**base, **overrides})
 
 
-def _view(lot=None, extraction=None, bids=(), **overrides) -> report.LotView:
+def _view(lot=None, extraction=None, **overrides) -> report.LotView:
     """A rendered view with its flags and cross-checks derived, as collect() does."""
     from banzai24 import sheets
 
     lot = lot or _lot()
     checks = sheets.cross_check(extraction, lot) if extraction else None
     return report.LotView(
-        lot=lot, extraction=extraction, bids=list(bids), checks=checks,
-        flags=report._flags(lot, extraction, checks, list(bids)),
+        lot=lot, extraction=extraction, checks=checks,
+        flags=report._flags(lot, extraction, checks),
         **overrides,
     )
 
@@ -135,13 +147,6 @@ def test_blank_shaken_is_not_a_flag():
 def test_low_confidence_is_flagged():
     view = _view(extraction=_extraction(confidence=0.6))
     assert "low-confidence" in {f.key for f in view.flags}
-
-
-def test_a_bid_keeps_the_lot_at_the_top():
-    bid = BidRecord(lot_number="55-1850-33152", amount_jpy=900_000,
-                    submitted_at=datetime(2026, 8, 10, tzinfo=timezone.utc))
-    view = _view(extraction=_extraction(), bids=[bid])
-    assert "bid" in {f.key for f in view.flags}
 
 
 def test_an_unread_sheet_is_flagged_low_and_is_not_counted_as_a_finding():
@@ -293,7 +298,8 @@ def test_japanese_is_escaped_not_mangled():
 # --- collecting from a saved run --------------------------------------------
 
 
-def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cyprus):
+def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cyprus,
+                                                      no_bid_prices):
     """End to end over the saved fixture run, with one lot extracted."""
     run_dir = tmp_path / "run"
     (run_dir / "sheets").mkdir(parents=True)
@@ -309,22 +315,21 @@ def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cypr
 
     with Session(temp_db) as session:
         session.add(_extraction(first, chassis_full=None))
-        session.add(BidRecord(lot_number=first, amount_jpy=1_000_000,
-                              submitted_at=datetime(2026, 8, 10, tzinfo=timezone.utc)))
         session.commit()
 
     built = report.collect(run_dir)
 
     assert len(built.views) == len(rows)
     assert built.missing == []
-    assert built.views[0].lot.lot_number == first        # the bid put it on top
-    assert built.views[0].bids and built.views[0].extraction
+    assert {v.lot.lot_number for v in built.views} == {r["lot_number"] for r in rows}
+    assert any(v.extraction for v in built.views)
 
     html = report.render(built)
     assert all(src.startswith("data:") for src in re.findall(r'src="([^"]*)"', html))
 
 
-def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no_cyprus):
+def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no_cyprus,
+                                                           no_bid_prices):
     """Skipping `normalize` should thin the report, not empty it — and say so."""
     run_dir = tmp_path / "run"
     (run_dir / "sheets").mkdir(parents=True)
@@ -339,7 +344,7 @@ def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no
     assert "run <code>normalize</code>" in report.render(built)
 
 
-def test_run_report_writes_a_standalone_file(tmp_path, temp_db, no_cyprus):
+def test_run_report_writes_a_standalone_file(tmp_path, temp_db, no_cyprus, no_bid_prices):
     run_dir = tmp_path / "run"
     (run_dir / "sheets").mkdir(parents=True)
     (run_dir / "lots.json").write_text(
@@ -401,3 +406,67 @@ def test_no_cyprus_data_is_reported_not_raised(monkeypatch):
     assert pricer.available is False
     assert "bazaraki.db" in pricer.reason
     assert pricer.for_lot(_lot()) is None
+
+
+# --- the bid price -----------------------------------------------------------
+#
+# The arithmetic and its seven null reasons are :mod:`test_bidding`'s job, which
+# tests them without rendering anything. These two only check that the answer
+# reaches the page — the seam between a computed quote and the card.
+
+
+def test_the_money_block_reaches_the_card():
+    from banzai24.bidding import BidQuote
+
+    quote = BidQuote(max_bid=1_855_000, extra_costs=12_000, bid_reduced=1_843_000,
+                     house="U Tokyo")
+    html = _render([_view(extraction=_extraction(), quote=quote)])
+
+    assert "max bid ¥1,855,000" in html
+    assert "area (U Tokyo) −¥12,000" in html
+    assert "bid reduced ¥1,843,000" in html
+
+
+def test_a_lot_that_cannot_be_priced_prints_why_instead_of_a_number():
+    """The reason takes the number's place on the card. Whatever *is* known
+    still prints beside it — the house cost is useful on a card that cannot
+    price the car."""
+    from banzai24.bidding import BidQuote
+
+    quote = BidQuote(extra_costs=12_000, house="U Tokyo",
+                     reason="sheet does not say rental or private")
+    html = _render([_view(quote=quote)])
+
+    assert "sheet does not say rental or private" in html
+    assert "area (U Tokyo) −¥12,000" in html
+    assert "bid reduced" not in html
+
+
+def test_a_missing_bid_table_is_said_once_in_the_header_not_on_every_card():
+    """Sixty-two identical "bid prices not loaded" lines is noise; the cards stay
+    silent and the header carries it."""
+    built = report.Report(run_dir=Path("runs/fixture"),
+                          views=[_view(extraction=_extraction())],
+                          bid_reason="bid prices not loaded")
+    html = report.render(built)
+
+    assert html.count("bid prices not loaded") == 1
+    assert "no bid price on any card below" in html
+    assert "<dt>Bid</dt>" not in html
+
+
+def test_a_header_note_does_not_claim_cards_are_blank_when_they_are_not():
+    """A mis-edited alias file is worth saying out loud, but it suppresses
+    nothing — only the six houses it covers stop matching. The note must not
+    tell you to stop looking at cards that are priced."""
+    from banzai24.bidding import BidQuote
+
+    built = report.Report(
+        run_dir=Path("runs/fixture"),
+        views=[_view(extraction=_extraction(), quote=BidQuote(reason="missing year"))],
+        bid_reason="auction aliases not loaded: aliases.csv line 2: U Tokyo is aliased twice",
+    )
+    html = report.render(built)
+
+    assert "aliased twice" in html
+    assert "no bid price on any card below" not in html

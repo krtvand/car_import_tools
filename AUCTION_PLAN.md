@@ -162,10 +162,16 @@ a paid service. Phase 3 is a direct substitute for it.
 
 ### Still open
 
-1. **Bidding site URL** — blocks Phase 5 only; Phases 1–4 proceed without it.
-2. Bid amounts have **no home in this pipeline**, by design. How a max bid
-   reaches the browser session is undecided — simplest answer is that you name
-   it per lot at bid time, having read the report. Settle before Phase 5.
+1. Bid amounts now have **half a home in this pipeline** (added 2026-08-17,
+   reversing the earlier "no home, by design"). The report computes a
+   `bid_reduced` per lot — `max_bid` from an operator-authored price table, minus
+   the auction house's area cost — and prints it on the card. See
+   `banzai24/bidding.py` and `BID_PRICING_QUESTIONS.md`.
+
+   **Placing** the bid remains manual and unscoped. Nothing in this repo drives a
+   browser to a bidding form, and wiring a computed number straight into an
+   irreversible bid is a separate decision with a much larger blast radius — it
+   gets its own grilling session before any of it is designed.
 
 ---
 
@@ -185,9 +191,14 @@ banzai24/                 # this project
   models.py       # SQLModel tables
   db.py           # upsert / query layer
   sheets.py       # Claude vision extraction
+  bidding.py      # max_bid − area cost → bid_reduced; pure, table-driven
   report.py       # run directory + auction.db → report.html
   templates/      # report.html.j2 — the only template; all CSS inline
   cli.py          # `uv run python -m banzai24 <command>`
+  inputs/         # operator-authored tables, edited in a spreadsheet, not code
+    bid_prices.csv              # your max bid per make/model/year/mileage/rental
+    auction_area_prices_2026.csv  # each house's area cost, in JPY
+    auction_aliases.csv         # "U Tokyo" = "USS TOKYO", and five more
   searches/       # one saved search per car — the run configuration
     daily.sh        # the morning: check, both cars, a report each
     mazda-cx30.sh
@@ -414,15 +425,6 @@ class SheetExtraction(SQLModel, table=True):
     rental_car_note: str | None  # "レンタカー" if ex-rental, else None
     private_car_note: str | None # "車歴: 自家用" if private-use, else None
     confidence: float | None
-
-
-class BidRecord(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    lot_number: str = Field(index=True, foreign_key="auctionlot.lot_number")
-    submitted_at: datetime
-    amount_jpy: int
-    outcome: str | None          # won|lost|error|unknown
-    note: str | None
 ```
 
 The two `車歴` fields are mutually exclusive and both nullable: an ex-rental gets
@@ -432,9 +434,13 @@ two nullable notes rather than one enum keeps the printed wording verbatim —
 `レンタカー` and `レンタ` both occur — and makes "the sheet didn't say" distinct
 from "the sheet said neither", which a single `history` column would blur.
 
-Two tables so a re-extraction rewrites only the AI-derived half. `BidRecord` is
-append-only, written *after* a bid by Phase 5 — it exists for auditability and
-double-bid prevention, not to plan bids.
+Two tables so a re-extraction rewrites only the AI-derived half. There is no
+third: a `BidRecord` was specified here for a bidding runbook that was never
+built, held zero rows for its whole life, and was dropped on 2026-08-17
+(`banzai24/migrate_drop_bidrecord.py`). What the pipeline knows about money is
+derived at report time and never stored — the price tables change far more often
+than the lots do, and a stored `bid_reduced` goes stale silently, which is
+exactly the failure that costs money.
 
 Three decisions the schema above does not show, each forced by the real data:
 
@@ -601,17 +607,23 @@ fields. Grade 4.5 with an `A1` mark means nothing without the image.
 │ └────────────┘  steering wheel scuffed                    │
 │                 chassis DMEJ3P-103452 (API masked)        │
 │                 Cyprus comparable: €18,400 (n=7)          │
-│                 start ¥390,000 · not yet bid              │
+│                 start ¥390,000                            │
+│                 max bid ¥1,855,000                        │
+│                 area (U Tokyo) −¥12,000                   │
+│                 bid reduced ¥1,843,000                    │
 └───────────────────────────────────────────────────────────┘
 ```
 
-Sorting and flagging carry the load: low confidence, grade mismatches and lots
-with a `BidRecord` all surface at the top with colour flags, so the lots needing
-your eyes aren't buried behind clean ones.
+Sorting and flagging carry the load: low confidence and grade mismatches surface
+at the top with colour flags, so the lots needing your eyes aren't buried behind
+clean ones. `bid_reduced` deliberately flags nothing and changes no ordering — it
+is a number to read off the card you are already looking at, and a page that
+re-sorted itself every time the price table was re-tuned would stop being stable.
 
-Jinja2 from the run directory plus a DB query for bid history and the Cyprus
-comparable. `report` is its own command — regenerating is free, so a template
-tweak never means re-fetching or re-extracting.
+Jinja2 from the run directory, plus a DB query for the extraction, the Cyprus
+comparable, and two operator-authored CSVs for the bid arithmetic. `report` is
+its own command — regenerating is free, so a template tweak never means
+re-fetching or re-extracting.
 
     uv run python -m banzai24 report                    # the most recent run
     uv run python -m banzai24 report --open
@@ -695,25 +707,6 @@ browser never fetches them), and that the sheet's own numbers reach the page.
 
 ---
 
-## Phase 5 — Bidding runbook (Claude in Chrome)
-
-A written procedure in `banzai24/BIDDING.md`, plus guardrails. Input is the run
-directory you just reviewed and the amount you name per lot.
-
-1. You pick a lot from the report and state a max bid.
-2. The session navigates and confirms the on-page lot number **and** car match
-   the run data before touching a field. A mismatch aborts the lot.
-3. It enters the amount and **stops with the filled form visible for your
-   confirmation.** It never auto-submits.
-4. After you confirm, the outcome is appended via `record_bid()`.
-5. `--dry-run` does everything except the final click.
-
-This phase spends real money and bids are not reversible. The value of the split
-is that Phases 1–4 can be developed, broken and re-run freely, while the only
-step that commits funds stays human-confirmed, one lot at a time.
-
----
-
 ## Build order
 
 | # | Phase | Depends on | Done when |
@@ -723,10 +716,14 @@ step that commits funds stays human-confirmed, one lot at a time.
 | 2 | Normalize + store | 1 | fixture round-trips; `lots.csv` + `auction.db` populated |
 | 3 | Sheet extraction | 2 | golden-file test green on lot 33152's known values |
 | 4 | Report | 3 | ✅ **done** — `report.html` opens standalone; flagged rows first |
-| 5 | Bidding runbook | 4 | dry-run walkthrough on one lot |
 
 Phase 3 can be built immediately from the saved fixture sheet, in parallel with
 Phases 1–2 — it needs no network access at all.
+
+There is no Phase 5. A "bidding runbook" phase was specified here and removed on
+2026-08-17 without ever being built: the report now tells you what to bid, and
+how that number reaches a bidding form is deliberately unscoped (see "Still
+open" #1).
 
 ---
 

@@ -12,7 +12,7 @@
   :root {
     --ink: #1a1a1a; --muted: #6b6b6b; --line: #e0ddd7; --paper: #faf9f7;
     --card: #ffffff; --bad: #b3261e; --ok: #1f7a4d; --warn: #9a6700;
-    --bid: #1a4f8a; --flat: #6b6b6b;
+    --money: #1a4f8a; --flat: #6b6b6b;
   }
   * { box-sizing: border-box; }
   body {
@@ -33,7 +33,6 @@
   }
   .lot.flagged { border-left: 4px solid var(--warn); }
   .lot.mismatch { border-left-color: var(--bad); }
-  .lot.bid { border-left-color: var(--bid); }
 
   .head {
     display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline;
@@ -51,7 +50,6 @@
     text-transform: uppercase; white-space: nowrap;
   }
   .badge.mismatch { background: var(--bad); }
-  .badge.bid { background: var(--bid); }
   .badge.low-confidence { background: var(--warn); }
   .badge.not-read { background: var(--flat); }
 
@@ -101,6 +99,13 @@
   }
   .mark b { font-family: ui-monospace, Menlo, monospace; }
 
+  /* The three parts of the bid arithmetic stack rather than run together on one
+     line: the last of them is the number you type into the bidding platform, and
+     it has to be findable at a glance rather than read out of a sentence. */
+  .money span { display: block; }
+  .money .result { color: var(--money); font-weight: 600; }
+  .money .why { color: var(--muted); font-size: .8125rem; font-weight: 400; }
+
   .warn { color: var(--warn); font-weight: 600; }
   details summary { cursor: pointer; color: var(--muted); font-size: .8125rem; }
   details ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .875rem; }
@@ -134,6 +139,12 @@
     {% endif %}
     {% if report.cyprus_reason %}
     <li>No Cyprus comparables: {{ report.cyprus_reason }}</li>
+    {% endif %}
+    {# The consequence clause is conditional because it is not always true: a
+       mis-edited *alias* file is worth saying out loud, but the cards below
+       still price — only the six houses it covers stop matching. #}
+    {% if report.bid_reason %}
+    <li>{{ report.bid_reason }}{% if not report.quoted %} — no bid price on any card below{% endif %}.</li>
     {% endif %}
   </ul>
 </header>
@@ -282,17 +293,22 @@
           {% if lot.end_price_jpy %}· sold {{ lot.end_price_jpy | yen }}{% endif %}
         </dd>
 
-        <dt>Bids</dt>
-        <dd>
-          {% if view.bids %}
-          {% for bid in view.bids %}
-          {{ bid.amount_jpy | yen }} on {{ bid.submitted_at.strftime('%Y-%m-%d %H:%M') }}
-          — {{ bid.outcome or 'outcome unknown' }}{% if bid.note %} ({{ bid.note }}){% endif %}<br>
-          {% endfor %}
+        {# max_bid − extra_costs = bid_reduced, or the reason there is no such
+           number. Omitted entirely when the tables themselves are missing: that
+           reason is report-wide and prints once in the header, rather than sixty
+           times down the page. #}
+        {% if view.quote %}
+        <dt>Bid</dt>
+        <dd class="money">
+          {% for line in view.quote.lines() %}
+          {% if loop.last %}
+          <span class="{{ 'result' if view.quote.bid_reduced is not none else 'why' }}">{{ line }}</span>
           {% else %}
-          <span class="note">not yet bid</span>
+          <span>{{ line }}</span>
           {% endif %}
+          {% endfor %}
         </dd>
+        {% endif %}
 
         <dt>Links</dt>
         <dd class="note">

@@ -379,8 +379,11 @@ New:
   Trim (`modification`) and auction grade (`grade_origin`) vary within each.
 - **No lot is missing a year or a mileage.** Q14's sheet fallback fires on nothing
   in today's database.
-- **`bid_prices.csv` does not exist yet.** `banzai24/inputs/` holds only
-  `auction_area_prices_2026.csv` and the `.numbers` it was exported from.
+- **`bid_prices.csv` exists**, authored by hand at `banzai24/inputs/bid_prices.csv`
+  and staged in git. Header is exactly Q13's
+  (`make,model,year,mileage_min,mileage_max,rental,max_bid_jpy`), plus two rows:
+  `MAZDA,CX-30,2023,0,50000,private,1855000` and
+  `MAZDA,CX-30,2023,50000,60000,private,1705000`.
 - `auction_area_prices_2026.csv` is **123 rows**, names unique after folding, both
   price columns plain integers with no separators, one title line above the header.
 - **There is no migration framework.** `db.init_db()` is `create_all` plus a
@@ -466,12 +469,11 @@ conflict. The error names both line numbers.
 
 
 
-## Q31 — Missing `bid_prices.csv`, and what you actually get on day one
+## Q31 — Where does the global "bid prices not loaded" reason appear?
 
-The file doesn't exist. Under Q15 the report renders with a reason — so until you
-author it, the money block shows only the area price. Two sub-decisions: (a) does
-the repo ship a `bid_prices.csv` at all, and (b) where does the global "not
-loaded" reason appear?
+Under Q15 an absent default file renders the report with a reason rather than
+failing. The file now exists, so this fires only if it is moved or deleted — but
+the reason still needs a home.
 
 **Answer:**  **One line in the report header next to `cyprus_reason`**, plus per-card
 silence — repeating "bid prices not loaded" 62 times is noise. The per-card
@@ -524,8 +526,6 @@ is formatted there, so `test_bidding.py` asserts on it without rendering, and
 
 ## Round 5 (blocked on the above)
 
-- Q31(a) was dropped when Q31 was answered — does the repo ship a starter
-  `bid_prices.csv`?
 - Alias-file failure modes (dangling target, duplicate `db_name`) — depends on Q26.
 - Whether an explicitly-flagged path that does not exist is quiet or fatal —
   depends on Q15/Q22.
@@ -560,65 +560,20 @@ never given. Rather than ask a third time:
 
 New:
 
-- **`banzai24/inputs/` is untracked in git** (`?? banzai24/inputs/`). The cost CSV
-  the feature depends on is not committed yet.
+- **`bid_prices.csv` is staged; `auction_area_prices_2026.csv` is still untracked.**
+  Both must be committed for the defaults in Q22 to work on a fresh clone.
 - Q1 says `banzai24/bid_prices.csv`, Q22 says `banzai24/inputs/bid_prices.csv`.
-  **Q22 wins** — later round, and it matches where the cost file already lives.
-- **Today the feature would display a `bid_reduced` on zero lots**: `bid_prices.csv`
-  does not exist, so Q29 reason #1 fires on all 62. Once you author it, Q20's
-  accepted ceiling is **7 of 62** — the 7 lots with a `private_car_note`. The other
-  54 hit Q29 reason #4.
+  **Q22 wins** — later round, it matches where the cost file lives, and it is where
+  the authored file actually is.
+- **With the authored file, at most 7 of 62 lots can show a `bid_reduced`** — the 7
+  with a `private_car_note` (Q20's accepted ceiling); the other 54 hit Q29 reason
+  #4. Of those 7, only rows matching MAZDA CX-30 2023 under 60,000 km price at all;
+  every TOYOTA RAV4 hits Q29 reason #5.
 
-## Q35 — Does the repo ship a starter `bid_prices.csv`? (Q31(a), unanswered)
+## Q35 — Starter `bid_prices.csv` — settled, no longer a question
 
-Q31 had two halves; the answer kept (b) and dropped (a). Options: ship nothing and
-let Q29 reason #1 fire until you create the file; ship a header-only file; or ship
-it with real rows for the two cars actually in the database (MAZDA CX-30 2023,
-TOYOTA RAV4 2023).
-
-➡️ **Header-only, committed.** Your first edit is then adding a line rather than
-inventing a schema from the parser's error messages, and `git diff` on the file
-reads as price changes from day one. Not real rows: I do not know your numbers, and
-a placeholder max bid is the one kind of wrong value this feature must never
-invent.
-
-## Q36 — Alias file failure modes
-
-Three cases the answers do not cover: (a) an alias whose `area_price_name` matches
-no row in the cost CSV (`U Tokyo → USS TOKIO`, a typo); (b) the same `db_name`
-twice with different targets; (c) whether `db_name` is compared folded or literally
-(`U  Tokyo` with two spaces).
-
-➡️ (a) and (b) are **load-time errors** — the alias file is operator-authored, and
-Q15 says catch your edits loudly. Note this differs from an *unaliased* unknown
-house, which stays a quiet null per Q21: the distinction is that a house banzai24
-just invented is not your mistake, and a broken alias is. (c) **fold both sides**,
-same fold as everywhere else.
-
-## Q37 — An explicit `--bid-prices` path that does not exist
-
-Q15's "absent = quiet, with a reason" was decided about *default* paths, on the
-`bazaraki.db` precedent. But if you type `--bid-prices ./prices.csv` and that file
-is not there, quietly rendering 62 lots with "bid prices not loaded" hides a typo
-behind a legitimate-looking state.
-
-➡️ **Default path absent → quiet reason (Q15 unchanged). Explicit flag pointing at
-a missing file → `SystemExit`.** Naming a path is a statement that it exists. Same
-rule for `--area-prices`.
-
-## Q38 — Does the money block render for the 54 lots that cannot be priced?
-
-Q16 puts a three-line money block on every card. For 54 of 62 lots two of those
-three numbers are absent and the line reads `sheet does not say rental or private`
-— the same sentence, 54 times down the page. Q31(b) already rejected repeating a
-global reason 62 times for exactly this reason.
-
-➡️ **Show the block whenever the house is known** — `area (U Tokyo) −¥9,000` is a
-real fact about that lot and worth printing on its own — and print the reason
-**once** in the header alongside the other global reasons (`54 lots unpriced: sheet
-does not say rental or private`), not per card. Cards keep only the reasons that
-are specific to them (Q29 #5, #6, #7). Alternative if you disagree: keep every
-reason on its card and accept the repetition.
-
+You authored the file with real rows, so the "ship nothing / header-only / real
+rows" choice is closed. Q29 reason #1 now fires only if the file is deleted or the
+default path moves.
 
 
