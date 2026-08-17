@@ -32,4 +32,5 @@ exec uv run python -m banzai24 fetch \
     --source auctions \
     --body-model-code DMEJ3R \
     --body-model-code DMFP \
+    --body-model-code DMEJ3P \
     "$@"

@@ -25,6 +25,22 @@ def _dated(number: str, day: str, status: str = "LISTED") -> dict:
     }
 
 
+def _closed(day: str, time: str = "14:28") -> dict:
+    """A lot from a closed auction, verbatim in shape as banzai24 returns one.
+
+    Everything that identifies it is blanked and the status is ``"xxx"``; only
+    ``tradeDateTime`` still says when it trades.
+    """
+    return {
+        "id": "019f-closed",
+        "lot": {"number": "", "shortNumber": "", "tradeDate": "", "tradeTime": ""},
+        "status": {"code": "xxx", "name": "xxx"},
+        "tradeDateTime": f"{day} {time}:00",
+        "bodyModelCode": "DM8P",
+        "auctImage": "https://x/img",
+    }
+
+
 def test_sheet_filename_uses_the_globally_unique_lot_number():
     assert fetch.sheet_filename(_lot()) == "47-1312-35159.jpg"
 
@@ -168,6 +184,27 @@ def test_no_upcoming_day_keeps_everything_rather_than_emptying_the_run():
 
 def test_lots_without_a_trade_date_are_never_upcoming():
     assert fetch.nearest_trade_date([_lot("no-date")], TODAY) is None
+
+
+def test_closed_lot_takes_its_day_from_trade_date_time():
+    """Its `lot.tradeDate` is blank; `tradeDateTime` is the only date it has."""
+    assert fetch.trade_date(_closed("2026-08-11")) == "2026-08-11"
+    assert fetch.is_upcoming(_closed("2026-08-11"), TODAY) is True
+
+
+def test_a_day_of_only_closed_lots_is_not_skipped_over():
+    """The regression the fallback exists for.
+
+    Read only `lot.tradeDate` and 08-11 looks like a day with no lots at all,
+    so the run silently reports on 08-12 — the wrong day, with no hint that a
+    closer one was passed over.
+    """
+    lots = [_closed("2026-08-11"), _dated("55-1850-33152", "2026-08-12")]
+    assert fetch.nearest_trade_date(lots, TODAY) == "2026-08-11"
+
+    on_day, day = fetch.lots_on_nearest_day(lots, TODAY)
+    assert day == "2026-08-11"
+    assert on_day == [lots[0]]
 
 
 def test_tokyo_and_cyprus_disagree_about_the_date_every_evening():

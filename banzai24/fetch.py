@@ -83,8 +83,27 @@ def japan_today() -> date:
 
 
 def trade_date(lot: dict) -> str | None:
-    """``"2026-08-11"`` — the auction day, as the API's ISO string."""
-    return (lot.get("lot") or {}).get("tradeDate") or None
+    """``"2026-08-11"`` — the auction day, as the API's ISO string.
+
+    Normally straight off ``lot.tradeDate``. A lot from a *closed* auction —
+    one the account may not see — comes back with its identifying fields
+    blanked: no number, no auction, empty ``tradeDate``, ``status.code`` of
+    ``"xxx"``. It keeps a populated ``tradeDateTime``, which is where the day
+    comes from for those.
+
+    Without the fallback such a lot has no day at all, so it can never be
+    upcoming, and the day selection loses it in the worst possible way: it is
+    not merely dropped, it is invisible to ``nearest_trade_date``, so a day
+    whose lots are *all* closed is skipped over as if it were empty and the run
+    silently reports on the day after. Every authenticated response so far has
+    been fully populated; this is here so that changing what the account may see
+    cannot quietly change which day a run is about.
+    """
+    day = ((lot.get("lot") or {}).get("tradeDate") or "").strip()
+    if day:
+        return day
+    # "2026-08-18 14:28:00" — the same calendar date, space-separated.
+    return (lot.get("tradeDateTime") or "").strip().partition(" ")[0] or None
 
 
 def is_upcoming(lot: dict, today: date) -> bool:
