@@ -17,6 +17,11 @@
 # The year/mileage/grade bounds mirror the CX-30 search as a starting point —
 # adjust them to what you actually want for this car. No engine-capacity filter
 # is set, deliberately: RAV4 trims span 2.0/2.5 petrol and hybrid, and a floor
+# 6LA-AXAP54 — это заряжаемый от сети RAV4 Prime/PHEV с более мощной гибридной
+# системой (182 л.с.), большим клиренсом, более крупными колёсами и заметно
+# бо́льшей массой из-за батареи;
+# 6AA-AXAH52 — классический самозаряжающийся гибрид (120 л.с.), легче и проще
+# технически, без розетки для зарядки.
 # copied from the CX-30 would quietly exclude some of them.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -30,5 +35,7 @@ exec uv run python -m banzai24 fetch \
     --year-end 2023 \
     --mileage-end 55000 \
     --grade 4 --grade 4.5 --grade 5 \
+    --body-model-code AXAH52 \
+    --body-model-code AXAH54 \
     --source auctions \
     "$@"
