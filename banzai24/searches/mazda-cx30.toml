@@ -1,0 +1,43 @@
+# Mazda CX-30 (Japan auctions).
+#
+# This file is the whole search — nothing is inherited from anywhere, so a
+# filter that is not here is not applied.
+#
+#   uv run python -m banzai24 fetch --search mazda-cx30
+#   uv run python -m banzai24 fetch --search mazda-cx30 --max-lots 60
+#   uv run python -m banzai24 fetch --search mazda-cx30 --no-sheets
+#   uv run python -m banzai24 fetch --search mazda-cx30 --source archive
+#   uv run python -m banzai24 fetch --search mazda-cx30 --dry-run
+#
+# Every key below is a requirement. The section says who is able to check it:
+#
+#   [site]   banzai24 filters these out for us, and the auction sheet then
+#            re-judges them against its own better numbers. A lot the sheet
+#            fails here lands in "fails a requirement" on the report.
+#   [api]    we drop these ourselves, from list data, before any sheet is read.
+#            Rejects never reach the report at all.
+#   [sheet]  only the auction sheet can answer these.
+#
+# An absent bound is an absent key — there is no null in TOML, and no need for
+# one.
+
+[site]
+make = "MAZDA"
+model = "CX-30"
+transmission = "auto"
+year_start = 2023
+year_end = 2023
+mileage_end = 55000
+engine_capacity_start = 1.9
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
+
+[sheet]
+drivetrain = "4WD"
+# Matched as letters contained anywhere in the code, so "X" catches "XX" and a
+# "W" inside a compound mark like "A3W2" is caught too. The severity digit is
+# deliberately ignored: W3 is a worse repair mark than W2.
+no_damage_codes = ["W", "X", "欠"]

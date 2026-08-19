@@ -9,6 +9,18 @@ from banzai24 import fetch, lot_filters
 from banzai24.config import AuctionFilters
 from banzai24.fetch import FetchResult
 from banzai24.lot_filters import LotFilters
+from banzai24.requirements import SheetRequirements
+from banzai24.search import SearchDefinition
+
+
+def _definition(**overrides) -> SearchDefinition:
+    base = dict(
+        name="mazda-cx30",
+        filters=AuctionFilters(make="MAZDA", model="CX-30"),
+        lot_filters=LotFilters(body_model_code=("DMEJ3P",)),
+        requirements=SheetRequirements(drivetrain="4WD", no_damage_codes=("W",)),
+    )
+    return SearchDefinition(**{**base, **overrides})
 
 
 def _lot(number: str = "47-1312-35159", image: str | None = "https://x/img") -> dict:
@@ -66,19 +78,37 @@ def test_lots_json_keeps_payloads_verbatim(tmp_path):
         {"items": [_lot("47-1-1")], "pagination": {"total": 2, "totalPages": 2, "perPage": 20}},
         {"items": [_lot("47-1-2")], "pagination": {"total": 2, "totalPages": 2, "perPage": 20}},
     ]
-    filters = AuctionFilters()
+    definition = _definition()
     result = FetchResult(
-        run_dir=fetch._new_run_dir(filters, root=tmp_path),
+        run_dir=fetch._new_run_dir(definition.filters, root=tmp_path),
         lots=[i for p in payloads for i in p["items"]],
         pages_fetched=2, total_pages=2, total_lots=2, truncated=False,
     )
-    path = fetch._write_lots_json(result, filters, "https://banzai24.com/x", payloads)
+    path = fetch._write_lots_json(result, definition, "https://banzai24.com/x", payloads)
 
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["pages"] == payloads            # untouched
     assert saved["search_url"] == "https://banzai24.com/x"
-    assert saved["filters"]["make"] == filters.make
     assert saved["total_lots"] == 2
+
+
+def test_lots_json_records_the_search_by_name_as_well_as_by_value(tmp_path):
+    """``report`` re-loads the named file so a re-tuned requirement re-judges an
+    existing run for free. The copied values are provenance — what this run was
+    judged by on the day — and are read back only if the file has since gone.
+    """
+    definition = _definition()
+    result = FetchResult(run_dir=fetch._new_run_dir(definition.filters, root=tmp_path),
+                         lots=[], pages_fetched=1, total_pages=1, total_lots=0,
+                         truncated=False)
+    saved = json.loads(
+        fetch._write_lots_json(result, definition, "https://banzai24.com/x", [])
+        .read_text(encoding="utf-8")
+    )
+    assert saved["search"]["name"] == "mazda-cx30"
+    assert saved["search"]["site"]["make"] == "MAZDA"
+    assert saved["search"]["api"]["body_model_code"] == ["DMEJ3P"]
+    assert saved["search"]["sheet"]["no_damage_codes"] == ["W"]
 
 
 def test_truncated_flag_and_summary_warn_about_unfetched_pages(tmp_path):
@@ -362,15 +392,15 @@ def test_summary_names_the_day_and_the_lots_set_aside(tmp_path):
 
 def test_lots_json_records_the_chosen_day_but_keeps_every_page_verbatim(tmp_path):
     payloads = [{"items": MIXED}]
-    filters = AuctionFilters()
+    definition = _definition()
     selected, day = fetch.lots_on_nearest_day(MIXED, TODAY)
     result = FetchResult(
-        run_dir=fetch._new_run_dir(filters, root=tmp_path),
+        run_dir=fetch._new_run_dir(definition.filters, root=tmp_path),
         lots=selected, pages_fetched=1, total_pages=1, total_lots=len(MIXED),
         truncated=False, trade_date=day, lots_other_days=len(MIXED) - len(selected),
     )
     saved = json.loads(
-        fetch._write_lots_json(result, filters, "https://banzai24.com/x", payloads)
+        fetch._write_lots_json(result, definition, "https://banzai24.com/x", payloads)
         .read_text(encoding="utf-8")
     )
     assert saved["trade_date"] == "2026-08-11"

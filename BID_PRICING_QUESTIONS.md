@@ -56,6 +56,8 @@ converted at `--jpy-per-eur`?).
 JPY because it is the currency you bid in and every price on `AuctionLot` is JPY;
 
 ## Q3 — Which fields key the lookup, given each has two sources?
+> **Reversed.** The sheet now outranks the API for mileage and year, and a 車歴 box that says neither is priced as private rather than left unpriced. See `docs/adr/0001-sheet-outranks-api.md` — do not restore the precedence below from this section alone.
+
 
 Mileage: API `mileage_km` (rounded) or sheet `sheet_mileage_km` (exact)? Year:
 `registration_year` or the sheet's `first_registration_year`? Rental/private: sheet notes
@@ -197,6 +199,8 @@ way `MAZDA`/`CX-30` is matched today.
 **Answer:** `make,model,year,mileage_min,mileage_max,rental,max_bid_jpy`.
 
 ## Q14 — Which mileage/year exactly, given "prefer the API" (Q3)?
+> **Reversed.** The sheet now outranks the API for mileage and year, and a 車歴 box that says neither is priced as private rather than left unpriced. See `docs/adr/0001-sheet-outranks-api.md` — do not restore the precedence below from this section alone.
+
 
 **Answer:** **Fall back to the sheet when the API field is null**. Never the reverse — the API wins whenever both
 exist. Refusing when the exact number is sitting in `SheetExtraction` is a null

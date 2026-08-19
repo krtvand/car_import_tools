@@ -24,17 +24,22 @@ KNOWN_GRADES = ("S", "6", "5", "4.5", "4", "3.5", "3", "2", "1", "R", "RA")
 
 @dataclass
 class AuctionFilters:
-    """What to search for on banzai24.
+    """The ``[site]`` half of a saved search — what banzai24 itself filters on.
 
     ``make``/``model`` are the URL slugs as they appear on the site (upper-case
     for the make, e.g. ``MAZDA`` / ``CX-30``). ``grade_origin`` is multi-select:
     each value is emitted as its own repeated ``gradeOrigin`` query parameter,
     the same convention bazaraki uses for its multi-selects.
+
+    **No field defaults to a car.** Every value here is either required or
+    genuinely neutral, so an omitted filter widens the search rather than
+    quietly narrowing it to whatever the last person happened to be shopping
+    for — see :mod:`banzai24.search`, which is the only thing that builds these.
     """
 
-    make: str = "MAZDA"
-    model: str | None = "CX-30"
-    transmission: str | None = "auto"       # "auto" | "manual"; None = any
+    make: str = ""
+    model: str | None = None
+    transmission: str | None = None         # "auto" | "manual"; None = any
 
     year_start: int | None = None
     year_end: int | None = None
@@ -50,16 +55,12 @@ class AuctionFilters:
     country_iso: str = "JP"
 
 
-DEFAULT_FILTERS = AuctionFilters(
-    make="MAZDA",
-    model="CX-30",
-    transmission="auto",
-    year_start=2023,
-    year_end=2023,
-    mileage_end=55000,
-    engine_capacity_start=1.9,
-    grade_origin=("4", "4.5", "5"),
-)
+# There is deliberately no DEFAULT_FILTERS. It used to hold a CX-30 search and
+# was the fallback for a bare `fetch`, which meant every saved search had to pass
+# --no-defaults to avoid inheriting it — a RAV4 search picking up the CX-30's
+# engine-capacity floor was a real hazard the flag existed to defend against.
+# A saved search is now a complete file (`banzai24/search.py`), so there is
+# nothing to inherit and nothing to defend against.
 
 
 # Dataclass field -> query parameter name. Range params follow the site's
@@ -90,10 +91,8 @@ def base_path(filters: AuctionFilters) -> str:
     return "/" + "/".join(parts)
 
 
-def build_search_url(filters: AuctionFilters | None = None) -> str:
+def build_search_url(filters: AuctionFilters) -> str:
     """Full UI URL for a filter set, ready for Playwright to navigate to."""
-    filters = filters or DEFAULT_FILTERS
-
     # list of pairs (not a dict) so grade_origin can repeat its key
     params: list[tuple[str, str]] = []
     for name, param in _QUERY_PARAMS.items():

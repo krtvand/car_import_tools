@@ -1,0 +1,19 @@
+# Mazda 3 (Japan auctions). See mazda-cx30.toml for what the sections mean.
+
+[site]
+make = "MAZDA"
+model = "3"
+transmission = "auto"
+year_start = 2023
+year_end = 2023
+mileage_start = 0
+mileage_end = 50000
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+body_model_code = ["BP5P", "KF5P"]
+
+[sheet]
+drivetrain = "4WD"
+no_damage_codes = ["W", "X", "欠"]

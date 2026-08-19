@@ -1,0 +1,19 @@
+# Mazda CX-5 (Japan auctions). See mazda-cx30.toml for what the sections mean.
+
+[site]
+make = "MAZDA"
+model = "CX-5"
+transmission = "auto"
+year_start = 2023
+year_end = 2023
+mileage_start = 30000
+mileage_end = 70000
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+body_model_code = ["KFEP", "KF5P"]
+
+[sheet]
+drivetrain = "4WD"
+no_damage_codes = ["W", "X", "欠"]

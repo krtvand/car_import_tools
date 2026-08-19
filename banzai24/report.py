@@ -32,9 +32,17 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from . import db, normalize, sheets
+from . import db, normalize, search, sheets
 from .bidding import BidPricer, BidQuote
 from .models import AuctionLot, SheetExtraction
+from .requirements import (
+    GROUP_BLURBS,
+    GROUP_LABELS,
+    GROUP_ORDER,
+    Assessment,
+    judge,
+)
+from .search import SearchDefinition
 from .sheets import CrossCheck
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -61,22 +69,30 @@ class Flag:
     severity: int   # higher sorts first
 
 
-# Severities, named because they are read twice: once to sort, once to decide
-# what counts as "flagged" in the header. ``NOT_READ`` sits below
-# :data:`NEEDS_EYES` on purpose — an unextracted sheet is a gap in the report,
-# not a finding about the car, and counting it as one would mean a freshly
-# fetched run reports every lot as flagged and the count stops meaning anything.
+# Severities, named because they are read twice: once to sort within a group, and
+# once to decide what counts as "flagged" in the header.
+#
+# There is no longer a ``not-read`` flag: the *unconfirmed* group says that now,
+# for every lot in it, and a badge repeating it on each card was the same fact
+# printed twice.
 #
 # ``bid_reduced`` deliberately flags nothing and changes no ordering. It is a
 # number to read off the card you are already looking at, not a finding — and a
 # report that re-sorted itself every time the price table was re-tuned would stop
 # being the stable page you scroll.
-MISMATCH, LOW_CONFIDENCE_SEV, NOT_READ = 50, 30, 10
+MISMATCH, LOW_CONFIDENCE_SEV = 50, 30
 NEEDS_EYES = LOW_CONFIDENCE_SEV
+
+# Cross-checks that are **not** requirements, and so still earn a badge. Grade
+# and mileage disagreements moved out: those two are re-judged as requirements
+# now (``docs/adr/0001-sheet-outranks-api.md``), and a lot that fails one is
+# already sitting in the *fails a requirement* group with the exact figure
+# printed against the value it broke. A badge saying the same thing in a second
+# vocabulary is how a page stops being read.
+STRUCTURAL_CHECKS = ("chassis", "registration")
 
 
 def _flags(
-    lot: AuctionLot,
     extraction: SheetExtraction | None,
     checks: CrossCheck | None,
 ) -> list[Flag]:
@@ -88,10 +104,12 @@ def _flags(
     """
     flags = []
 
-    if checks and (bad := checks.disagreements):
-        # The API and the sheet disagree about a fact both claim to know. Either
-        # the model misread it or the lot is not the lot the listing describes —
-        # and the chassis case means the second.
+    if checks and (bad := [name for name in checks.disagreements
+                           if name in STRUCTURAL_CHECKS]):
+        # The API and the sheet disagree about a fact both claim to know, and one
+        # no requirement tests: this may not be the car the listing describes.
+        # It sits at the top of whichever group the lot is in, including *meets
+        # all requirements* — which is uncomfortable, and correct.
         flags.append(Flag("mismatch", f"{', '.join(bad)} mismatch", MISMATCH))
 
     if extraction and extraction.confidence is not None and extraction.confidence < LOW_CONFIDENCE:
@@ -103,11 +121,6 @@ def _flags(
     # export lots, so a badge for it fired on most of the page and crowded out
     # the findings that are actually unusual. The fact still shows in the card,
     # against the 車検 field where the price of it is read off.
-
-    if extraction is None:
-        # Not a problem with the lot — a gap in the report. Flagged low so it
-        # sorts under the real findings but is never silently absent.
-        flags.append(Flag("not-read", f"sheet {lot.sheet_status}", NOT_READ))
 
     return flags
 
@@ -261,21 +274,56 @@ class LotView:
     quote: BidQuote | None = None      # None only when a bid table is missing
     flags: list[Flag] = field(default_factory=list)
     sheet_uri: str | None = None
+    assessment: Assessment | None = None   # None when the run named no search
+    requirements: object | None = None     # the [sheet] section, for the card
+
+    @property
+    def group(self) -> str | None:
+        return self.assessment.group if self.assessment else None
 
     @property
     def sort_key(self) -> tuple:
-        """Flagged lots first, then in the order they cross the block.
+        """Group first, then flagged lots, then in the order they cross the block.
 
+        The group is the primary key because it is the question you are asking
+        the page: *what can I bid on this morning*. Severity sorts within it, so
+        a possible wrong car still rises to the top of whichever group it is in.
         Within a severity band the trade time is the tiebreak, because that is
         the order you will actually have to make decisions in.
         """
+        rank = GROUP_ORDER.index(self.group) if self.group else 0
         severity = max((flag.severity for flag in self.flags), default=0)
         return (
+            rank,
             -severity,
             str(self.lot.trade_date or ""),
             self.lot.trade_time or "",
             self.lot.lot_number,
         )
+
+    def check(self, name: str):
+        """One requirement's verdict, so the template can print it in place.
+
+        Returns ``None`` when the search does not test that field at all, which
+        the template renders as no marker rather than as a pass — a car nobody
+        asked a question about has not answered one.
+        """
+        return self.assessment.get(name) if self.assessment else None
+
+    @property
+    def failures(self) -> list:
+        return self.assessment.failures if self.assessment else []
+
+    @property
+    def unknowns(self) -> list:
+        return self.assessment.unknowns if self.assessment else []
+
+    @property
+    def verdict_line(self) -> str | None:
+        """The one line saying why this card is not in the top group."""
+        if not self.assessment or self.assessment.group == GROUP_ORDER[0]:
+            return None
+        return self.assessment.describe()
 
     @property
     def title(self) -> str:
@@ -291,14 +339,28 @@ class LotView:
         return str(self.lot.registration_year)
 
     @property
+    def banned_codes(self) -> tuple[str, ...]:
+        """The ``no_damage_codes`` this lot was judged against, if any."""
+        return getattr(self.requirements, "no_damage_codes", ()) or ()
+
+    @property
     def damage_marks(self) -> list[dict]:
-        """``[{panel, code, meaning}]`` — the legend joined in at render time.
+        """``[{panel, code, meaning, banned}]`` — the legend joined in at render.
 
         ``meaning`` is ``None`` for a code the legend does not cover. That
         happens for real: one extraction returned ``トビA`` (a stone chip),
         which the prompt correctly passed through verbatim rather than forcing
         into a known letter.
+
+        ``banned`` marks the codes that put this lot in *fails a requirement*,
+        so the card shows *which* mark disqualified it rather than a list you
+        have to re-scan against the rule yourself.
         """
+        # The same containment test :func:`requirements.banned_marks` runs, applied
+        # here per mark so the card can point at the offending one. Kept as one
+        # expression rather than a call into that function because what is wanted
+        # here is a flag per mark, not the subset.
+        wanted = [code.strip().upper() for code in self.banned_codes if code.strip()]
         marks = []
         for mark in _json_list(self.extraction.damage_marks if self.extraction else None):
             if not isinstance(mark, dict):
@@ -308,25 +370,32 @@ class LotView:
                 "panel": mark.get("panel") or "",
                 "code": code,
                 "meaning": sheets.DAMAGE_CODES.get(code[:1]),
+                "banned": any(b in code.upper() for b in wanted),
             })
         return marks
 
     @property
     def history_note(self) -> dict | None:
-        """``{ja, en, rental}`` for 車歴, or ``None`` if the sheet said neither.
+        """``{ja, en, rental, unset}`` for 車歴 — always shown once a sheet is read.
 
         The two nullable notes collapse to one line here because the card shows
         one line; ``rental`` keeps the distinction the colour depends on.
+
+        A sheet that says neither renders as *unset* rather than as a missing
+        row. It is not a null worth hiding: it is the input the bid falls back
+        to ``private`` on, and the card has to show what that assumption was
+        made from.
         """
         if self.extraction is None:
             return None
         ja = self.extraction.rental_car_note or self.extraction.private_car_note
         if not ja:
-            return None
+            return {"ja": None, "en": None, "rental": False, "unset": True}
         return {
             "ja": ja,
             "en": sheets.translate_history(ja),
             "rental": bool(self.extraction.rental_car_note),
+            "unset": False,
         }
 
     @property
@@ -370,7 +439,32 @@ def _check_class(ok: bool | None) -> str:
     return {True: "ok", False: "bad"}.get(ok, "unknown")
 
 
+def _verdict_class(check) -> str:
+    """The CSS hook for a requirement verdict, or ``""`` for "not asked".
+
+    Empty rather than "unknown" when there is no check at all: a search that
+    never asked about drivetrain has not failed to answer, and a "?" on a field
+    nobody tested would be a question the page invented.
+    """
+    if check is None:
+        return ""
+    return {"pass": "req-pass", "fail": "req-fail"}.get(check.verdict, "req-unknown")
+
+
 # --- collecting a run --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Group:
+    """One heading and the cards under it."""
+
+    key: str
+    label: str
+    blurb: str
+    views: list[LotView]
+
+    def __len__(self) -> int:
+        return len(self.views)
 
 
 @dataclass
@@ -380,7 +474,32 @@ class Report:
     missing: list[str] = field(default_factory=list)   # in the run, not in the DB
     cyprus_reason: str | None = None                   # why the € column is empty
     bid_reason: str | None = None                      # why *no* card has a bid price
+    definition: SearchDefinition | None = None         # the search this run ran
+    search_reason: str | None = None                   # why it is missing, or stale
     output: Path | None = None
+
+    @property
+    def grouped(self) -> list[Group]:
+        """The three groups, in order, empty ones dropped.
+
+        Empty is not "zero of these" — an empty *fails a requirement* heading on
+        a morning where nothing failed is a heading you learn to skip, and the
+        counts are in the header anyway.
+
+        ``[]`` when the run named no search: those lots were never judged, and
+        one ungrouped list is the honest rendering of that.
+        """
+        if self.definition is None:
+            return []
+        groups = []
+        for key in GROUP_ORDER:
+            views = [view for view in self.views if view.group == key]
+            if views:
+                groups.append(Group(key, GROUP_LABELS[key], GROUP_BLURBS[key], views))
+        return groups
+
+    def count(self, key: str) -> int:
+        return sum(1 for view in self.views if view.group == key)
 
     @property
     def flagged(self) -> int:
@@ -411,11 +530,14 @@ class Report:
 
     def summary(self) -> str:
         bits = [f"{len(self.views)} lot{'' if len(self.views) == 1 else 's'}"]
+        if self.definition is not None:
+            bits += [f"{len(group)} {group.label}" for group in self.grouped]
+        else:
+            bits.append(f"{self.extracted} with sheet data")
+            if self.unread:
+                bits.append(f"{self.unread} sheet(s) not read yet")
         if self.flagged:
             bits.append(f"{self.flagged} flagged")
-        bits.append(f"{self.extracted} with sheet data")
-        if self.unread:
-            bits.append(f"{self.unread} sheet(s) not read yet")
         if self.missing:
             bits.append(f"{len(self.missing)} not in {db.DB_PATH.name}")
         if self.output:
@@ -428,6 +550,7 @@ def collect(
     all_lots: bool = False,
     pricer: CyprusPricer | None = None,
     bid_pricer: BidPricer | None = None,
+    definition: SearchDefinition | None = None,
 ) -> Report:
     """Gather one run's lots into sorted, render-ready views.
 
@@ -437,7 +560,19 @@ def collect(
     the database is rendered from the run file anyway, with a note: the answer to
     "why is this lot missing" should be visible in the report, not require
     remembering that ``normalize`` was skipped.
+
+    The **saved search** decides what "good" means, and is loaded from its file
+    by the name the run recorded rather than from the run itself — so re-tuning
+    a requirement and re-rendering this morning costs nothing. Runs fetched
+    before saved searches were files named none, and render as one ungrouped
+    list: they were never judged against anything, and inventing a verdict for
+    them would be the report claiming to know something it does not.
     """
+    payload = json.loads((run_dir / "lots.json").read_text(encoding="utf-8"))
+    search_reason = None
+    if definition is None:
+        definition, search_reason = search.for_run(payload)
+
     rows, _problems = normalize.load_run(run_dir, all_lots=all_lots)
     numbers = [row["lot_number"] for row in rows]
 
@@ -463,13 +598,19 @@ def collect(
             checks=checks,
             comp=pricer.for_lot(lot),
             quote=bid_pricer.for_lot(lot, extraction),
-            flags=_flags(lot, extraction, checks),
+            flags=_flags(extraction, checks),
             sheet_uri=_data_uri(_sheet_file(lot)),
+            assessment=(
+                judge(definition.filters, definition.requirements, lot, extraction)
+                if definition else None
+            ),
+            requirements=definition.requirements if definition else None,
         ))
 
     views.sort(key=lambda view: view.sort_key)
     return Report(run_dir=run_dir, views=views, missing=missing,
-                  cyprus_reason=pricer.reason, bid_reason=bid_pricer.reason)
+                  cyprus_reason=pricer.reason, bid_reason=bid_pricer.reason,
+                  definition=definition, search_reason=search_reason)
 
 
 # --- rendering ---------------------------------------------------------------
@@ -492,6 +633,7 @@ def _environment() -> Environment:
     env.filters["yen"] = lambda v: f"¥{v:,}" if v is not None else None
     env.filters["km"] = lambda v: f"{v:,} km" if v is not None else None
     env.filters["check"] = _check_class
+    env.filters["verdict"] = _verdict_class
     return env
 
 

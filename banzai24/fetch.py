@@ -16,7 +16,7 @@ import asyncio
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -28,6 +28,12 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from . import config, lot_filters as lot_filters_mod, session
 from .config import AuctionFilters
 from .lot_filters import LotFilters
+from .search import SearchDefinition
+
+# `check` only needs *a* page that requires a session; it is not a search and
+# nothing is fetched from it. Deliberately not one of the saved searches, so
+# renaming or deleting one cannot break the session check.
+CHECK_FILTERS = AuctionFilters(make="MAZDA", model="CX-30")
 
 RUNS_DIR = Path(__file__).parent.parent / "runs"
 
@@ -393,14 +399,13 @@ async def _await_first_page(page: Page, headless: bool) -> dict:
 
 
 async def fetch_lots(
-    filters: AuctionFilters | None = None,
+    definition: SearchDefinition,
     max_lots: int = DEFAULT_MAX_LOTS,
     run_dir: Path | None = None,
     headless: bool = False,
     nearest_day_only: bool = True,
-    lots_filter: LotFilters | None = None,
 ) -> FetchResult:
-    """Collect lots for ``filters``, writing raw payloads into a run directory.
+    """Collect lots for one saved search, writing raw payloads into a run directory.
 
     By default the run is narrowed to the **closest upcoming auction day**: the
     later days a search also returns are fetched but set aside, and paging stops
@@ -419,8 +424,8 @@ async def fetch_lots(
     until it has ``max_lots`` of them, the day is exhausted, or the safety limit
     below stops it.
     """
-    filters = filters or config.DEFAULT_FILTERS
-    lots_filter = lots_filter or LotFilters()
+    filters = definition.filters
+    lots_filter = definition.lot_filters
     url = config.build_search_url(filters)
     run_dir = run_dir or _new_run_dir(filters)
 
@@ -477,7 +482,7 @@ async def fetch_lots(
         lots_other_days=len(chosen.fetched) - len(chosen.on_day),
         lots_filtered_out=len(chosen.rejected),
     )
-    _write_lots_json(result, filters, url, payloads, lots_filter)
+    _write_lots_json(result, definition, url, payloads)
     return result
 
 
@@ -535,20 +540,25 @@ def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bo
 
 def _write_lots_json(
     result: FetchResult,
-    filters: AuctionFilters,
+    definition: SearchDefinition,
     url: str,
     payloads: list[dict],
-    lots_filter: LotFilters | None = None,
 ) -> Path:
-    """Persist the API payloads verbatim, wrapped in run provenance."""
+    """Persist the API payloads verbatim, wrapped in run provenance.
+
+    ``search`` records the saved search by **name** as well as by value.
+    ``report`` re-loads the named file rather than reading these back, so
+    re-tuning a requirement re-judges this run for free; the copy here is what
+    the run was judged by on the day, and is used only if the file has since
+    been deleted or renamed.
+    """
     path = result.run_dir / "lots.json"
     path.write_text(
         json.dumps(
             {
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "search_url": url,
-                "filters": asdict(filters),
-                "lot_filters": asdict(lots_filter or LotFilters()),
+                "search": definition.to_payload(),
                 "pages_fetched": result.pages_fetched,
                 "total_pages": result.total_pages,
                 "total_lots": result.total_lots,
@@ -651,8 +661,7 @@ async def check_session(
     is worse than no check, because it sends you to re-authenticate by SMS for
     nothing.
     """
-    filters = filters or config.DEFAULT_FILTERS
-    url = config.build_search_url(filters)
+    url = config.build_search_url(filters or CHECK_FILTERS)
     async with session.browser_context(headless=headless) as page:
         await page.goto(url, wait_until="commit")
         payload = await _await_first_page(page, headless)
@@ -664,20 +673,18 @@ async def check_session(
 
 
 async def run_fetch(
-    filters: AuctionFilters | None = None,
+    definition: SearchDefinition,
     max_lots: int = DEFAULT_MAX_LOTS,
     sheets: bool = True,
     headless: bool = False,
     nearest_day_only: bool = True,
-    lots_filter: LotFilters | None = None,
 ) -> FetchResult:
     """``fetch`` end to end: lots, then their sheets."""
     result = await fetch_lots(
-        filters,
+        definition,
         max_lots=max_lots,
         headless=headless,
         nearest_day_only=nearest_day_only,
-        lots_filter=lots_filter,
     )
     if sheets:
         await download_sheets(result)

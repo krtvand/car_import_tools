@@ -192,19 +192,42 @@ def test_an_alias_pointing_at_a_house_the_cost_file_lacks_is_not_an_error(tmp_pa
 # --- what the lot does not know ----------------------------------------------
 
 
-def test_a_sheet_that_says_neither_rental_nor_private_is_a_null(tmp_path):
-    """The common case today — 54 of 62 lots — and the accepted cost of never
-    guessing. A company car and an unread sheet land in the same place."""
+def test_a_sheet_that_says_neither_rental_nor_private_is_priced_as_private(tmp_path):
+    """The common case — and the one assumption this module makes.
+
+    It used to be a null: a company car and an unread sheet both came back with
+    no number at all. That left the commonest card on the page needing to be
+    priced by hand from a table sitting right there. The assumption is stated on
+    the quote rather than hidden, because private is the *dearer* row — it is not
+    the cautious choice, it is the only one that always resolves, since some cars
+    have no rental row at all.
+    """
     quote = _pricer(tmp_path).for_lot(_lot(), _extraction(private_car_note=None))
-    assert quote.reason == "sheet does not say rental or private"
+    assert quote.max_bid == 1_855_000
+    assert quote.assumed_private is True
+    assert "assuming private, sheet did not say" in quote.describe()
 
     unread = _pricer(tmp_path).for_lot(_lot(), None)
-    assert unread.reason == "sheet does not say rental or private"
+    assert unread.max_bid == 1_855_000
+    assert unread.assumed_private is True
 
 
-def test_the_sheet_fills_in_a_year_or_mileage_the_api_lacks(tmp_path):
-    """The API wins whenever both exist; the sheet is a fallback, never an
-    override."""
+def test_a_sheet_that_does_say_is_not_marked_as_an_assumption(tmp_path):
+    """The flag has to distinguish, or it is decoration on every card."""
+    quote = _pricer(tmp_path).for_lot(_lot(), _extraction())
+    assert quote.assumed_private is False
+    assert "assuming private" not in quote.describe()
+
+
+def test_the_sheet_outranks_the_api_on_year_and_mileage(tmp_path):
+    """The reversal recorded in ``docs/adr/0001-sheet-outranks-api.md``.
+
+    The API rounds mileage to the nearest 1,000 and the bands match to the
+    kilometre, so under the old precedence a car whose sheet read 50,415 km and
+    whose API row read 50,000 km was priced from the under-50,000 band — while
+    the report's own requirement check judged it on the exact figure. One card
+    cannot read its bid off a rounded copy and its mileage off the original.
+    """
     pricer = _pricer(tmp_path)
     quote = pricer.for_lot(
         _lot(registration_year=None, mileage_km=None),
@@ -212,10 +235,21 @@ def test_the_sheet_fills_in_a_year_or_mileage_the_api_lacks(tmp_path):
     )
     assert quote.bid_reduced == 1_843_000
 
-    # Both present: the exact sheet figure does not displace the API's.
-    api_wins = pricer.for_lot(_lot(mileage_km=15_000),
-                              _extraction(sheet_mileage_km=99_999))
-    assert api_wins.max_bid == 1_855_000
+    # Both present: the sheet's figure displaces the API's, and 99,999 km falls
+    # outside every band in the fixture table.
+    sheet_wins = pricer.for_lot(_lot(mileage_km=15_000),
+                                _extraction(sheet_mileage_km=99_999))
+    assert sheet_wins.max_bid is None
+    assert "99,999 km" in sheet_wins.reason
+
+
+def test_a_sheet_null_is_not_a_zero(tmp_path):
+    """Where the sheet is silent the API's value stands, unchanged."""
+    quote = _pricer(tmp_path).for_lot(
+        _lot(mileage_km=15_000, registration_year=2023),
+        _extraction(sheet_mileage_km=None, first_registration_year=None),
+    )
+    assert quote.max_bid == 1_855_000
 
 
 @pytest.mark.parametrize("missing, reason", [

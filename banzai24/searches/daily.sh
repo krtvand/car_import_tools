@@ -1,31 +1,45 @@
 #!/usr/bin/env bash
 #
-# The morning run: both cars, nearest upcoming auction day, no money spent.
+# The morning run: every car, nearest upcoming auction day, judged and priced.
 #
-#   ./banzai24/searches/daily.sh                  # 20 lots per car + sheets
-#   ./banzai24/searches/daily.sh --max-lots 40    # deeper, both cars
-#   ./banzai24/searches/daily.sh --dry-run        # print both search URLs only
+#   ./banzai24/searches/daily.sh                  # 20 lots per car
+#   ./banzai24/searches/daily.sh --max-lots 40    # deeper, every car
+#   ./banzai24/searches/daily.sh --dry-run        # print the search URLs only
 #
-# What it does, and deliberately does not do:
+# What it does:
 #
-#   check    the saved session, ONCE, before either fetch
-#   fetch    each car — each narrows itself to its own nearest upcoming
-#            auction day, which is often not the same day for both
-#   report   a report.html per run, showing what turned up
+#   check    the saved session, ONCE, before any fetch
+#   fetch    each search — each narrows itself to its own nearest upcoming
+#            auction day, which is often not the same day for all of them
+#   extract  read this morning's sheets with Claude
+#   report   a report.html per run, each lot in one of three groups
 #
-# It does **not** read any auction sheets. That is the only step that costs
-# money (~$0.015 a sheet), and it is worth deciding on after seeing what the
-# morning actually turned up rather than before. The commands to do it are
-# printed at the end.
+# **It reads the sheets, and that costs money.** It did not always: the reports
+# used to be built unread, on the reasoning that it was worth seeing what turned
+# up before paying to look closer. That reasoning is now backwards. Whether a lot
+# is worth looking at is exactly the judgement the sheet makes — the damage codes
+# and the drivetrain are only on the sheet — so a report built before extraction
+# puts every single lot in "unconfirmed" and answers nothing.
 #
-# Session first, once, is the whole reason this is a script rather than two
-# commands typed in a row: login is SMS 2FA, so an expired session costs a
-# phone round-trip. Finding out before the first fetch costs one SMS; finding
-# out between the two cars costs the same SMS plus a half-finished morning.
+# The bill is small because the day narrowing already did the work: a run keeps
+# only the nearest auction day, which has been 2-4 lots per car. Two cars is
+# roughly five sheets, 8-15 cents. --limit is there if a wide morning surprises
+# you.
+#
+# Session first, once, is the whole reason this is a script rather than commands
+# typed in a row: login is SMS 2FA, so an expired session costs a phone
+# round-trip. Finding out before the first fetch costs one SMS; finding out
+# between two cars costs the same SMS plus a half-finished morning.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 banzai24() { uv run python -m banzai24 "$@"; }
+
+# Which searches the morning covers. Every saved search is a file in this
+# directory; naming them here rather than globbing is deliberate, because
+# extraction costs money and a file dropped in this directory should not
+# silently start spending it.
+SEARCHES=(mazda-cx30 toyota-rav4)
 
 # --dry-run prints URLs and fetches nothing, so a session check would be a
 # pointless SMS risk on a command whose whole point is to touch nothing.
@@ -39,12 +53,12 @@ if [[ "$dry_run" == false ]]; then
     banzai24 check
 fi
 
-for search in mazda-cx30 toyota-rav4; do
+for name in "${SEARCHES[@]}"; do
     echo
-    echo "== ${search} =="
-    # Each saved search owns that car's filters; this script owns only the
-    # running order. Extra flags pass through to both.
-    "./banzai24/searches/${search}.sh" "$@"
+    echo "== ${name} =="
+    # The .toml owns that car's filters and requirements; this script owns only
+    # the running order. Extra flags pass through to every search.
+    banzai24 fetch --search "${name}" "$@"
 done
 
 if [[ "$dry_run" == true ]]; then
@@ -52,18 +66,22 @@ if [[ "$dry_run" == true ]]; then
 fi
 
 echo
+echo "== sheets =="
+# --today matters: without it the queue is every pending sheet ever downloaded,
+# so you would pay to read lots that traded last week.
+banzai24 extract --today
+
+echo
 echo "== reports =="
 banzai24 report --today
 
 cat <<'NEXT'
 
-Sheets are downloaded but unread — the reports show grades, prices and Cyprus
-comparables, and flag every lot as "sheet pending". To read the ones worth
-reading (~$0.015 each) and refresh the reports in place:
+Each report sorts into three groups: lots that meet every requirement, lots
+nothing has confirmed yet, and lots the sheet disqualified. Every card carries
+its bid price, whichever group it is in.
 
-  uv run python -m banzai24 extract --today --dry-run     # the queue and the bill
-  uv run python -m banzai24 extract --today --limit 5     # read five
-  uv run python -m banzai24 report --today --open         # re-render, free, and open
+  uv run python -m banzai24 report --today --open   # re-render, free, and open
 
 `--open` opens one tab: `runs/index.html`, this morning's runs on top of the
 last ten. It opens in the parser's own Chrome profile, so clicking a lot
@@ -75,7 +93,7 @@ It **waits** until you close that window: the browser only lives as long as the
 command. Give it its own terminal, and close it before the next `fetch`, which
 needs the profile to itself.
 
-`--today` matters: without it the queue is every pending sheet ever
-downloaded, so you would pay to read lots that traded last week. Add a run
-directory to read one car only, e.g. `extract runs/<today>_TOYOTA-RAV4`.
+Re-tuning a requirement does not need a re-fetch. Edit the search's .toml and
+re-run `report --today` — the report loads the file by name, so the morning is
+re-judged for free.
 NEXT

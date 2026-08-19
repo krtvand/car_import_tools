@@ -118,7 +118,7 @@ def _view(lot=None, extraction=None, **overrides) -> report.LotView:
     checks = sheets.cross_check(extraction, lot) if extraction else None
     return report.LotView(
         lot=lot, extraction=extraction, checks=checks,
-        flags=report._flags(lot, extraction, checks),
+        flags=report._flags(extraction, checks),
         **overrides,
     )
 
@@ -149,19 +149,34 @@ def test_low_confidence_is_flagged():
     assert "low-confidence" in {f.key for f in view.flags}
 
 
-def test_an_unread_sheet_is_flagged_low_and_is_not_counted_as_a_finding():
+def test_an_unread_sheet_earns_no_badge_because_its_group_already_says_so():
     """A pending sheet is a gap in the report, not something wrong with the car.
 
-    It still gets a badge — the alternative is a lot that is silently thin —
-    but it must not inflate the flagged count, or a freshly fetched run reports
-    every lot as flagged and the number stops carrying information.
+    It used to carry a ``not-read`` badge. The *unconfirmed* group says the same
+    thing now, for every card under it, and a badge repeating it was the fact
+    printed twice. It must still not inflate the flagged count, or a freshly
+    fetched run reports every lot as flagged and the number stops meaning
+    anything.
     """
     view = _view(lot=_lot(sheet_status="pending"))
-    assert [f.key for f in view.flags] == ["not-read"]
+    assert view.flags == []
 
     built = report.Report(run_dir=Path("."), views=[view])
     assert built.flagged == 0
     assert built.unread == 1
+
+
+def test_a_grade_disagreement_is_not_badged_because_it_is_a_requirement():
+    """Grade and mileage moved out of the badge vocabulary and into the groups.
+
+    The sheet disagreeing with the API about the grade is now judged as a
+    requirement — the lot lands in *fails a requirement* with the figures
+    printed against the value that broke — so a second badge saying "grade
+    mismatch" would be the same finding in two vocabularies.
+    """
+    view = _view(extraction=_extraction(sheet_grade="3.5"))
+    assert view.checks.grade is False          # the cross-check still runs
+    assert view.flags == []                    # …and no longer earns a badge
 
 
 # --- sorting -----------------------------------------------------------------
@@ -178,16 +193,13 @@ def test_flagged_lots_sort_above_clean_ones_whatever_the_trade_order():
     """
     clean = _view(lot=_lot("47-1312-00001", trade_time="09:00"),
                   extraction=_extraction("47-1312-00001"))
-    unread = _view(lot=_lot("47-1312-00002", trade_time="10:00",
-                            sheet_status="pending"))
     mismatched = _view(lot=_lot("47-1312-00003", trade_time="23:00"),
                        extraction=_extraction("47-1312-00003",
                                               chassis_full="DMEJ3P-100000"))
 
-    ordered = sorted([clean, unread, mismatched], key=lambda v: v.sort_key)
+    ordered = sorted([clean, mismatched], key=lambda v: v.sort_key)
     assert [v.lot.lot_number for v in ordered] == [
-        "47-1312-00003",   # mismatch — something is wrong with this car
-        "47-1312-00002",   # unread — nothing wrong, but nothing checked either
+        "47-1312-00003",   # mismatch — this may not even be the right car
         "47-1312-00001",   # clean, and trades first, and still sorts last
     ]
 
@@ -199,6 +211,108 @@ def test_equal_severity_falls_back_to_trade_order():
                   extraction=_extraction("47-1312-00008"))
     ordered = sorted([late, early], key=lambda v: v.sort_key)
     assert [v.lot.trade_time for v in ordered] == ["08:30", "16:00"]
+
+
+# --- grouping ----------------------------------------------------------------
+
+
+def _judged(view, definition=None):
+    """A view with its assessment attached, as ``collect`` does."""
+    from banzai24.requirements import judge
+
+    definition = definition or _definition()
+    view.assessment = judge(definition.filters, definition.requirements,
+                            view.lot, view.extraction)
+    view.requirements = definition.requirements
+    return view
+
+
+def _definition():
+    from banzai24.config import AuctionFilters
+    from banzai24.requirements import SheetRequirements
+    from banzai24.search import SearchDefinition
+
+    return SearchDefinition(
+        name="fixture",
+        filters=AuctionFilters(make="MAZDA", model="CX-30", mileage_end=55_000),
+        requirements=SheetRequirements(no_damage_codes=("W", "X", "欠")),
+    )
+
+
+def test_the_group_outranks_severity_in_the_ordering():
+    """The group is the question the page answers, so it sorts first — even
+    against a mismatch, which is the loudest badge there is.
+
+    A lot that may not be the right car still belongs under the heading for
+    cars that meet the requirements, if it meets them. Burying a clean,
+    biddable lot below a disqualified one because the disqualified one wears a
+    red badge would invert the page's whole purpose.
+    """
+    clean_but_mismatched = _judged(_view(
+        lot=_lot("47-1312-00001", trade_time="09:00"),
+        extraction=_extraction("47-1312-00001", chassis_full="DMEJ3P-100000")))
+    failed = _judged(_view(
+        lot=_lot("47-1312-00002", trade_time="08:00"),
+        extraction=_extraction("47-1312-00002", damage_marks=json.dumps(
+            [{"panel": "door", "code": "W2"}]))))
+
+    assert clean_but_mismatched.flags     # it is badged…
+    ordered = sorted([failed, clean_but_mismatched], key=lambda v: v.sort_key)
+    assert [v.lot.lot_number for v in ordered] == [
+        "47-1312-00001",   # …and still sorts above the disqualified car
+        "47-1312-00002",
+    ]
+
+
+def test_empty_groups_are_not_rendered_as_headings():
+    """A "fails a requirement · 0" heading on a morning where nothing failed is
+    a heading you learn to skip. The counts are in the page header anyway."""
+    built = report.Report(
+        run_dir=Path("."), views=[_judged(_view(extraction=_extraction()))],
+        definition=_definition())
+    assert [g.key for g in built.grouped] == ["meets"]
+
+
+def test_a_run_that_named_no_search_renders_one_ungrouped_list():
+    """Runs fetched before saved searches were files. The report must not invent
+    a verdict for lots that were never judged against anything."""
+    built = report.Report(run_dir=Path("."), views=[_view(extraction=_extraction())])
+    assert built.grouped == []
+    html = report.render(built)
+    assert "meets all requirements" not in html
+    assert "named no saved search" in html
+
+
+def test_the_group_headings_and_the_reason_reach_the_page():
+    views = [
+        _judged(_view(lot=_lot("47-1312-00001"),
+                      extraction=_extraction("47-1312-00001"))),
+        _judged(_view(lot=_lot("47-1312-00002"), extraction=_extraction(
+            "47-1312-00002",
+            damage_marks=json.dumps([{"panel": "left front door", "code": "W2"}])))),
+        _judged(_view(lot=_lot("47-1312-00003", sheet_status="pending"))),
+    ]
+    built = report.Report(run_dir=Path("."), views=sorted(views, key=lambda v: v.sort_key),
+                          definition=_definition())
+    html = report.render(built)
+
+    assert [g.key for g in built.grouped] == ["meets", "unconfirmed", "fails"]
+    assert "meets all requirements" in html
+    assert "W2 on the left front door" in html
+    # the offending mark is picked out, not left for you to re-scan the list for
+    assert 'class="mark banned"' in html
+
+
+def test_a_failing_lot_still_carries_its_bid_price():
+    """The arithmetic does not depend on the verdict: a car you will not buy is
+    still one whose price you may want to know."""
+    from banzai24.bidding import BidQuote
+
+    view = _judged(_view(
+        extraction=_extraction(damage_marks=json.dumps([{"panel": "door", "code": "W2"}])),
+        quote=BidQuote(max_bid=1_855_000, extra_costs=6_000, bid_reduced=1_849_000)))
+    assert view.group == "fails"
+    assert "1,849,000" in _render([view])
 
 
 # --- rendering ---------------------------------------------------------------

@@ -158,17 +158,54 @@ Run either project as a module — `python -m bazaraki`, `python -m banzai24`.
 ### The auction morning
 
 ```bash
-./banzai24/searches/daily.sh --headless     # both cars, nearest auction day
-uv run python -m banzai24 extract --today --limit 5   # read sheets (~$0.015 each)
-uv run python -m banzai24 report --today             # re-render, free
+./banzai24/searches/daily.sh --headless     # both cars, fetch + read + report
+uv run python -m banzai24 report --today    # re-render, free
 ```
 
-`daily.sh` checks the session once, fetches the RAV4 and the CX-30 — each
-narrowing itself to its own closest upcoming auction day — and writes a
-`report.html` per run. It deliberately spends nothing: reading auction sheets is
-a separate, explicit step, and the reports are already enough to decide which
-sheets are worth reading. See `AUCTION_PLAN.md` for why `--today` matters on
-both of the follow-up commands.
+`daily.sh` checks the session once, fetches each car — each narrowing itself to
+its own closest upcoming auction day — reads this morning's auction sheets, and
+writes a `report.html` per run. Reading sheets costs money (~$0.015 each), but
+the day narrowing keeps a two-car morning at roughly five sheets, and the
+judgement the report exists to make is only on the sheet. See `AUCTION_PLAN.md`
+for why `--today` matters.
+
+### Searches
+
+Each car is one file: `banzai24/searches/<name>.toml`. It is the **whole**
+declaration — nothing is inherited, so a filter that is not in the file is not
+applied.
+
+```toml
+[site]                                 # banzai24 filters these out for us,
+make = "MAZDA"                         # and the sheet re-judges them
+model = "CX-30"
+mileage_end = 55000
+grade = ["4", "4.5", "5"]
+
+[api]                                  # we drop these ourselves, from list data.
+body_model_code = ["DMEJ3P"]           # Rejects never reach the report.
+
+[sheet]                                # only the auction sheet can answer these
+drivetrain = "4WD"
+no_damage_codes = ["W", "X", "欠"]
+```
+
+```bash
+uv run python -m banzai24 searches                     # what is declared
+uv run python -m banzai24 fetch --search mazda-cx30
+```
+
+The report sorts every lot into one of three groups: **meets all requirements**
+(the sheet was read and nothing on it disqualifies the car), **unconfirmed** (the
+sheet is unread, or the field a requirement needed was blank), and **fails a
+requirement**. Only the sheet can demote a lot — `[api]` rejects never appear at
+all. `report` loads the `.toml` by the name the run recorded, so re-tuning a
+requirement and re-running `report --today` re-judges the morning for free.
+
+Damage codes are matched as **letters anywhere in the mark**, so `X` catches
+`XX`, a `W` inside a compound code like `A3W2` is caught, and the severity digit
+is ignored — `W3` is a worse repair mark than `W2`, so a rule naming the digit
+would wave through the marks you most want to see.
 
 ### What to bid
 
@@ -179,11 +216,19 @@ mileage band/rental-or-private, edited in a spreadsheet, never in code. `Y` is
 that auction house's area cost from `banzai24/inputs/auction_area_prices_2026.csv`.
 Override either with `report --bid-prices PATH` / `--area-prices PATH`.
 
-Where `Z` cannot be computed the card prints **why** instead of a number —
-"sheet does not say rental or private", "no table row for TOYOTA RAV4 2023 ·
-21,000 km · private", "unknown auction house: …". Nothing here guesses, and
-nothing here can fail a report: a missing or mis-edited table costs you the bid
-column and says so at the top of the page. See `banzai24/bidding.py`.
+The bid block prints on **every** card, in every group: a car you will not buy
+is still one whose price you may want to know. Where `Z` cannot be computed the
+card prints **why** instead of a number — "no table row for TOYOTA RAV4 2023 ·
+21,000 km · private", "unknown auction house: …". Nothing here can fail a
+report: a missing or mis-edited table costs you the bid column and says so at
+the top of the page. See `banzai24/bidding.py`.
+
+Two assumptions are made and both are printed on the card. A sheet whose 車歴
+box says neither rental nor private is priced as **private** — the dearer row,
+and the only one that always resolves. And the **sheet outranks the API** for
+mileage and year: the API rounds to the nearest 1,000 km while the bands match
+to the kilometre, so a car whose sheet reads 50,415 km is priced from the
+over-50,000 band. See `docs/adr/0001-sheet-outranks-api.md`.
 
 ## How it works
 

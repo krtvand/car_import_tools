@@ -22,17 +22,28 @@ match wins:
 1. ``bid prices not loaded`` — the file is absent or unreadable (report-wide)
 2. ``area prices not loaded`` — likewise (report-wide)
 3. ``unknown auction house: U Tokyo`` — no alias and no fold match
-4. ``sheet does not say rental or private`` — no extraction, or both notes null
-5. ``missing year`` / ``missing mileage`` — neither the API nor the sheet has it
-6. ``no table row for MAZDA CX-30 2023 · 15,000 km · private``
-7. ``area cost ¥47,000 exceeds max bid ¥30,000``
+4. ``missing year`` / ``missing mileage`` — neither the sheet nor the API has it
+5. ``no table row for MAZDA CX-30 2023 · 15,000 km · private``
+6. ``area cost ¥47,000 exceeds max bid ¥30,000``
 
-Reasons 3–7 sit on the card; 1 and 2 are report-wide and print once in the
+Reasons 3–6 sit on the card; 1 and 2 are report-wide and print once in the
 header, because repeating "bid prices not loaded" sixty-two times is noise.
 
+**The sheet outranks the API** for year and mileage — see
+``docs/adr/0001-sheet-outranks-api.md``. The API rounds mileage to the nearest
+1,000, so a car whose sheet reads 50,415 km used to be priced from the
+*under-50,000* band, ¥150,000 too high, while the report's own requirement check
+judged it on the exact figure. One number on a card cannot be read off the sheet
+and the one below it off a rounded copy.
+
 A guessed ``bid_reduced`` is worse than no ``bid_reduced``: it is the one number
-on the page that spends money. So nothing here falls back to a neighbouring
-year, a blank rental cell, or a house that merely looks similar.
+on the page that spends money. So nothing here falls back to a neighbouring year
+or a house that merely looks similar. The **one** thing it does assume is 車歴:
+an unreadable box is priced as ``private``, said out loud on the card. That is
+the dearer of the two rows (CX-5: ¥2,101,000 private against ¥1,995,000 rental),
+so it is not the cautious choice — it is the only one that always resolves, since
+some cars have no rental row at all and a rental default would blank their bid
+entirely.
 """
 from __future__ import annotations
 
@@ -302,10 +313,12 @@ class BidQuote:
     bid_reduced: int | None = None
     reason: str | None = None
     house: str | None = None      # the lot's own display name, for the label
+    assumed_private: bool = False  # the sheet did not say; priced as private
 
     def lines(self) -> list[str]:
         """The money block, one string per line."""
-        parts = [f"max bid ¥{self.max_bid:,}" if self.max_bid is not None
+        assumed = " — assuming private, sheet did not say" if self.assumed_private else ""
+        parts = [f"max bid ¥{self.max_bid:,}{assumed}" if self.max_bid is not None
                  else "max bid —"]
         label = f" ({self.house})" if self.house else ""
         parts.append(f"area{label} −¥{self.extra_costs:,}" if self.extra_costs is not None
@@ -318,20 +331,25 @@ class BidQuote:
         return " · ".join(self.lines())
 
 
-def _rental_kind(extraction) -> str | None:
-    """``"rental"`` / ``"private"`` / ``None`` — and ``None`` is the common case.
+def _rental_kind(extraction) -> tuple[str, bool]:
+    """``(kind, assumed)`` — ``"private"`` when the sheet did not say.
 
-    The distinction exists only on the auction sheet, so a lot whose sheet has
-    not been read has no answer, and neither does a company car whose 車歴 box
-    says neither. Both are a null ``bid_reduced``, not a guess.
+    The distinction exists only on the auction sheet, so an unread sheet has no
+    answer, and neither does a company car whose 車歴 box says neither. Both are
+    priced as private and flagged as an assumption rather than left blank: a card
+    with no max bid on it is a card you have to price by hand, and the number is
+    sitting right there in the table.
+
+    ``assumed`` is not cosmetic. It is the difference between a figure the sheet
+    supports and one that is only the more common case, and the card prints it
+    next to the money for exactly that reason.
     """
-    if extraction is None:
-        return None
-    if extraction.rental_car_note:
-        return "rental"
-    if extraction.private_car_note:
-        return "private"
-    return None
+    if extraction is not None:
+        if extraction.rental_car_note:
+            return "rental", False
+        if extraction.private_car_note:
+            return "private", False
+    return "private", True
 
 
 def _load(label, path, loader, empty, quiet_when_absent=False):
@@ -393,7 +411,7 @@ class BidPricer:
             return None
 
         extra_costs, house_reason = self._area_cost(lot)
-        max_bid, table_reason = self._max_bid(lot, extraction)
+        max_bid, table_reason, assumed_private = self._max_bid(lot, extraction)
         reason = house_reason or table_reason
 
         bid_reduced = None
@@ -410,7 +428,8 @@ class BidPricer:
 
         return BidQuote(max_bid=max_bid, extra_costs=extra_costs,
                         bid_reduced=bid_reduced, reason=reason,
-                        house=lot.auction_name)
+                        house=lot.auction_name,
+                        assumed_private=assumed_private and max_bid is not None)
 
     def _area_cost(self, lot) -> tuple[int | None, str | None]:
         key = _fold(lot.auction_name)
@@ -419,45 +438,39 @@ class BidPricer:
             return None, f"unknown auction house: {lot.auction_name}"
         return price, None
 
-    def _max_bid(self, lot, extraction) -> tuple[int | None, str | None]:
-        """The table's number for this car, or why the lookup could not happen.
+    def _max_bid(self, lot, extraction) -> tuple[int | None, str | None, bool]:
+        """``(max_bid, reason, assumed_private)`` for one car.
 
-        The API wins wherever it has a value and the sheet fills in only where it
-        is null (``BID_PRICING_QUESTIONS.md`` Q3/Q14) — refusing to price a lot
-        when the exact figure is sitting in the extraction is a null you would
-        work around by hand.
+        **The sheet wins, the API fills its nulls** — the reverse of what
+        ``BID_PRICING_QUESTIONS.md`` Q3/Q14 recorded, and the reversal is the
+        subject of ``docs/adr/0001-sheet-outranks-api.md``. The API rounds
+        mileage to the nearest 1,000 while :meth:`BidRow.covers` matches to the
+        kilometre, so under the old order a car whose sheet read 50,415 km and
+        whose API row read 50,000 km was priced from the *under-50,000* band:
+        ¥150,000 too high against the shipped table, on a card whose own mileage
+        row printed the exact figure.
 
-        **Known cost of that precedence, at band edges.** The API figure is often
-        rounded to the nearest 1,000 while ``covers`` matches to the kilometre, so
-        a car whose sheet reads 50,415 km and whose API row reads 50,000 km is
-        priced from the *under-50,000* band — ¥150,000 too high against the
-        shipped table. It has not bitten yet (no lot in ``auction.db`` sits within
-        1,000 km of a band edge), and the elsewhere-in-the-report convention is
-        the opposite: :attr:`report.LotView.mileage_note` prints the sheet's exact
-        figure and relegates the API's to a parenthetical. If this is ever going
-        to cost real money, the fix is to prefer ``sheet_mileage_km`` when it
-        exists — but that reverses a stated decision, so it is not made here.
+        A sheet null is not a zero. Where the sheet is silent the API's value is
+        used unchanged, and where neither has one the lot is not priced at all.
         """
-        rental = _rental_kind(extraction)
-        if rental is None:
-            return None, "sheet does not say rental or private"
+        rental, assumed_private = _rental_kind(extraction)
 
-        year = lot.registration_year
-        if year is None and extraction is not None:
-            year = extraction.first_registration_year
+        year = (extraction.first_registration_year if extraction else None)
         if year is None:
-            return None, "missing year"
+            year = lot.registration_year
+        if year is None:
+            return None, "missing year", assumed_private
 
-        mileage = lot.mileage_km
-        if mileage is None and extraction is not None:
-            mileage = extraction.sheet_mileage_km
+        mileage = (extraction.sheet_mileage_km if extraction else None)
         if mileage is None:
-            return None, "missing mileage"
+            mileage = lot.mileage_km
+        if mileage is None:
+            return None, "missing mileage", assumed_private
 
         key = (_fold(lot.mark), _fold(lot.model), year, rental)
         for row in self.rows:
             if row.key == key and row.covers(mileage):
-                return row.max_bid_jpy, None
+                return row.max_bid_jpy, None, assumed_private
 
         return None, (f"no table row for {lot.mark or '?'} {lot.model or '?'} "
-                      f"{year} · {mileage:,} km · {rental}")
+                      f"{year} · {mileage:,} km · {rental}"), assumed_private

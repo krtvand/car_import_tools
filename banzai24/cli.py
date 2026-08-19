@@ -1,15 +1,16 @@
 """CLI for the banzai24 Japanese-auction scraper.
 
-Filters come from ``config.DEFAULT_FILTERS`` (edit ``banzai24/config.py``); the
-flags below override the common ones for one-off runs.
+Every search is a file: ``banzai24/searches/<name>.toml`` holds one car's whole
+declaration — what banzai24 filters on, what we filter on, and what the auction
+sheet has to say before a lot counts as wanted. Nothing is inherited from
+anywhere, so a filter that is not in the file is not applied.
 
 Examples:
     uv run python -m banzai24 login
-    uv run python -m banzai24 fetch --max-lots 20
-    uv run python -m banzai24 fetch --make MAZDA --model CX-30 --year-start 2023
-    uv run python -m banzai24 fetch --max-lots 80 --no-sheets
-    uv run python -m banzai24 fetch --all-days   # don't narrow to the nearest day
-    uv run python -m banzai24 fetch --body-model-code DMEJ3P --body-model-code DMEJ3R
+    uv run python -m banzai24 fetch --search mazda-cx30
+    uv run python -m banzai24 fetch --search mazda-cx30 --max-lots 80 --no-sheets
+    uv run python -m banzai24 fetch --search toyota-rav4 --all-days
+    uv run python -m banzai24 searches            # what is declared, and where
 
 `fetch` normalizes what it collected on the way out. `normalize` re-does that
 over an already-saved run and touches no network, so a parser fix is applied by
@@ -27,8 +28,9 @@ costs money (~$0.03/sheet), so it prints the bill first and takes --limit:
     uv run python -m banzai24 extract                    # the whole queue
 
 `report` joins the run directory and the database into one self-contained
-report.html. It costs nothing to regenerate — no network, no model call — so a
-template tweak is a re-run of this, never a re-fetch:
+report.html, with each lot judged against the search that fetched it. It costs
+nothing to regenerate — no network, no model call — so re-tuning a requirement
+and re-judging this morning is a re-run of this, never a re-fetch:
 
     uv run python -m banzai24 report                     # the most recent run
     uv run python -m banzai24 report --open              # and open the runs index
@@ -46,47 +48,23 @@ import dataclasses
 from datetime import date
 from pathlib import Path
 
-from . import bidding, config, db, fetch, index, normalize, session
-from .lot_filters import LotFilters
+from . import bidding, config, db, fetch, index, normalize, search, session
 
 _ROOT = Path(__file__).parent.parent   # only to print the default paths readably
 
 
-_OVERRIDABLE = (
-    "make", "model", "transmission",
-    "year_start", "year_end",
-    "mileage_start", "mileage_end",
-    "engine_capacity_start", "engine_capacity_end",
-    "source",
-)
+def _load_search(name: str) -> search.SearchDefinition:
+    """One saved search, or a clean exit naming the ones that exist.
 
-# Base for --no-defaults: everything unset except the fields a search must have.
-# Without this, a saved search that omits a filter would silently inherit
-# DEFAULT_FILTERS' value for it — e.g. a RAV4 config picking up the CX-30's
-# engine-capacity floor.
-NEUTRAL_FILTERS = config.AuctionFilters(model=None, transmission=None)
-
-
-def _filters_from_args(args: argparse.Namespace) -> config.AuctionFilters:
-    """Apply CLI overrides on top of DEFAULT_FILTERS, or of nothing."""
-    base = NEUTRAL_FILTERS if getattr(args, "no_defaults", False) else config.DEFAULT_FILTERS
-    overrides = {
-        name: getattr(args, name)
-        for name in _OVERRIDABLE
-        if getattr(args, name, None) is not None
-    }
-    if getattr(args, "grade", None):
-        overrides["grade_origin"] = tuple(args.grade)
-    return dataclasses.replace(base, **overrides)
-
-
-def _lot_filters_from_args(args: argparse.Namespace) -> LotFilters:
-    """Post-fetch filters. Not affected by --no-defaults: they have no defaults.
-
-    Kept apart from :func:`_filters_from_args` because these never reach the
-    site — see :mod:`banzai24.lot_filters`.
+    A malformed definition stops the command rather than degrading, unlike a
+    malformed price table: a bad price table costs you a column, while a bad
+    search would mean fetching the wrong car — or judging the right one against
+    half a list.
     """
-    return LotFilters(body_model_code=tuple(getattr(args, "body_model_code", None) or ()))
+    try:
+        return search.load(name)
+    except search.SearchDefinitionError as exc:
+        raise SystemExit(str(exc))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -176,28 +154,21 @@ def _build_parser() -> argparse.ArgumentParser:
                           f"year in that name is part of the path, not read off the "
                           f"clock, so nothing silently changes file on 1 January.")
 
+    sub.add_parser("searches", help="List the saved searches and what each asks for")
+
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
-        p.add_argument("--make")
-        p.add_argument("--model")
-        p.add_argument("--transmission", choices=["auto", "manual"])
-        p.add_argument("--year-start", type=int, dest="year_start")
-        p.add_argument("--year-end", type=int, dest="year_end")
-        p.add_argument("--mileage-start", type=int, dest="mileage_start")
-        p.add_argument("--mileage-end", type=int, dest="mileage_end")
-        p.add_argument("--engine-capacity-start", type=float, dest="engine_capacity_start")
-        p.add_argument("--engine-capacity-end", type=float, dest="engine_capacity_end")
-        p.add_argument("--grade", action="append", help="Repeatable, e.g. --grade 4 --grade 4.5")
-        p.add_argument("--source", choices=["auctions", "archive"])
-        p.add_argument("--body-model-code", "--model-code", action="append",
-                       dest="body_model_code", metavar="CODE",
-                       help="Keep only lots whose chassis code contains CODE. Repeatable; "
-                            "a lot matching any one is kept. The type prefix banzai24 "
-                            "sometimes attaches is ignored, so DMEJ3P matches both "
-                            "'5AA-DMEJ3P' and 'DMEJ3P'.")
-        p.add_argument("--no-defaults", action="store_true", dest="no_defaults",
-                       help="Ignore config.DEFAULT_FILTERS; use only the flags given. "
-                            "Saved searches use this so they cannot inherit stray filters.")
+        p.add_argument("--search", required=True, metavar="NAME",
+                       help="Which saved search to run — the file name without "
+                            f"its suffix, from {search.SEARCH_DIR.relative_to(_ROOT)}/. "
+                            "The file is the complete declaration; there are no "
+                            "per-filter flags and nothing to inherit. Edit the "
+                            "file to change what is searched for.")
+        p.add_argument("--source", choices=["auctions", "archive"],
+                       help="Override the search's own source for one run. The one "
+                            "exception to 'edit the file': flipping to completed "
+                            "sales is a question you ask *of* a saved search, not a "
+                            "different search.")
         p.add_argument("--dry-run", action="store_true", dest="dry_run",
                        help="Print the search URL and exit without opening a browser")
         p.add_argument("--max-lots", type=int, default=fetch.DEFAULT_MAX_LOTS,
@@ -237,7 +208,20 @@ def main() -> None:
         except (session.SessionExpired, session.ServiceUnavailable,
                 session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
-        print(f"Session OK — {checked.describe()} DEFAULT_FILTERS.")
+        print(f"Session OK — {checked.describe()}")
+        return
+
+    if args.command == "searches":
+        names = search.available()
+        if not names:
+            raise SystemExit(f"No saved searches in {search.SEARCH_DIR}.")
+        for name in names:
+            try:
+                print(f"{name}\n  {search.load(name).describe()}")
+            except search.SearchDefinitionError as exc:
+                # Listed, not hidden: a definition that will not load is exactly
+                # what you came here to find out about.
+                print(f"{name}\n  BROKEN: {exc}")
         return
 
     if args.command == "normalize":
@@ -374,12 +358,16 @@ def main() -> None:
                 raise SystemExit(str(exc))
         return
 
-    filters = _filters_from_args(args)
-    lots_filter = _lot_filters_from_args(args)
-    print(f"Filters: {config.describe(filters)}")
-    print(f"Search:  {config.build_search_url(filters)}")
-    if lots_filter.active:
-        print(f"Keeping: {lots_filter.describe()}")
+    definition = _load_search(args.search)
+    if args.source:
+        definition = dataclasses.replace(
+            definition,
+            filters=dataclasses.replace(definition.filters, source=args.source),
+        )
+    lots_filter = definition.lot_filters
+
+    print(f"Search:  {definition.name} — {definition.describe()}")
+    print(f"URL:     {config.build_search_url(definition.filters)}")
 
     if args.dry_run:
         print("Dry run — nothing fetched.")
@@ -388,12 +376,11 @@ def main() -> None:
     try:
         result = asyncio.run(
             fetch.run_fetch(
-                filters,
+                definition,
                 max_lots=args.max_lots,
                 sheets=not args.no_sheets,
                 headless=args.headless,
                 nearest_day_only=not args.all_days,
-                lots_filter=lots_filter,
             )
         )
     except (session.SessionExpired, session.ServiceUnavailable,

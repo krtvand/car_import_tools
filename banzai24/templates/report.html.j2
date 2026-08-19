@@ -1,7 +1,14 @@
 {# One card per lot: the auction sheet on the left, everything read off it on
    the right. Self-contained by construction — the only <img> is a data URI and
    the only external URLs are hyperlinks back to banzai24, which the page never
-   needs to load. #}
+   needs to load.
+
+   Cards are grouped by whether the sheet says this is the car the search asked
+   for. Requirement verdicts print **against the value they judge** rather than
+   in a block of their own — the same convention the cross-checks follow, and
+   for the same reason: a verdict qualifies a number best when it is printed on
+   it. The only summary is the group heading, plus one line on cards that are
+   not in the top group. #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -27,6 +34,16 @@
   header .notes { margin: .75rem 0 0; padding: 0; list-style: none;
                   color: var(--warn); font-size: .8125rem; }
 
+  /* The group heading is the page's spine, so it gets more weight than any
+     badge on a card — the first question is which pile a car is in. */
+  .group { margin: 2.5rem 0 0; padding-bottom: .3rem; border-bottom: 2px solid var(--line);
+           font-size: 1.05rem; font-weight: 600; letter-spacing: .01em; }
+  .group .n { color: var(--muted); font-weight: 400; }
+  .group.meets { border-bottom-color: var(--ok); }
+  .group.unconfirmed { border-bottom-color: var(--flat); }
+  .group.fails { border-bottom-color: var(--bad); }
+  .group + .blurb { margin: .25rem 0 0; color: var(--muted); font-size: .8125rem; }
+
   .lot {
     background: var(--card); border: 1px solid var(--line); border-radius: 8px;
     margin: 1.25rem 0; overflow: hidden;
@@ -51,7 +68,11 @@
   }
   .badge.mismatch { background: var(--bad); }
   .badge.low-confidence { background: var(--warn); }
-  .badge.not-read { background: var(--flat); }
+
+  /* Why this card is not in the top group, said once, above the fields. */
+  .verdict { margin: 0; padding: .5rem 1rem; font-size: .8125rem;
+             border-bottom: 1px solid var(--line); background: #fdf8f7; color: var(--bad); }
+  .verdict.unconfirmed { background: #f8f8f7; color: var(--muted); }
 
   .body { display: flex; flex-wrap: wrap; gap: 1.25rem; padding: 1rem; align-items: flex-start; }
   .sheet { flex: 0 0 auto; }
@@ -85,8 +106,15 @@
 
   .ok::after   { content: " ✓"; color: var(--ok); }
   .bad::after  { content: " ✗"; color: var(--bad); font-weight: 700; }
+  /* Requirement verdicts carry their own classes rather than reusing the
+     cross-check ones: a cross-check with nothing to compare prints no marker,
+     while a requirement with nothing to answer it prints "?" — that is the
+     whole difference between the two, and it is worth seeing. */
+  .req-pass::after    { content: " ✓"; color: var(--ok); }
+  .req-fail::after    { content: " ✗"; color: var(--bad); font-weight: 700; }
+  .req-unknown::after { content: " ?"; color: var(--muted); }
   .note { color: var(--muted); font-size: .8125rem; }
-  .bad + .note, .note.bad { color: var(--bad); }
+  .bad + .note, .note.bad, .req-fail + .note { color: var(--bad); }
   /* The English rendering sits under the Japanese it translates, never beside
      it — the two run together otherwise, and the ja text is pre-wrapped. */
   .note.translation { display: block; margin-top: .25rem; }
@@ -98,6 +126,8 @@
     font-size: .8125rem; background: #fbfaf8;
   }
   .mark b { font-family: ui-monospace, Menlo, monospace; }
+  /* The mark that disqualified the car, rather than a list you re-scan yourself. */
+  .mark.banned { border-color: var(--bad); background: #fdf3f2; color: var(--bad); }
 
   /* The three parts of the bid arithmetic stack rather than run together on one
      line: the last of them is the number you type into the bidding platform, and
@@ -107,6 +137,7 @@
   .money .why { color: var(--muted); font-size: .8125rem; font-weight: 400; }
 
   .warn { color: var(--warn); font-weight: 600; }
+  .unset { color: var(--muted); }
   details summary { cursor: pointer; color: var(--muted); font-size: .8125rem; }
   details ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .875rem; }
 
@@ -123,36 +154,13 @@
 <body>
 <div class="wrap">
 
-<header>
-  <h1>{{ run_name }}</h1>
-  <p class="meta">
-    {{ views | length }} lot{{ '' if views | length == 1 else 's' }} ·
-    {{ report.flagged }} flagged ·
-    {{ report.extracted }} with sheet data{% if report.unread %} ·
-    {{ report.unread }} sheet{{ '' if report.unread == 1 else 's' }} not read yet{% endif %} ·
-    generated {{ generated_at }}
-  </p>
-  <ul class="notes">
-    {% if report.missing %}
-    <li>{{ report.missing | length }} lot(s) in this run are not in the database yet —
-        run <code>normalize</code> to fill in what is known about them.</li>
-    {% endif %}
-    {% if report.cyprus_reason %}
-    <li>No Cyprus comparables: {{ report.cyprus_reason }}</li>
-    {% endif %}
-    {# The consequence clause is conditional because it is not always true: a
-       mis-edited *alias* file is worth saying out loud, but the cards below
-       still price — only the six houses it covers stop matching. #}
-    {% if report.bid_reason %}
-    <li>{{ report.bid_reason }}{% if not report.quoted %} — no bid price on any card below{% endif %}.</li>
-    {% endif %}
-  </ul>
-</header>
-
-<main>
-{% for view in views %}
-  {% set lot = view.lot %}
-  {% set top = view.flags[0].key if view.flags else '' %}
+{% macro card(view) %}
+{% set lot = view.lot %}
+{% set top = view.flags[0].key if view.flags else '' %}
+{# The zoom checkbox is keyed on the lot number rather than a loop counter:
+   cards are emitted group by group, so a per-loop index would collide across
+   headings and one click would zoom a different card. #}
+{% set zoom_id = 'zoom-' ~ lot.lot_number %}
 <article class="lot {{ 'flagged' if view.flags }} {{ top }}">
 
   <div class="head">
@@ -168,12 +176,16 @@
     <span class="status">{{ lot.status_code or '—' }}</span>
   </div>
 
+  {% if view.verdict_line %}
+  <p class="verdict {{ view.group }}">{{ view.verdict_line }}</p>
+  {% endif %}
+
   <div class="body">
     {# The checkbox precedes .sheet so `:checked +` can reach it; it is visually
        hidden but still keyboard-reachable. #}
-    <input type="checkbox" class="zoom" id="zoom-{{ loop.index }}"
+    <input type="checkbox" class="zoom" id="{{ zoom_id }}"
            aria-label="Enlarge the auction sheet for lot {{ lot.lot_short }}">
-    <label class="sheet" for="zoom-{{ loop.index }}">
+    <label class="sheet" for="{{ zoom_id }}">
       {% if view.sheet_uri %}
       <img src="{{ view.sheet_uri }}" alt="Auction sheet for lot {{ lot.lot_short }}"
            width="800" height="800">
@@ -197,20 +209,22 @@
       <dl>
         <dt>Grade</dt>
         <dd>
-          <span class="{{ view.checks.grade | check if view.checks else '' }}">
+          <span class="{{ view.check('grade') | verdict or (view.checks.grade | check if view.checks else '') }}">
             {{ (view.extraction.sheet_grade if view.extraction else None) or lot.grade_origin or '—' }}
           </span>
           {% if view.extraction %}
             {% if view.extraction.exterior_grade %}· exterior {{ view.extraction.exterior_grade }}{% endif %}
             {% if view.extraction.interior_grade %}· interior {{ view.extraction.interior_grade }}{% endif %}
           {% endif %}
-          {% if view.grade_note %}<span class="note bad">({{ view.grade_note }})</span>{% endif %}
+          {% if view.check('grade') and view.check('grade').detail %}
+          <span class="note bad">({{ view.check('grade').detail }})</span>
+          {% elif view.grade_note %}<span class="note bad">({{ view.grade_note }})</span>{% endif %}
         </dd>
 
         <dt>Mileage</dt>
         <dd>
           {% if view.extraction and view.extraction.sheet_mileage_km is not none %}
-          <span class="{{ view.checks.mileage | check }}">{{ view.extraction.sheet_mileage_km | km }}</span>
+          <span class="{{ view.check('mileage') | verdict or view.checks.mileage | check }}">{{ view.extraction.sheet_mileage_km | km }}</span>
           {% if view.mileage_note %}<span class="note">({{ view.mileage_note }})</span>{% endif %}
           {% else %}
           {{ lot.mileage_km | km or '—' }} <span class="note">(API, rounded)</span>
@@ -223,7 +237,24 @@
           <code class="{{ view.checks.chassis | check }}">{{ view.extraction.chassis_full or '—' }}</code>
           {% if view.chassis_note %}<span class="note">({{ view.chassis_note }})</span>{% endif %}
         </dd>
+        {% endif %}
 
+        {# Drivetrain shows whenever the search asks for one, extraction or not:
+           its "?" is the reason a card sits in *unconfirmed*, and hiding the row
+           would hide the reason. #}
+        {% if view.check('drivetrain') %}
+        <dt>Drivetrain</dt>
+        <dd>
+          <span class="{{ view.check('drivetrain') | verdict }}">
+            {{ (view.extraction.drivetrain if view.extraction else None) or 'not on the sheet' }}
+          </span>
+          {% if view.check('drivetrain').detail and view.check('drivetrain').failed %}
+          <span class="note bad">(wanted {{ view.requirements.drivetrain }})</span>
+          {% endif %}
+        </dd>
+        {% endif %}
+
+        {% if view.extraction %}
         <dt>Shaken 車検</dt>
         <dd>
           {% if view.extraction.shaken_expiry_raw %}
@@ -232,8 +263,30 @@
           <span class="warn">none — the buyer re-registers</span>
           {% endif %}
         </dd>
+        {% endif %}
 
-        {% if view.damage_marks %}
+        {# The damage row is the assertion, not the inventory: when the search
+           bans codes, the label says which and the verdict marker answers it.
+           The marks themselves are still listed, with the offending one picked
+           out — you still have to look at the scan, and the code tells you where. #}
+        {% if view.check('damage') %}
+        <dt>Damage</dt>
+        <dd>
+          <span class="{{ view.check('damage') | verdict }}">no {{ view.banned_codes | join('/') }} marks</span>
+          {% if view.damage_marks %}
+          <div class="marks">
+            {% for mark in view.damage_marks %}
+            <span class="mark {{ 'banned' if mark.banned }}"
+                  title="{{ mark.meaning or 'not in the printed legend' }}">
+              <b>{{ mark.code }}</b> {{ mark.panel }}
+            </span>
+            {% endfor %}
+          </div>
+          {% elif view.extraction %}
+          <span class="note">(diagram clean)</span>
+          {% endif %}
+        </dd>
+        {% elif view.damage_marks %}
         <dt>Damage</dt>
         <dd>
           <div class="marks">
@@ -246,6 +299,7 @@
         </dd>
         {% endif %}
 
+        {% if view.extraction %}
         {% if view.extraction.warnings_ja %}
         <dt>Warnings 注意事項欄</dt>
         <dd class="ja warn">{{ view.extraction.warnings_ja }}{% if view.extraction.warnings_en %}<span class="note translation">{{ view.extraction.warnings_en }}</span>{% endif %}</dd>
@@ -256,10 +310,17 @@
         <dd class="ja">{{ view.extraction.inspector_notes_ja }}{% if view.extraction.inspector_notes_en %}<span class="note translation">{{ view.extraction.inspector_notes_en }}</span>{% endif %}</dd>
         {% endif %}
 
+        {# Always rendered once a sheet is read, blank box included: it is the
+           input the bid falls back to `private` on, and the card has to show
+           what that assumption was made from. #}
         {% if view.history_note %}
         <dt>Vehicle history 車歴</dt>
         <dd class="ja {{ 'warn' if view.history_note.rental }}">
+          {% if view.history_note.unset %}
+          <span class="unset">unset — the sheet says neither</span>
+          {% else %}
           {{ view.history_note.ja }}{% if view.history_note.en %}<span class="note translation">{{ view.history_note.en }}</span>{% endif %}
+          {% endif %}
         </dd>
         {% endif %}
 
@@ -294,9 +355,11 @@
         </dd>
 
         {# max_bid − extra_costs = bid_reduced, or the reason there is no such
-           number. Omitted entirely when the tables themselves are missing: that
-           reason is report-wide and prints once in the header, rather than sixty
-           times down the page. #}
+           number. Printed on every card in every group: a car that fails a
+           requirement is still one whose price you may want to know, and the
+           arithmetic does not depend on the verdict. Omitted only when the
+           tables themselves are missing — that reason is report-wide and prints
+           once in the header, rather than sixty times down the page. #}
         {% if view.quote %}
         <dt>Bid</dt>
         <dd class="money">
@@ -322,12 +385,63 @@
     </div>
   </div>
 </article>
+{% endmacro %}
+
+<header>
+  <h1>{{ run_name }}</h1>
+  <p class="meta">
+    {{ views | length }} lot{{ '' if views | length == 1 else 's' }}
+    {% if report.grouped %}
+      {% for group in report.grouped %}· {{ group | length }} {{ group.label }} {% endfor %}
+    {% else %}
+    · {{ report.extracted }} with sheet data{% if report.unread %} ·
+    {{ report.unread }} sheet{{ '' if report.unread == 1 else 's' }} not read yet{% endif %}
+    {% endif %}
+    {% if report.flagged %}· {{ report.flagged }} flagged{% endif %}
+    · generated {{ generated_at }}
+  </p>
+  <ul class="notes">
+    {% if report.missing %}
+    <li>{{ report.missing | length }} lot(s) in this run are not in the database yet —
+        run <code>normalize</code> to fill in what is known about them.</li>
+    {% endif %}
+    {% if report.definition is none %}
+    <li>This run named no saved search, so nothing below is judged against
+        requirements{% if report.search_reason %}: {{ report.search_reason }}{% endif %}.</li>
+    {% elif report.search_reason %}
+    <li>{{ report.search_reason }}.</li>
+    {% endif %}
+    {% if report.cyprus_reason %}
+    <li>No Cyprus comparables: {{ report.cyprus_reason }}</li>
+    {% endif %}
+    {# The consequence clause is conditional because it is not always true: a
+       mis-edited *alias* file is worth saying out loud, but the cards below
+       still price — only the six houses it covers stop matching. #}
+    {% if report.bid_reason %}
+    <li>{{ report.bid_reason }}{% if not report.quoted %} — no bid price on any card below{% endif %}.</li>
+    {% endif %}
+  </ul>
+</header>
+
+<main>
+{% if report.grouped %}
+  {% for group in report.grouped %}
+  <h2 class="group {{ group.key }}">{{ group.label }} <span class="n">· {{ group | length }}</span></h2>
+  <p class="blurb">{{ group.blurb }}</p>
+  {% for view in group.views %}{{ card(view) }}{% endfor %}
+  {% endfor %}
 {% else %}
-<p>No lots in this run.</p>
-{% endfor %}
+  {% for view in views %}{{ card(view) }}{% else %}
+  <p>No lots in this run.</p>
+  {% endfor %}
+{% endif %}
 </main>
 
 <footer>
+  {% if report.definition %}
+  <p>Judged against <code>{{ report.definition.name }}</code>:
+     {{ report.definition.describe() }}</p>
+  {% endif %}
   <p>Damage codes, as printed at the foot of every auction sheet:</p>
   <dl>
     {% for code, meaning in damage_codes.items() %}
@@ -335,8 +449,10 @@
     {% endfor %}
   </dl>
   <p>A code carries a severity digit 1–4: <code>A1</code> is a light scratch,
-     <code>U2</code> a more significant dent. Cyprus figures are median
-     <em>asking</em> prices from bazaraki.db, not sale prices.</p>
+     <code>U2</code> a more significant dent. A banned code is matched as a
+     letter anywhere in the mark, so <code>X</code> catches <code>XX</code> and
+     the severity digit is ignored. Cyprus figures are median <em>asking</em>
+     prices from bazaraki.db, not sale prices.</p>
 </footer>
 
 </div>

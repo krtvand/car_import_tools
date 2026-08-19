@@ -60,9 +60,17 @@ def test_archive_source_is_selectable():
     assert q["source"] == ["archive"]
 
 
-def test_reproduces_the_phase0_reference_url():
-    """The exact filter set verified live during Phase 0 recon."""
-    url = config.build_search_url(config.DEFAULT_FILTERS)
+def test_the_saved_cx30_search_reproduces_the_phase0_reference_url():
+    """The exact filter set verified live during Phase 0 recon.
+
+    Asserted against the saved search rather than a constant, because the
+    constant is gone: ``mazda-cx30.toml`` is now the only place that filter set
+    lives, and an edit to it that breaks the verified URL is exactly what this
+    should catch.
+    """
+    from banzai24 import search
+
+    url = config.build_search_url(search.load("mazda-cx30").filters)
     parsed = urlparse(url)
     q = _query(url)
 
@@ -88,9 +96,16 @@ def test_describe_lists_set_filters_only():
     assert "grade_origin=" not in text
 
 
-def test_cli_overrides_replace_only_named_fields():
-    """dataclasses.replace keeps DEFAULT_FILTERS as the base."""
-    overridden = dataclasses.replace(config.DEFAULT_FILTERS, make="TOYOTA", model="RAV4")
-    assert overridden.make == "TOYOTA"
-    assert overridden.year_start == config.DEFAULT_FILTERS.year_start
-    assert overridden.grade_origin == config.DEFAULT_FILTERS.grade_origin
+def test_an_omitted_filter_is_absent_rather_than_inherited():
+    """The whole reason ``--no-defaults`` and ``DEFAULT_FILTERS`` are gone.
+
+    A search that does not mention engine capacity must not pick one up from
+    anywhere — there is no longer anywhere for it to come from, and this asserts
+    that the dataclass itself has no car baked into it.
+    """
+    bare = AuctionFilters(make="TOYOTA")
+    assert bare.model is None
+    assert bare.transmission is None
+    assert bare.engine_capacity_start is None
+    assert bare.grade_origin == ()
+    assert "engineCapacityStart" not in config.build_search_url(bare)
