@@ -31,7 +31,7 @@ report.html. It costs nothing to regenerate — no network, no model call — so
 template tweak is a re-run of this, never a re-fetch:
 
     uv run python -m banzai24 report                     # the most recent run
-    uv run python -m banzai24 report --open              # and open it
+    uv run python -m banzai24 report --open              # and open the runs index
     uv run python -m banzai24 report --bid-prices my.csv # try a re-tuned price table
 
 Each card's bid block is `max bid − area cost = bid reduced`, read out of the two
@@ -43,11 +43,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import dataclasses
-import webbrowser
 from datetime import date
 from pathlib import Path
 
-from . import bidding, config, db, fetch, normalize, session
+from . import bidding, config, db, fetch, index, normalize, session
 from .lot_filters import LotFilters
 
 _ROOT = Path(__file__).parent.parent   # only to print the default paths readably
@@ -155,7 +154,13 @@ def _build_parser() -> argparse.ArgumentParser:
     rep.add_argument("-o", "--output", metavar="PATH",
                      help="Write somewhere other than <run>/report.html.")
     rep.add_argument("--open", action="store_true", dest="open_report",
-                     help="Open the report in your browser when it is written.")
+                     help="Open runs/index.html — the last "
+                          f"{index.DEFAULT_LIMIT} runs, newest first — in the "
+                          "parser's signed-in Chrome, so a click through to a "
+                          "lot lands authenticated. One tab, whatever this "
+                          "command built; the index is rewritten either way. "
+                          "Waits until you close the window: the browser is "
+                          "signed in only for as long as this command runs.")
     rep.add_argument("--jpy-per-eur", type=float, metavar="RATE", dest="jpy_per_eur",
                      help="Also show start prices in euro at this rate, so they compare "
                           "with the Cyprus figures. No default: a hard-coded rate would "
@@ -222,14 +227,15 @@ def main() -> None:
     if args.command == "login":
         try:
             asyncio.run(session.login())
-        except session.SessionExpired as exc:
+        except (session.SessionExpired, session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
         return
 
     if args.command == "check":
         try:
             checked = asyncio.run(fetch.check_session())
-        except (session.SessionExpired, session.ServiceUnavailable) as exc:
+        except (session.SessionExpired, session.ServiceUnavailable,
+                session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
         print(f"Session OK — {checked.describe()} DEFAULT_FILTERS.")
         return
@@ -341,8 +347,31 @@ def main() -> None:
                 # learn to ignore this line.
                 gone = "" if built.quoted else " — no bid price on any card"
                 print(f"  {built.bid_reason}{gone}")
-            if args.open_report:
-                webbrowser.open(built.output.resolve().as_uri())
+
+        # Rebuilt on every `report`, opened or not: it is derived from directory
+        # names and costs nothing, so there is no reason to let it go stale.
+        listing = index.write()
+
+        if args.open_report:
+            # One tab, always the index — never one per report. A two-car
+            # morning used to open two windows and still left every earlier run
+            # findable only in Finder.
+            #
+            # In the parser's own Chrome, because the report exists to be clicked
+            # through to banzai24 and banzai24 limits how many authenticated
+            # clients you may have — your everyday browser is not the signed-in
+            # one. That browser only stays signed in for as long as this command
+            # runs; see session.review.
+            print(f"\nOpening {listing} — close the window when you are done.")
+            # Not a warning about a broken state: banzai24 does not reliably
+            # hand a session between browsers, so signing in here is the normal
+            # path. The snapshot loop in review() captures it for the next fetch.
+            print("  If a lot opens signed out, sign in in that window — "
+                  "it will be saved.")
+            try:
+                asyncio.run(session.review(listing.resolve().as_uri()))
+            except (session.SessionExpired, session.ProfileBusy) as exc:
+                raise SystemExit(str(exc))
         return
 
     filters = _filters_from_args(args)
@@ -367,7 +396,8 @@ def main() -> None:
                 lots_filter=lots_filter,
             )
         )
-    except (session.SessionExpired, session.ServiceUnavailable) as exc:
+    except (session.SessionExpired, session.ServiceUnavailable,
+            session.ProfileBusy) as exc:
         raise SystemExit(str(exc))
     except RuntimeError as exc:
         raise SystemExit(str(exc))

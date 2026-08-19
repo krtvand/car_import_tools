@@ -1,6 +1,6 @@
 """Persisted, hand-authenticated browser session for banzai24.
 
-Two constraints shape this module.
+Three constraints shape this module.
 
 **banzai24 needs a Russian locale.** Its backend answers ``HTTP 500 Service
 Unavailable`` when ``Accept-Language`` is not Russian — an automated browser
@@ -23,6 +23,21 @@ here; Chrome holds the credentials throughout.
 Because signing in costs a phone round-trip, a run resolves auth on its very
 first request and fails loudly otherwise, rather than quietly filling a run
 directory with logged-out responses that later look like a parser bug.
+
+**Reading a report means browsing as the parser.** banzai24 caps how many
+authenticated clients you may have at once, and the report links back to the
+site, so opening it in your everyday browser costs a click that lands
+signed-out and may unseat the session the parser needs. :func:`review` therefore
+opens the report in *this* profile.
+
+It goes through Playwright, and so it blocks. A detached ``Popen`` on the
+profile directory was tried and cannot work: the profile does not carry the
+login. ``__Host-csrf``, ``__uid`` and ``user-type-display`` are all *session*
+cookies, which Chrome drops on exit — what signs a launch in is
+:func:`_persistent_context` replaying :func:`saved_cookies` into it. A browser
+started outside Playwright gets no replay and comes up signed out. Since only
+Playwright can inject the cookies and Playwright kills the browsers it starts,
+the window cannot outlive the command, so the command waits for the window.
 """
 from __future__ import annotations
 
@@ -115,9 +130,21 @@ async def snapshot(context: BrowserContext) -> bool:
     cookie exists: banzai24 rotates it per browser lifetime and Chrome drops
     session cookies on exit, so a profile that just worked is dead by the next
     launch unless we captured it first.
+
+    Cookies only, written in ``storage_state``'s shape rather than by it.
+    Playwright's ``storage_state`` also collects localStorage, and it does that
+    by opening a throwaway page on every origin — on a loop that runs once a
+    second while you read a report, that is a tab blinking open and shut in
+    front of you. Nothing here ever restores localStorage: :func:`saved_cookies`
+    reads ``cookies`` and nothing else, the ``origins`` key was written and never
+    looked at, and the persistent profile directory carries that state on disk
+    anyway. So collecting it was cost without a use.
     """
     try:
-        await context.storage_state(path=str(SESSION_PATH))
+        cookies = await context.cookies()
+        SESSION_PATH.write_text(
+            json.dumps({"cookies": cookies, "origins": []}), encoding="utf-8"
+        )
         return True
     except Exception:
         return False
@@ -199,7 +226,14 @@ async def _persistent_context(headless: bool) -> AsyncIterator[BrowserContext]:
 
     ``channel="chrome"`` selects the real Google Chrome binary rather than
     Playwright's bundled Chromium — the difference banzai24 notices.
+
+    Refuses up front if a hand-opened Chrome holds the profile. Playwright would
+    not fail here; it would launch, get handed off, and produce a browser that
+    never authenticates — a signed-out run that looks exactly like an expired
+    session. Checking the lock is what turns that into an accurate sentence.
     """
+    if profile_busy():
+        raise ProfileBusy()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
@@ -339,3 +373,74 @@ def looks_logged_out(page_text: str) -> bool:
     """
     lowered = page_text.lower()
     return any(marker in lowered for marker in _LOGGED_OUT_MARKERS)
+
+
+# --------------------------------------------------------------------------
+# Browsing the profile by hand
+# --------------------------------------------------------------------------
+
+# Chrome guards a user-data-dir with this while it is running.
+SINGLETON_LOCK = "SingletonLock"
+
+
+class ProfileBusy(RuntimeError):
+    """Raised when a hand-opened Chrome is holding the parser's profile.
+
+    A third cause with the same symptom as the other two. Playwright cannot open
+    a profile another Chrome already has: it gets a hand-off or a timeout, the
+    lots request never lands, and the run reports the session as dead — which
+    sends you to `login` and costs an SMS for a session that was never broken.
+    Since :func:`review` now hands you a browser on that very profile, this
+    collision went from unlikely to routine, and has to be named.
+    """
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(
+            (detail + " " if detail else "")
+            + "the parser's Chrome profile is already open in a browser window "
+            + "(probably from `report --open`). Your session is fine — close "
+            + "that window and run this again. If no window is open, Chrome "
+            + f"left a stale lock behind: delete {PROFILE_DIR / SINGLETON_LOCK}."
+        )
+
+
+def profile_busy() -> bool:
+    """True if a Chrome is already running on the dedicated profile."""
+    lock = PROFILE_DIR / SINGLETON_LOCK
+    # `exists()` follows symlinks and this one points at `<host>-<pid>`, which is
+    # not a real path — so it answers False for a lock that is plainly there.
+    # `is_symlink()` is the question actually being asked.
+    return lock.is_symlink() or lock.exists()
+
+
+async def review(url: str, poll_s: float = 1.0) -> None:
+    """Open ``url`` in the parser's profile and wait until you close the window.
+
+    Blocking is not a design preference, it is the constraint: see the module
+    docstring. The cookie replay that signs a launch in only happens inside
+    :func:`_persistent_context`, and Playwright kills what it starts, so the
+    browser lives exactly as long as this call.
+
+    **Deliberately does not check auth first.** An earlier version did, and it
+    was wrong twice over. :func:`authenticated_on` asks the question by
+    *navigating to* banzai24, so the window opened on the auction site instead
+    of the report that was asked for; and it was fatal, which closed the browser
+    on the one condition you can fix from inside it. Replay across browsers does
+    not reliably work here and the design already accepts that — a fetch signs
+    in inline rather than failing, and so does this.
+
+    Snapshots while the window is open, as :func:`login` does. Two reasons, and
+    the second is the important one: banzai24 rotates its token per browser
+    lifetime, and a sign-in you do *in this window* would otherwise be lost when
+    you close it instead of carrying over to the next fetch.
+    """
+    if not session_exists():
+        raise SessionExpired("No saved profile.")
+
+    async with _persistent_context(headless=False) as context:
+        page = context.pages[0] if context.pages else await context.new_page()
+        await page.goto(url)
+        while context.pages:
+            if not await snapshot(context):
+                break  # window closed mid-snapshot; the previous one stands
+            await asyncio.sleep(poll_s)

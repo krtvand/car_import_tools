@@ -70,6 +70,23 @@ def _normalise(value: str | None) -> str | None:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
+def _canonical_level(records, attr: str, value: str | None) -> str | None:
+    """Map a user-typed categorical level to the spelling stored on the records.
+
+    The design matrix keys dummies on the exact stored string ("Petrol"), so a
+    query typed as "petrol" has to be resolved before it reaches :func:`predict`;
+    an unknown level is returned as-is and lands on the baseline.
+    """
+    if value is None:
+        return None
+    key = _normalise(value)
+    for r in records:
+        stored = getattr(r, attr)
+        if stored is not None and _normalise(stored) == key:
+            return stored
+    return value
+
+
 def _current_year() -> int:
     return datetime.now(timezone.utc).year
 
@@ -165,6 +182,7 @@ def comparables(
     year_tol: int = 1,
     mileage_band: int = 15_000,
     max_widen: int = 2,
+    fuel_type: str | None = None,
 ) -> Comparables:
     """Median asking price of cars near ``(year, mileage)``.
 
@@ -173,10 +191,15 @@ def comparables(
     mileage_band doubled) up to ``max_widen`` times and confidence is lowered —
     robust to thin data without silently reporting a one-listing "median".
 
+    ``fuel_type`` (case-insensitive) restricts the match to one fuel; the band
+    still widens on year/mileage only, so a thin fuel simply reports a small ``n``
+    and low confidence rather than silently mixing petrol into a diesel query.
+
     ``records`` are expected to be already scoped to the model of interest and
     cleaned (see :func:`filter_model`, :func:`clean`); records lacking price,
     year or mileage are ignored defensively.
     """
+    fuel_key = _normalise(fuel_type)
     yt, mb, widened = year_tol, mileage_band, 0
     while True:
         matched = [
@@ -184,6 +207,7 @@ def comparables(
             if r.price is not None and r.year is not None and r.mileage_km is not None
             and abs(r.year - year) <= yt
             and abs(r.mileage_km - mileage) <= mb
+            and (fuel_key is None or _normalise(r.fuel_type) == fuel_key)
         ]
         if len(matched) >= MIN_COMPARABLES or widened >= max_widen:
             break
@@ -538,6 +562,7 @@ def estimate_sale_price(
     model: str | None = None,
     year_range: tuple[int, int] | None = None,
     mileage_range: tuple[int, int] | None = None,
+    fuel_type: str | None = None,
     histories=None,
     ref_year: int | None = None,
 ) -> SalePriceEstimate:
@@ -547,8 +572,13 @@ def estimate_sale_price(
     (Layer 2), cross-checks against comparables, and reports an expected
     days-on-market and a confidence grade. ``year_range``/``mileage_range``
     default to the span of the matched data when omitted; the estimate is taken
-    at their midpoint. ``histories`` (optional trajectories for the scoped
-    adverts) powers the price-cut signal.
+    at their midpoint. ``fuel_type`` ("Petrol", "Diesel", ...) prices that fuel:
+    the curve is still fitted on the whole model — the fuel enters through its
+    dummy coefficient, so a thin fuel borrows the shared age/mileage slopes
+    instead of being fitted on its own handful of rows — and the comparables
+    cross-check is restricted to it. Expected days-on-market stays fuel-blind;
+    delisted adverts are too scarce to split. ``histories`` (optional
+    trajectories for the scoped adverts) powers the price-cut signal.
     """
     if ref_year is None:
         ref_year = _current_year()
@@ -570,8 +600,9 @@ def estimate_sale_price(
     q_year, q_mileage = _midpoint(yr), _midpoint(mr)
 
     # P25-P75 predictive band (alpha=0.5) plus the point estimate.
-    band = predict(curve, q_year, q_mileage, alpha=0.5)
-    comp = comparables(scoped, int(round(q_year)), int(round(q_mileage)))
+    fuel = _canonical_level(scoped, "fuel_type", fuel_type)
+    band = predict(curve, q_year, q_mileage, fuel_type=fuel, alpha=0.5)
+    comp = comparables(scoped, int(round(q_year)), int(round(q_mileage)), fuel_type=fuel)
     survivorship = survivorship_adjustment(scoped, curve, ref_year=ref_year)
     adjustment = sale_adjustment_factor(price_cut, survivorship)
 
@@ -603,6 +634,7 @@ def estimate_from_db(
     model: str | None = None,
     year_range: tuple[int, int] | None = None,
     mileage_range: tuple[int, int] | None = None,
+    fuel_type: str | None = None,
 ) -> SalePriceEstimate:
     """DB-backed :func:`estimate_sale_price`: reads listings and price histories."""
     from . import db
@@ -612,5 +644,5 @@ def estimate_from_db(
     scoped = filter_model(records, make, model)
     histories = [[o.price for o in db.price_history(r.ad_id)] for r in scoped]
     return estimate_sale_price(
-        records, make, model, year_range, mileage_range, histories=histories
+        records, make, model, year_range, mileage_range, fuel_type, histories=histories
     )

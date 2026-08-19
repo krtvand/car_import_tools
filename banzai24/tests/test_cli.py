@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 
+import pytest
+
 from banzai24 import cli, config
 
 
@@ -91,3 +93,97 @@ def test_extract_and_report_both_understand_today():
     assert parser.parse_args(["report", "--today"]).today is True
     assert parser.parse_args(["extract"]).today is False
     assert parser.parse_args(["report"]).today is False
+
+
+# --- `report --open` -------------------------------------------------------
+
+def _report_run(monkeypatch, tmp_path, argv, reviewer=None):
+    """Run `report ...` against a throwaway runs/ and record what it opened."""
+    from banzai24 import db, index, session
+
+    run_dir = tmp_path / "2026-08-17_222903_TOYOTA-RAV4"
+    (run_dir / "sheets").mkdir(parents=True)
+    (run_dir / "lots.json").write_text("[]", encoding="utf-8")
+
+    opened: list[str] = []
+
+    async def fake_review(url, **kwargs):
+        opened.append(url)
+        if reviewer is not None:
+            reviewer()
+
+    monkeypatch.setattr(index, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(db, "init_db", lambda *a, **k: None)
+    monkeypatch.setattr(session, "review", fake_review)
+
+    # The report itself is exercised in test_report.py; here only the opening is.
+    class Built:
+        output = run_dir / "report.html"
+        missing: list = []
+        cyprus_reason = None
+        bid_reason = None
+        quoted = 0
+
+        def summary(self) -> str:
+            return "1 lot"
+
+    Built.output.write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(
+        "banzai24.report.run_report", lambda *a, **k: Built(), raising=False
+    )
+    monkeypatch.setattr("sys.argv", ["banzai24", *argv, str(run_dir)])
+    cli.main()
+    return opened
+
+
+def test_open_opens_the_index_not_the_report(monkeypatch, tmp_path):
+    """The report is one run; the index is the last ten. `--open` means index."""
+    opened = _report_run(monkeypatch, tmp_path, ["report", "--open"])
+    assert len(opened) == 1
+    assert opened[0].endswith("/index.html")
+
+
+def test_open_goes_through_the_signed_in_profile(monkeypatch, tmp_path):
+    """banzai24 limits authenticated clients and the report links back to it, so
+    the default browser is the wrong one to click through from — and only
+    session.review replays the cookies that sign a launch in."""
+    import webbrowser
+
+    calls = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: calls.append(url))
+    _report_run(monkeypatch, tmp_path, ["report", "--open"])
+    assert calls == []
+
+
+def test_no_saved_profile_is_reported_rather_than_crashing(monkeypatch, tmp_path):
+    """The only fatal auth case left. A session that merely looks dead is not
+    fatal — you sign in in the window review() opened."""
+    from banzai24 import session
+
+    def missing():
+        raise session.SessionExpired("No saved profile.")
+
+    with pytest.raises(SystemExit) as exc:
+        _report_run(monkeypatch, tmp_path, ["report", "--open"], reviewer=missing)
+    assert "banzai24 login" in str(exc.value)
+
+
+def test_a_busy_profile_is_reported_without_sending_you_to_login(monkeypatch, tmp_path):
+    """A second `report --open` while one is already up must not read as an
+    expired session — that costs an SMS and fixes nothing."""
+    from banzai24 import session
+
+    def busy():
+        raise session.ProfileBusy()
+
+    with pytest.raises(SystemExit) as exc:
+        _report_run(monkeypatch, tmp_path, ["report", "--open"], reviewer=busy)
+    assert "already open" in str(exc.value)
+    assert "banzai24 login" not in str(exc.value)
+
+
+def test_the_index_is_rebuilt_even_without_open(monkeypatch, tmp_path):
+    """Derived from directory names and free to build, so it never goes stale."""
+    opened = _report_run(monkeypatch, tmp_path, ["report"])
+    assert (tmp_path / "index.html").exists()
+    assert opened == []

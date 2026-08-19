@@ -344,6 +344,47 @@ def test_estimate_sale_price_uses_history_and_delisting():
     assert est.sale_price < est.asking_estimate
 
 
+def test_estimate_sale_price_prices_the_requested_fuel():
+    # Same pool, but diesels carry a premium the dummy should pick up.
+    records = _scoped_pool(n=40, noise_sd=0.0)
+    for i, r in enumerate(records):
+        fuel = "Diesel" if i % 2 else "Petrol"
+        bump = math.exp(0.2) if fuel == "Diesel" else 1.0
+        records[i] = rec(
+            ad_id=r.ad_id, year=r.year, mileage_km=r.mileage_km, price=r.price * bump,
+            make="Mazda", model="CX-5", fuel_type=fuel,
+        )
+
+    def est(fuel):
+        return analysis.estimate_sale_price(
+            records, "Mazda", "CX-5", year_range=(2018, 2022),
+            mileage_range=(40_000, 80_000), fuel_type=fuel, ref_year=REF_YEAR,
+        )
+
+    petrol, diesel = est("petrol"), est("Diesel")
+    # Fit uses the whole pool either way; only the fuel dummy moves the estimate.
+    assert petrol.n == diesel.n == 40
+    assert diesel.asking_estimate == pytest.approx(petrol.asking_estimate * math.exp(0.2), rel=1e-6)
+    # The comparables cross-check is restricted to the queried fuel.
+    assert diesel.comparables_median > petrol.comparables_median
+
+
+def test_estimate_sale_price_unknown_fuel_falls_back_to_baseline():
+    records = _scoped_pool(n=40, noise_sd=0.0)
+    baseline = analysis.estimate_sale_price(
+        records, "Mazda", "CX-5", year_range=(2018, 2022),
+        mileage_range=(40_000, 80_000), ref_year=REF_YEAR,
+    )
+    hydrogen = analysis.estimate_sale_price(
+        records, "Mazda", "CX-5", year_range=(2018, 2022),
+        mileage_range=(40_000, 80_000), fuel_type="Hydrogen", ref_year=REF_YEAR,
+    )
+    assert hydrogen.asking_estimate == pytest.approx(baseline.asking_estimate, rel=1e-9)
+    # ...but nothing comparable exists, so the query is graded down.
+    assert hydrogen.comparables_median is None
+    assert hydrogen.confidence == "none"
+
+
 def test_estimate_sale_price_none_when_no_matching_data():
     est = analysis.estimate_sale_price(
         [rec(ad_id=1, make="Toyota", model="Yaris")], "Mazda", "CX-5", ref_year=REF_YEAR,
@@ -422,6 +463,21 @@ def test_comparables_widens_band_when_thin_and_lowers_confidence():
     assert result.widened >= 1
     assert result.confidence == "low"
     assert result.n >= analysis.MIN_COMPARABLES or result.widened == 2
+
+
+def test_comparables_restricted_to_one_fuel():
+    records = [
+        rec(ad_id=i, year=2020, mileage_km=50000, price=p, fuel_type="Petrol")
+        for i, p in enumerate([18000, 20000, 22000])
+    ] + [
+        rec(ad_id=10 + i, year=2020, mileage_km=50000, price=p, fuel_type="Diesel")
+        for i, p in enumerate([30000, 32000, 34000])
+    ]
+    petrol = analysis.comparables(records, year=2020, mileage=50000, fuel_type="petrol")
+    assert petrol.n == 3 and petrol.estimate == 20000.0  # case-insensitive match
+    diesel = analysis.comparables(records, year=2020, mileage=50000, fuel_type="Diesel")
+    assert diesel.n == 3 and diesel.estimate == 32000.0
+    assert analysis.comparables(records, year=2020, mileage=50000).n == 6
 
 
 def test_comparables_none_when_nothing_matches():

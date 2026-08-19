@@ -65,8 +65,15 @@ reading (~$0.015 each) and refresh the reports in place:
   uv run python -m banzai24 extract --today --limit 5     # read five
   uv run python -m banzai24 report --today --open         # re-render, free, and open
 
-`--open` opens one browser tab per run — today's runs are listed above, so
-`open <path>` from that list works too if you only want one car.
+`--open` opens one tab: `runs/index.html`, this morning's runs on top of the
+last ten. It opens in the parser's own Chrome profile, so clicking a lot
+through to banzai24 uses the session the parser uses rather than your everyday
+browser. If a lot comes up signed out, sign in in that window — it is captured
+while it is open, so the next `fetch` gets it.
+
+It **waits** until you close that window: the browser only lives as long as the
+command. Give it its own terminal, and close it before the next `fetch`, which
+needs the profile to itself.
 
 `--today` matters: without it the queue is every pending sheet ever
 downloaded, so you would pay to read lots that traded last week. Add a run
