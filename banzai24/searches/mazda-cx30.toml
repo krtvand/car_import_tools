@@ -34,6 +34,10 @@ source = "auctions"
 
 [api]
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
+# Colours to drop, matched whole against the API's own colour code. Known
+# values: white, black, silver, gray, blue, red, brown, beige, green, other.
+# A lot the API gave no colour for is kept, not dropped.
+exclude_colours = ["black", "blue"]
 
 [sheet]
 drivetrain = "2WD"

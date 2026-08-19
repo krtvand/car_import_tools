@@ -142,6 +142,9 @@ def parse(payload: dict, name: str, path: Path | None = None) -> SearchDefinitio
     if "body_model_code" in api:
         api["body_model_code"] = _tuple_of_str(
             api["body_model_code"], f"{where.name}: [api] body_model_code")
+    if "exclude_colours" in api:
+        api["exclude_colours"] = _tuple_of_str(
+            api["exclude_colours"], f"{where.name}: [api] exclude_colours")
 
     sheet = dict(payload.get("sheet") or {})
     _known("sheet", sheet, _SHEET_KEYS, where)

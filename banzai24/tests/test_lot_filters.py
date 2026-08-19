@@ -5,11 +5,11 @@ from banzai24 import lot_filters
 from banzai24.lot_filters import LotFilters
 
 
-def _lot(code=None, short=None, body_number=None) -> dict:
+def _lot(code=None, short=None, body_number=None, colour=None) -> dict:
     return {
         "bodyModelCode": code,
         "car": {"shortCodeModel": short},
-        "characteristics": {"bodyNumber": body_number},
+        "characteristics": {"bodyNumber": body_number, "color": colour},
     }
 
 
@@ -115,4 +115,57 @@ def test_split_returns_both_halves_so_a_run_can_report_what_it_dropped():
 
 def test_describe_names_the_active_criteria():
     assert "DMEJ3P" in LotFilters(body_model_code=("DMEJ3P",)).describe()
+    assert "black" in LotFilters(exclude_colours=("black",)).describe()
     assert LotFilters().describe() == "none"
+
+
+# --- excluded colours --------------------------------------------------------
+#
+# The one criterion that names what to drop rather than what to keep, so the
+# lot the API said nothing about goes the other way from a codeless one.
+
+def test_colour_is_read_off_the_lot_lower_cased():
+    """The API writes it upper-case; everything downstream shows lower-case."""
+    assert lot_filters.colour_of(_lot(colour="BLACK")) == "black"
+    assert lot_filters.colour_of(_lot()) == ""
+    assert lot_filters.colour_of({}) == ""
+
+
+def test_an_excluded_colour_is_dropped():
+    unwanted = LotFilters(exclude_colours=("black", "blue"))
+    assert not unwanted.matches(_lot(colour="BLACK"))
+    assert not unwanted.matches(_lot(colour="BLUE"))
+
+
+def test_a_colour_not_named_is_kept():
+    unwanted = LotFilters(exclude_colours=("black", "blue"))
+    assert unwanted.matches(_lot(colour="WHITE"))
+    assert unwanted.matches(_lot(colour="GRAY"))
+
+
+def test_the_exclusion_is_written_in_either_case():
+    assert not LotFilters(exclude_colours=("BLACK",)).matches(_lot(colour="black"))
+
+
+def test_a_lot_with_no_colour_is_kept_not_dropped():
+    """The opposite of a codeless lot: an exclusion drops only what it recognises."""
+    unwanted = LotFilters(exclude_colours=("black",))
+    assert unwanted.matches(_lot())
+    assert unwanted.matches(_lot(colour=""))
+
+
+def test_colours_are_matched_whole_not_as_substrings():
+    """`grey` is not `gray`, and a half-written colour excludes nothing."""
+    assert LotFilters(exclude_colours=("blac",)).matches(_lot(colour="BLACK"))
+    assert LotFilters(exclude_colours=("grey",)).matches(_lot(colour="GRAY"))
+
+
+def test_excluding_a_colour_is_an_active_filter():
+    assert LotFilters(exclude_colours=("black",)).active
+
+
+def test_both_criteria_apply_to_the_same_lot():
+    wanted = LotFilters(body_model_code=("DMEJ3P",), exclude_colours=("black",))
+    assert wanted.matches(_lot(code="5AA-DMEJ3P", colour="WHITE"))
+    assert not wanted.matches(_lot(code="5AA-DMEJ3P", colour="BLACK"))
+    assert not wanted.matches(_lot(code="DMEJ3R", colour="WHITE"))

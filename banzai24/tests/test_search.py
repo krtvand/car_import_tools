@@ -22,6 +22,7 @@ grade = ["4", "4.5", "5"]
 
 [api]
 body_model_code = ["DMEJ3P"]
+exclude_colours = ["black", "blue"]
 
 [sheet]
 drivetrain = "4WD"
@@ -39,6 +40,7 @@ def test_the_three_sections_land_on_the_three_objects(tmp_path):
     assert definition.filters.model == "CX-30"
     assert definition.filters.grade_origin == ("4", "4.5", "5")
     assert definition.lot_filters.body_model_code == ("DMEJ3P",)
+    assert definition.lot_filters.exclude_colours == ("black", "blue")
     assert definition.requirements.drivetrain == "4WD"
     assert definition.requirements.no_damage_codes == ("W", "X")
 
