@@ -36,7 +36,7 @@ source = "auctions"
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
 
 [sheet]
-drivetrain = "4WD"
+drivetrain = "2WD"
 # Matched as letters contained anywhere in the code, so "X" catches "XX" and a
 # "W" inside a compound mark like "A3W2" is caught too. The severity digit is
 # deliberately ignored: W3 is a worse repair mark than W2.
