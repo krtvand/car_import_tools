@@ -12,6 +12,7 @@ source = "auctions"
 
 [api]
 body_model_code = ["AXAH52", "AXAH54"]
+exclude_colours = ["black", "blue"]
 
 [sheet]
 drivetrain = "4WD"

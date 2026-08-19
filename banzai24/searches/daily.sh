@@ -39,7 +39,8 @@ banzai24() { uv run python -m banzai24 "$@"; }
 # directory; naming them here rather than globbing is deliberate, because
 # extraction costs money and a file dropped in this directory should not
 # silently start spending it.
-SEARCHES=(mazda-cx30 )
+#SEARCHES=(mazda-cx30 )
+SEARCHES=("mazda-3")
 
 # --dry-run prints URLs and fetches nothing, so a session check would be a
 # pointless SMS risk on a command whose whole point is to touch nothing.

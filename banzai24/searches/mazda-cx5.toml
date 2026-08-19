@@ -13,6 +13,7 @@ source = "auctions"
 
 [api]
 body_model_code = ["KFEP", "KF5P"]
+exclude_colours = ["black", "blue"]
 
 [sheet]
 drivetrain = "4WD"
