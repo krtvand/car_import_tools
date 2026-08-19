@@ -285,10 +285,12 @@ This is better than reimplementing the API client, not merely more convenient:
     time, so for six hours every evening the local date reads a day behind — a
     JST day that has already finished would compare as upcoming, leaving only
     the status check to reject it.
-  - **Paging stops as soon as a later day appears.** Lots come back in trade-date
-    order, so a second day showing up means the nearest one is complete. That is
-    a deliberate stop, not truncation, so it does not raise the truncation
-    warning.
+  - **Paging stops once a page offers no more of the nearest day.** Lots come
+    back in day order only loosely — within a day they are grouped by auction
+    house, and a page can hold a lot from a later day while the nearest one
+    still runs on into the next page — so a later day alone does not end it.
+    That is a deliberate stop, not truncation, so it does not raise the
+    truncation warning.
   - No upcoming day at all (any `archive` search) is a no-op that keeps every
     lot, rather than a run that silently produces zero.
 

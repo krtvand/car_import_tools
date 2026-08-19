@@ -257,16 +257,37 @@ def test_day_selection_defaults_to_tokyos_date(monkeypatch):
     assert fetch.nearest_trade_date(MIXED) == "2026-08-12"
 
 
-def test_later_day_seen_is_the_signal_to_stop_paging():
+def test_later_day_seen_is_necessary_for_the_day_to_be_complete():
     assert fetch.has_later_day(MIXED, "2026-08-11", TODAY) is True
     assert fetch.has_later_day(MIXED[:5], "2026-08-11", TODAY) is False
 
 
-def test_nearest_day_complete_stops_paging_once_a_later_day_appears():
-    page1 = {"items": MIXED[:4]}          # 08-11 has started, nothing beyond yet
-    page2 = {"items": MIXED[4:]}          # 08-12 shows up → 08-11 is complete
+def test_nearest_day_complete_once_a_page_offers_no_more_of_it():
+    page1 = {"items": MIXED[3:5]}         # 08-11 only — the day is still running
+    page2 = {"items": MIXED[5:]}          # a page of 08-12 → 08-11 is complete
     assert fetch._nearest_day_complete([page1], TODAY) is False
     assert fetch._nearest_day_complete([page1, page2], TODAY) is True
+
+
+def test_a_later_day_beside_the_days_own_lots_does_not_end_the_day():
+    """The regression: results are not strictly ordered by trade date.
+
+    Reproduces the mazda-3 run of 2026-08-19, where page 1 held four 08-20 lots
+    and then a single 08-21 one, while 08-20 ran on into page 2. Treating that
+    lone later lot as the end of the day dropped the rest of 08-20 and produced
+    an empty report for a day that had lots on it.
+    """
+    page1 = {"items": [*MIXED[3:5], MIXED[5]]}   # 08-11, 08-11, then one 08-12
+    page2 = {"items": [_dated("39-1578-55883", "2026-08-11")]}
+
+    assert fetch._nearest_day_complete([page1], TODAY) is False
+    assert fetch._nearest_day_complete([page1, page2], TODAY) is False
+
+    on_day, day = fetch.lots_on_nearest_day(
+        [i for p in (page1, page2) for i in p["items"]], TODAY
+    )
+    assert day == "2026-08-11"
+    assert [l["lot"]["number"] for l in on_day][-1] == "39-1578-55883"
 
 
 def test_the_day_is_chosen_before_the_filter_runs():
@@ -290,11 +311,9 @@ def test_the_day_is_chosen_before_the_filter_runs():
 
 def test_a_filter_never_makes_the_run_turn_another_page():
     """The boundary is judged over every lot, so an emptied day still stops paging."""
-    page1 = {"items": [
-        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3R"},
-        _dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3R"},
-    ]}
-    assert fetch._nearest_day_complete([page1], TODAY) is True
+    page1 = {"items": [_dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3R"}]}
+    page2 = {"items": [_dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3R"}]}
+    assert fetch._nearest_day_complete([page1, page2], TODAY) is True
 
 
 # --- --max-lots: bounding the run by lots kept, not pages read ---------------
@@ -335,12 +354,12 @@ def test_the_count_is_of_kept_lots_not_lots_read():
 
 def test_an_exhausted_day_stops_paging_even_short_of_the_count():
     """Otherwise a filter matching nothing would chase max_lots to the last page."""
-    page = _page(
-        _dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3P"},
-        _dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3P"},
-    )
+    pages = [
+        _page(_dated("a", "2026-08-11") | {"bodyModelCode": "DMEJ3P"}),
+        _page(_dated("b", "2026-08-12") | {"bodyModelCode": "DMEJ3P"}),
+    ]
     wanted = LotFilters(body_model_code=("DMEJ3R",))
-    assert fetch._enough([page], max_lots=50, today=TODAY, lots_filter=wanted) is True
+    assert fetch._enough(pages, max_lots=50, today=TODAY, lots_filter=wanted) is True
 
 
 def test_all_days_leaves_only_the_count_to_stop_the_run():

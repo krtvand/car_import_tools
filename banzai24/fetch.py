@@ -153,11 +153,10 @@ def lots_on_nearest_day(
 
 
 def has_later_day(lots: list[dict], day: str, today: date | None = None) -> bool:
-    """True once a lot beyond ``day`` has been seen — the signal to stop paging.
+    """True once a lot beyond ``day`` has been seen.
 
-    ``source=auctions`` returns lots in trade-date order, so a later day showing
-    up means the nearest day is complete and further pages hold only lots we are
-    about to discard anyway.
+    Necessary for the day to be complete but not sufficient — see
+    :func:`_nearest_day_complete`, which is where that judgement is made.
     """
     today = today or japan_today()
     return any(
@@ -299,22 +298,31 @@ async def _lots_from(page: Page, action, timeout_ms: int = RESPONSE_TIMEOUT_MS) 
 # Page 1 never triggers an API call: Nuxt server-renders it into the HTML
 # payload. Only changing page or tab calls /lots. So page 1 is read out of the
 # hydration state, and pages 2+ are intercepted as normal.
+#
+# The hydration state carries the `pagination` block too — the same
+# `{currentPage, totalPages, perPage, total}` the API returns — so page 1 can
+# report the size of the whole result set instead of guessing it from the lots
+# it happens to hold. It is matched on all four keys plus a `total` that can
+# actually cover the page, so another list's pagination cannot be picked up by
+# mistake; when nothing matches, the rendered page buttons remain the fallback.
 _SSR_LOTS_JS = """() => {
   const looksRight = a =>
     Array.isArray(a) && a.length && a[0] && typeof a[0] === 'object'
     && 'auctImage' in a[0] && a[0].lot && a[0].lot.number;
-  const hunt = (o, d = 0) => {
+  const hunt = (o, pick, d = 0) => {
     if (!o || d > 8 || typeof o !== 'object') return null;
-    if (Array.isArray(o)) {
-      if (looksRight(o)) return o;
-      for (const v of o) { const r = hunt(v, d + 1); if (r) return r; }
-      return null;
-    }
-    for (const k of Object.keys(o)) { const r = hunt(o[k], d + 1); if (r) return r; }
+    if (pick(o)) return o;
+    for (const k of Object.keys(o)) { const r = hunt(o[k], pick, d + 1); if (r) return r; }
     return null;
   };
-  const items = hunt(window.__NUXT__ || {});
-  return items ? { items } : null;
+  const root = window.__NUXT__ || {};
+  const items = hunt(root, looksRight);
+  if (!items) return null;
+  const num = v => typeof v === 'number' && Number.isFinite(v);
+  const pagination = hunt(root, o =>
+    !Array.isArray(o) && num(o.currentPage) && num(o.totalPages)
+    && num(o.perPage) && num(o.total) && o.total >= items.length);
+  return pagination ? { items, pagination } : { items };
 }"""
 
 
@@ -409,7 +417,7 @@ async def fetch_lots(
 
     By default the run is narrowed to the **closest upcoming auction day**: the
     later days a search also returns are fetched but set aside, and paging stops
-    as soon as a later day appears. That is the day you can actually still bid
+    once a page offers no more of that day. That is the day you can actually still bid
     on, and it keeps the paid extraction step off lots that are weeks out.
 
     ``lots_filter`` is applied **within** that day, not before it. The day is
@@ -456,9 +464,10 @@ async def fetch_lots(
     chosen = select(payloads, today, nearest_day_only, lots_filter)
     lots = chosen.kept[:max_lots]
 
-    # Page 1 is server-rendered and carries no totals; any later page came from
-    # the API and does. Prefer the API's numbers when we have them, so the
-    # summary doesn't report page 1's item count as the whole result set.
+    # Prefer a reported `pagination` block over the counts we can see, so the
+    # summary doesn't report the lots in hand as the whole result set. Page 1
+    # carries one in its hydration state and every later page carries the API's;
+    # a run that finds neither falls back to what it read.
     api_pagination = next((p["pagination"] for p in payloads if p.get("pagination")), {})
     total_lots = int(api_pagination.get("total") or 0) or len(chosen.fetched)
     total_pages = int(api_pagination.get("totalPages") or 0) or total_pages
@@ -525,17 +534,31 @@ def _truncation_reason(
 
 
 def _nearest_day_complete(payloads: list[dict], today: date | None = None) -> bool:
-    """Have we already seen past the closest upcoming day?
+    """Have we read past the closest upcoming day?
 
     Judged over every lot, not the filtered ones, because the day is chosen that
-    way too: once a later day appears the nearest day is complete, whether or not
-    anything on it survived the filter. Paging on in the hope of a match would be
-    searching the days the run has deliberately excluded.
+    way too: the day is over when the site stops offering lots on it, whether or
+    not any of them survived the filter. Paging on in the hope of a match would
+    be searching the days the run has deliberately excluded.
+
+    The test is per *page*, not "has a later day appeared anywhere". Results are
+    ordered by day only loosely — within a day they are grouped by auction house
+    rather than by time, and a page can carry a lot from a later day while the
+    nearest day still runs on into the next page. The mazda-3 run of
+    2026-08-19 is the case in point: page 1 ended with a single 08-21 lot while
+    08-20's U Tokyo lots continued onto page 2, the run stopped there, and the
+    report came out empty for a day that had lots on it. So the day is only
+    finished once a whole page has offered nothing more of it.
     """
     today = today or japan_today()
     lots = [item for payload in payloads for item in (payload.get("items") or [])]
     day = nearest_trade_date(lots, today)
-    return bool(day) and has_later_day(lots, day, today)
+    if not day:
+        return False
+    last = (payloads[-1].get("items") or []) if payloads else []
+    if last and any(trade_date(lot) == day and is_upcoming(lot, today) for lot in last):
+        return False
+    return has_later_day(lots, day, today)
 
 
 def _write_lots_json(
