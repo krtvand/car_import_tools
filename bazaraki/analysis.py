@@ -112,6 +112,22 @@ def filter_model(records, make: str, model: str | None = None) -> list[CarRecord
     return out
 
 
+def filter_fuel(records, fuel_type: str | None = None) -> list[CarRecord]:
+    """Keep only records of ``fuel_type`` (case/punctuation-insensitive).
+
+    ``fuel_type=None`` is a no-op, so callers can pass an optional parameter
+    straight through. Unlike the fuel *dummy* inside the curve, this is a hard
+    subset filter: records whose fuel is unknown (``None``) are dropped too,
+    because they cannot be shown to be the fuel asked for. Use it when a fuel
+    should not merely be priced apart but excluded from the fit, the
+    comparables and the charts entirely.
+    """
+    fuel_key = _normalise(fuel_type)
+    if fuel_key is None:
+        return list(records)
+    return [r for r in records if _normalise(r.fuel_type) == fuel_key]
+
+
 # ---------------------------------------------------------------------------
 # Outlier hygiene
 # ---------------------------------------------------------------------------

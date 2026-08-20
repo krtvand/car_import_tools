@@ -52,6 +52,28 @@ def test_filter_model_matches_model_when_given():
     assert {r.ad_id for r in out} == {1, 2}
 
 
+# --- filter_fuel ------------------------------------------------------------
+
+def test_filter_fuel_keeps_only_the_requested_fuel():
+    records = [
+        rec(ad_id=1, fuel_type="Petrol"),
+        rec(ad_id=2, fuel_type="petrol"),
+        rec(ad_id=3, fuel_type="Diesel"),
+    ]
+    out = analysis.filter_fuel(records, "PETROL")
+    assert {r.ad_id for r in out} == {1, 2}
+
+
+def test_filter_fuel_drops_unknown_fuel():
+    records = [rec(ad_id=1, fuel_type="Petrol"), rec(ad_id=2, fuel_type=None)]
+    assert {r.ad_id for r in analysis.filter_fuel(records, "Petrol")} == {1}
+
+
+def test_filter_fuel_without_a_fuel_is_a_no_op():
+    records = [rec(ad_id=1, fuel_type="Petrol"), rec(ad_id=2, fuel_type=None)]
+    assert analysis.filter_fuel(records) == records
+
+
 # --- outlier hygiene --------------------------------------------------------
 
 def test_is_usable_accepts_plausible_record():
