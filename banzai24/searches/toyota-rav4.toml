@@ -6,7 +6,7 @@ model = "RAV4"
 transmission = "auto"
 year_start = 2023
 year_end = 2023
-mileage_end = 55000
+mileage_end = 50000
 grade = ["4", "4.5", "5"]
 source = "auctions"
 
@@ -15,5 +15,4 @@ body_model_code = ["AXAH52", "AXAH54"]
 exclude_colours = ["black", "blue"]
 
 [sheet]
-drivetrain = "4WD"
 no_damage_codes = ["W", "X", "欠"]
