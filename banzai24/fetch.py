@@ -47,6 +47,14 @@ PAGE_BUTTON_ACTIVE = ".Page-active"
 PAGE_DELAY_S = 1.5
 IMAGE_DELAY_S = 0.2
 
+# How many of a lot's photographs come down with it. A lot carries a dozen or
+# more, and the report shows the ones it has as a single row under the sheet —
+# so this is a layout decision before it is a bandwidth one. Four 440x330 shots
+# fill that row at a size you can still recognise a bumper in, and cost ~28 KB
+# a lot inlined. The rest are one click away on the lot page, which every card
+# links to.
+PHOTO_LIMIT = 4
+
 RESPONSE_TIMEOUT_MS = 30_000
 
 # One page of results, which is what a page-count limit used to buy.
@@ -206,6 +214,10 @@ class FetchResult:
     sheets_downloaded: int = 0
     sheets_skipped: int = 0
     sheets_missing: int = 0
+    photos_downloaded: int = 0
+    photos_skipped: int = 0
+    photos_missing: int = 0         # lots the API listed no photographs for
+    photos_failed: list[str] = field(default_factory=list)
     trade_date: str | None = None      # the day we narrowed to, if we did
     lots_other_days: int = 0           # fetched, then set aside as later/past
     lots_filtered_out: int = 0         # on the day, then rejected by LotFilters
@@ -225,6 +237,12 @@ class FetchResult:
             bits.append(f"{self.sheets_skipped} already present")
         if self.sheets_missing:
             bits.append(f"{self.sheets_missing} lots have no sheet")
+        if self.photos_downloaded or self.photos_skipped:
+            bits.append(f"{self.photos_downloaded} photos downloaded")
+        if self.photos_missing:
+            bits.append(f"{self.photos_missing} lots have no photos")
+        if self.photos_failed:
+            bits.append(f"{len(self.photos_failed)} photos failed")
         if self.truncated:
             bits.append(f"TRUNCATED by {self.truncated_by or 'the page limit'}")
         return ", ".join(bits) + f" -> {self.run_dir}"
@@ -605,11 +623,62 @@ def _write_lots_json(
     return path
 
 
+def safe_number(number: str) -> str:
+    """A lot number as a filename stem — ``47-1312-35159``.
+
+    Shared by the sheet and the photos so both are addressable from the lot
+    number alone: the report finds a lot's photos by globbing this stem, and a
+    second spelling of it here would mean the report quietly finding none.
+    """
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in str(number))
+
+
 def sheet_filename(lot: dict) -> str:
     """``47-1312-35159.jpg`` — banzai24's globally unique lot number."""
     number = (lot.get("lot") or {}).get("number") or lot.get("id") or "unknown"
-    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in str(number))
-    return f"{safe}.jpg"
+    return f"{safe_number(number)}.jpg"
+
+
+# banzai24's image service serves by token, so the URL carries no extension and
+# what comes back is whatever it decided to encode — WebP today, JPEG on the
+# sheets. The bytes are the only honest source of the type, and the type has to
+# be right: the report inlines these as data URIs, where a wrong media type is a
+# blank box rather than a wrong-looking image.
+_IMAGE_SUFFIXES = (
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+)
+
+
+def image_suffix(data: bytes) -> str:
+    """``".webp"`` / ``".jpg"`` / ``".png"`` — sniffed from the first bytes."""
+    for magic, suffix in _IMAGE_SUFFIXES:
+        if data.startswith(magic):
+            return suffix
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return ".jpg"
+
+
+def photo_stem(number: str, index: int) -> str:
+    """``47-1312-35159-photo-1`` — the stem of one lot photo, 1-based.
+
+    Numbered rather than hashed so the strip under the sheet keeps banzai24's
+    own order, which is not arbitrary: the first shots are the three-quarter
+    exteriors, and those are the ones worth showing small.
+    """
+    return f"{safe_number(number)}-photo-{index}"
+
+
+def photo_files(run_dir: Path, number: str) -> list[Path]:
+    """This lot's downloaded photos, in the order banzai24 listed them."""
+    photos_dir = run_dir / "photos"
+    if not photos_dir.is_dir():
+        return []
+    found = []
+    for index in range(1, PHOTO_LIMIT + 1):
+        found += sorted(photos_dir.glob(photo_stem(number, index) + ".*"))
+    return found
 
 
 async def download_sheets(result: FetchResult) -> FetchResult:
@@ -638,6 +707,52 @@ async def download_sheets(result: FetchResult) -> FetchResult:
             destination.write_bytes(response.content)
             result.sheets_downloaded += 1
             await asyncio.sleep(IMAGE_DELAY_S)
+
+    return result
+
+
+async def download_photos(result: FetchResult) -> FetchResult:
+    """Download up to :data:`PHOTO_LIMIT` photos per lot into ``<run>/photos/``.
+
+    The same public image service the sheets come from, so the same plain HTTP
+    client. A lot with no ``images`` is counted, not skipped silently — an
+    auction house that publishes sheets but no photographs is a fact about the
+    run, and the alternative is a report full of sheets with nothing under them
+    and no reason given.
+
+    One failed photo never fails the run: the photos are context beside the
+    sheet, and the sheet is what the decision is made on.
+    """
+    photos_dir = result.run_dir / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        for lot in result.lots:
+            urls = [url for url in (lot.get("images") or []) if url]
+            if not urls:
+                result.photos_missing += 1
+                continue
+
+            number = (lot.get("lot") or {}).get("number") or lot.get("id") or "unknown"
+            for index, url in enumerate(urls[:PHOTO_LIMIT], start=1):
+                # Globbed rather than stat'd on one name: the suffix is decided
+                # by what the service sent last time, so "already here" cannot
+                # be asked about a single filename.
+                if any(photos_dir.glob(photo_stem(number, index) + ".*")):
+                    result.photos_skipped += 1
+                    continue
+
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                except httpx.HTTPError as exc:
+                    result.photos_failed.append(f"{number} #{index}: {exc}")
+                    continue
+
+                body = response.content
+                (photos_dir / (photo_stem(number, index) + image_suffix(body))).write_bytes(body)
+                result.photos_downloaded += 1
+                await asyncio.sleep(IMAGE_DELAY_S)
 
     return result
 
@@ -699,10 +814,11 @@ async def run_fetch(
     definition: SearchDefinition,
     max_lots: int = DEFAULT_MAX_LOTS,
     sheets: bool = True,
+    photos: bool = True,
     headless: bool = False,
     nearest_day_only: bool = True,
 ) -> FetchResult:
-    """``fetch`` end to end: lots, then their sheets."""
+    """``fetch`` end to end: lots, then their sheets, then their photos."""
     result = await fetch_lots(
         definition,
         max_lots=max_lots,
@@ -711,4 +827,6 @@ async def run_fetch(
     )
     if sheets:
         await download_sheets(result)
+    if photos:
+        await download_photos(result)
     return result

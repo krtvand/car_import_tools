@@ -75,23 +75,61 @@
   .verdict.unconfirmed { background: #f8f8f7; color: var(--muted); }
 
   .body { display: flex; flex-wrap: wrap; gap: 1.25rem; padding: 1rem; align-items: flex-start; }
-  .sheet { flex: 0 0 auto; }
+  /* Sheet and photo strip share a column so the strip sits *under* the sheet
+     rather than beside it — in a bare flex row it would become a third column.
+     The width lives on the column rather than on the sheet image, because the
+     strip has to be told how wide "one line" is: shots that size themselves
+     from their own pixels would push the column out to a row of full-size
+     photographs and shove the fields off the card. */
+  .left { flex: 0 0 auto; width: 320px; max-width: 100%; }
+  .sheet { display: block; }
   .sheet img {
     /* `height: auto` is load-bearing: the img carries width/height attributes so
        the page reserves the right box before the (large, inline) data URI
        decodes, and without this the 800px height attribute wins over the CSS
        width and every sheet renders stretched to a tall ribbon. */
-    display: block; width: 320px; height: auto; max-width: 100%;
+    display: block; width: 100%; height: auto;
     border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; background: #fff;
   }
   /* CSS-only zoom: no JavaScript, so the page is inert wherever it is opened. */
   .zoom { position: absolute; opacity: 0; pointer-events: none; }
-  .zoom:checked + .sheet img { width: 800px; cursor: zoom-out; }
+  /* Zooming widens the column, so the strip under the sheet grows with it. */
+  .left:has(.sheet-zoom:checked) { width: 800px; }
+  .sheet-zoom:checked + .sheet img { cursor: zoom-out; }
   /* An 800px sheet leaves the fields column a squeezed strip beside it, so the
-     zoomed state drops the fields onto their own full-width row instead. */
-  .zoom:checked ~ .fields { flex: 1 1 100%; }
+     zoomed state drops the fields onto their own full-width row instead. The
+     checkbox now sits inside .left, so this asks the row rather than reaching
+     across siblings — the photo checkboxes live in there too, and they must not
+     answer it, hence the class rather than a bare :has(:checked). */
+  .body:has(.sheet-zoom:checked) .fields { flex: 1 1 100%; }
+  /* One row, always: the shots divide whatever width the sheet column has, so
+     the strip cannot wrap to a second line however many came down. Four is what
+     fetch downloads; the rest are on the lot page this card links to. */
+  .photos { display: flex; gap: .3rem; margin-top: .3rem; }
+  .shot { flex: 1 1 0; min-width: 0; aspect-ratio: 4 / 3; display: block; }
+  .shot img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    border: 1px solid var(--line); border-radius: 4px; background: #fff;
+    cursor: zoom-in;
+  }
+  /* Full size means full size: the checked shot's *label* becomes the overlay,
+     covering the viewport and centring the photograph inside it. The label is
+     what the click toggles, so the whole darkened field dismisses it — and the
+     backdrop is a background colour rather than an element, which keeps this a
+     strip of images and not a widget with a lightbox in it. */
+  .photo-zoom:checked + .shot {
+    position: fixed; inset: 0; z-index: 20; aspect-ratio: auto;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem; background: rgba(0, 0, 0, .72); cursor: zoom-out;
+  }
+  .photo-zoom:checked + .shot img {
+    width: auto; height: auto; max-width: 100%; max-height: 100%;
+    object-fit: contain; cursor: zoom-out;
+  }
+  .photo-zoom:focus-visible + .shot img { outline: 2px solid var(--money); outline-offset: 2px; }
+
   .sheet .nosheet {
-    width: 320px; height: 240px; display: flex; align-items: center;
+    width: 100%; height: 240px; display: flex; align-items: center;
     justify-content: center; border: 1px dashed var(--line); border-radius: 4px;
     color: var(--muted); font-size: .875rem; text-align: center; padding: 1rem;
   }
@@ -147,7 +185,7 @@
 
   @media (max-width: 720px) {
     .body { flex-direction: column; }
-    .zoom:checked + .sheet img { width: 100%; }
+    .left, .left:has(.sheet-zoom:checked) { width: 100%; }
   }
 </style>
 </head>
@@ -181,24 +219,43 @@
   {% endif %}
 
   <div class="body">
-    {# The checkbox precedes .sheet so `:checked +` can reach it; it is visually
-       hidden but still keyboard-reachable. #}
-    <input type="checkbox" class="zoom" id="{{ zoom_id }}"
-           aria-label="Enlarge the auction sheet for lot {{ lot.lot_short }}">
-    <label class="sheet" for="{{ zoom_id }}">
-      {% if view.sheet_uri %}
-      <img src="{{ view.sheet_uri }}" alt="Auction sheet for lot {{ lot.lot_short }}"
-           width="800" height="800">
-      {% else %}
-      <span class="nosheet">
-        {% if lot.sheet_status == 'no_sheet' %}
-        banzai24 published no sheet for this lot
+    <div class="left">
+      {# The checkbox precedes .sheet so `:checked +` can reach it; it is visually
+         hidden but still keyboard-reachable. #}
+      <input type="checkbox" class="zoom sheet-zoom" id="{{ zoom_id }}"
+             aria-label="Enlarge the auction sheet for lot {{ lot.lot_short }}">
+      <label class="sheet" for="{{ zoom_id }}">
+        {% if view.sheet_uri %}
+        <img src="{{ view.sheet_uri }}" alt="Auction sheet for lot {{ lot.lot_short }}"
+             width="800" height="800">
         {% else %}
-        sheet not downloaded ({{ lot.sheet_status }})
+        <span class="nosheet">
+          {% if lot.sheet_status == 'no_sheet' %}
+          banzai24 published no sheet for this lot
+          {% else %}
+          sheet not downloaded ({{ lot.sheet_status }})
+          {% endif %}
+        </span>
         {% endif %}
-      </span>
+      </label>
+
+      {# The car itself, under the sheet that describes it — as many shots as
+         fetch brought down, which is however many fit this one row. There is no
+         "and N more" line because the number is not known here and would cost a
+         column to store; the lot page in Links is the rest of the gallery. #}
+      {% if view.photo_uris %}
+      <div class="photos">
+        {% for photo_uri in view.photo_uris %}
+        <input type="checkbox" class="zoom photo-zoom" id="{{ zoom_id }}-photo-{{ loop.index }}"
+               aria-label="View photo {{ loop.index }} of lot {{ lot.lot_short }} full size">
+        <label class="shot" for="{{ zoom_id }}-photo-{{ loop.index }}">
+          <img src="{{ photo_uri }}" loading="lazy"
+               alt="Photo {{ loop.index }} of lot {{ lot.lot_short }}">
+        </label>
+        {% endfor %}
+      </div>
       {% endif %}
-    </label>
+    </div>
 
     <div class="fields">
       <h2>

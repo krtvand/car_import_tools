@@ -178,6 +178,10 @@ def _build_parser() -> argparse.ArgumentParser:
                             f"extract. Pages are turned as needed. "
                             f"Default {fetch.DEFAULT_MAX_LOTS}.")
         p.add_argument("--no-sheets", action="store_true", help="Skip downloading auction sheets")
+        p.add_argument("--no-photos", action="store_true", dest="no_photos",
+                       help=f"Skip downloading the lot photographs. Up to "
+                            f"{fetch.PHOTO_LIMIT} per lot otherwise — they cost a few "
+                            f"KB each and show under the sheet in the report.")
         p.add_argument("--no-normalize", action="store_true", dest="no_normalize",
                        help="Stop after writing lots.json. The run can be normalized "
                             "later with `normalize` — it needs no network.")
@@ -379,6 +383,7 @@ def main() -> None:
                 definition,
                 max_lots=args.max_lots,
                 sheets=not args.no_sheets,
+                photos=not args.no_photos,
                 headless=args.headless,
                 nearest_day_only=not args.all_days,
             )

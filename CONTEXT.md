@@ -18,6 +18,14 @@ The inspector's one-page report on a lot — grades, the damage diagram, mileage
 車歴, 車検, and free-text notes. The half of a lot the list API does not carry.
 _Avoid_: Inspection report, condition report, auction report
 
+**Lot photo**:
+One of banzai24's photographs of the car itself, as distinct from the scan of
+the auction sheet. A lot carries a dozen or more; a run downloads the first few
+and the report shows them in one row under the sheet, with the rest a click
+away on the lot page. Context for the eye, never an input to a verdict — no
+requirement is judged against a photograph.
+_Avoid_: Image (the sheet is an image too), picture, thumbnail
+
 **Damage mark**:
 One code placed on the sheet's car diagram, e.g. `A1` on the roof. The letter is
 the damage type, the digit its severity. Codes combine (`A3U2`) and are

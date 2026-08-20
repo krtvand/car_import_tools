@@ -219,8 +219,14 @@ class CyprusPricer:
 # --- one lot, ready to render ------------------------------------------------
 
 
+# The sheets arrive as JPEG and the photographs as WebP, and a data URI that
+# names the wrong one renders as a blank box rather than as a wrong-looking
+# image — so the type is read off the suffix fetch chose by sniffing the bytes.
+_MEDIA_TYPES = {".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+
+
 def _data_uri(path: Path | None) -> str | None:
-    """A sheet image as ``data:image/jpeg;base64,…``.
+    """An image as ``data:image/jpeg;base64,…``.
 
     Inlining rather than linking is what makes the report survive being copied:
     a ``<img src="sheets/47-1312-35159.jpg">`` breaks the moment the HTML is
@@ -229,8 +235,27 @@ def _data_uri(path: Path | None) -> str | None:
     """
     if path is None or not path.exists():
         return None
-    media = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+    media = _MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg")
     return f"data:{media};base64,{base64.standard_b64encode(path.read_bytes()).decode('ascii')}"
+
+
+def _photo_uris(run_dir: Path, lot_number: str) -> list[str]:
+    """This lot's downloaded photographs, inlined, in banzai24's own order.
+
+    Found on disk under the run rather than through a database column, unlike
+    the sheet: the photographs are worth nothing outside the report and are
+    never read, hashed or paid for, so a column recording where they sit would
+    be a schema to migrate for no question it can answer. A run fetched before
+    photos existed — or with ``--no-photos`` — simply has none, and the card
+    renders as it always did.
+    """
+    # Imported here rather than at module scope, for the same reason
+    # normalize.attach_sheet does it: fetch pulls in playwright, and rendering a
+    # saved run has no business requiring a browser to be installed.
+    from .fetch import photo_files
+
+    uris = [_data_uri(path) for path in photo_files(run_dir, lot_number)]
+    return [uri for uri in uris if uri]
 
 
 def _sheet_file(lot: AuctionLot) -> Path | None:
@@ -274,6 +299,7 @@ class LotView:
     quote: BidQuote | None = None      # None only when a bid table is missing
     flags: list[Flag] = field(default_factory=list)
     sheet_uri: str | None = None
+    photo_uris: list[str] = field(default_factory=list)   # a strip under the sheet
     assessment: Assessment | None = None   # None when the run named no search
     requirements: object | None = None     # the [sheet] section, for the card
 
@@ -600,6 +626,7 @@ def collect(
             quote=bid_pricer.for_lot(lot, extraction),
             flags=_flags(extraction, checks),
             sheet_uri=_data_uri(_sheet_file(lot)),
+            photo_uris=_photo_uris(run_dir, number),
             assessment=(
                 judge(definition.filters, definition.requirements, lot, extraction)
                 if definition else None

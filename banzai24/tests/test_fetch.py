@@ -66,6 +66,117 @@ def test_sheet_filename_sanitises_separators():
     assert "/" not in name and " " not in name
 
 
+def test_photos_are_typed_by_their_bytes_not_by_the_url():
+    """banzai24's image service hands out extensionless token URLs and answers
+    in WebP, so the URL cannot say what a file is — and the report inlines these
+    as data URIs, where the wrong media type is a blank box."""
+    assert fetch.image_suffix(b"RIFF\x1a\x00\x00\x00WEBPVP8X") == ".webp"
+    assert fetch.image_suffix(b"\xff\xd8\xff\xe0JFIF") == ".jpg"
+    assert fetch.image_suffix(b"\x89PNG\r\n\x1a\n") == ".png"
+
+
+def test_photos_are_found_in_the_order_banzai24_listed_them(tmp_path):
+    """Numbered, and read back by number: a plain sorted glob would put the
+    tenth shot second, and the first shots are the ones the strip shows."""
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    for index in (1, 2, 3):
+        (photos / f"{fetch.photo_stem('47-1312-35159', index)}.webp").write_bytes(b"x")
+    # Another lot's photos in the same directory must not come back with them.
+    (photos / f"{fetch.photo_stem('50-1555-53023', 1)}.webp").write_bytes(b"x")
+
+    found = fetch.photo_files(tmp_path, "47-1312-35159")
+    assert [path.name for path in found] == [
+        "47-1312-35159-photo-1.webp",
+        "47-1312-35159-photo-2.webp",
+        "47-1312-35159-photo-3.webp",
+    ]
+
+
+def test_a_run_with_no_photos_directory_simply_has_none(tmp_path):
+    """Runs fetched before photos existed, and --no-photos runs, still report."""
+    assert fetch.photo_files(tmp_path, "47-1312-35159") == []
+
+
+class _FakeClient:
+    """Stands in for httpx.AsyncClient — records what was asked for, answers WebP."""
+
+    requested: list[str] = []
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url):
+        _FakeClient.requested.append(url)
+        return _FakeResponse()
+
+
+class _FakeResponse:
+    content = b"RIFF\x1a\x00\x00\x00WEBPVP8X"
+
+    def raise_for_status(self):
+        return None
+
+
+def test_only_a_row_of_photos_comes_down_per_lot(tmp_path, monkeypatch):
+    """A lot carries a dozen shots and the report shows one row of them, so the
+    rest are neither downloaded nor inlined — the lot page holds the gallery."""
+    import asyncio
+
+    _FakeClient.requested = []
+    monkeypatch.setattr(fetch.httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(fetch, "IMAGE_DELAY_S", 0)
+
+    lot = {"lot": {"number": "47-1312-35159"},
+           "images": [f"https://x/{i}" for i in range(12)]}
+    result = FetchResult(run_dir=tmp_path, lots=[lot, {"lot": {"number": "50-1555-53023"}}],
+                         pages_fetched=1, total_pages=1, total_lots=2, truncated=False)
+
+    asyncio.run(fetch.download_photos(result))
+
+    assert len(_FakeClient.requested) == fetch.PHOTO_LIMIT
+    assert result.photos_downloaded == fetch.PHOTO_LIMIT
+    assert result.photos_missing == 1        # the lot the API listed none for
+    assert [path.name for path in fetch.photo_files(tmp_path, "47-1312-35159")] == [
+        f"47-1312-35159-photo-{i}.webp" for i in range(1, fetch.PHOTO_LIMIT + 1)
+    ]
+
+    # Re-fetching the same run re-downloads nothing.
+    asyncio.run(fetch.download_photos(result))
+    assert len(_FakeClient.requested) == fetch.PHOTO_LIMIT
+    assert result.photos_skipped == fetch.PHOTO_LIMIT
+
+
+def test_a_photo_that_fails_to_download_does_not_fail_the_run(tmp_path, monkeypatch):
+    """The sheet is what the decision is made on; the photographs are context."""
+    import asyncio
+
+    import httpx
+
+    class _Failing(_FakeClient):
+        async def get(self, url):
+            raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(fetch.httpx, "AsyncClient", _Failing)
+    monkeypatch.setattr(fetch, "IMAGE_DELAY_S", 0)
+
+    result = FetchResult(run_dir=tmp_path,
+                         lots=[{"lot": {"number": "47-1312-35159"}, "images": ["https://x/0"]}],
+                         pages_fetched=1, total_pages=1, total_lots=1, truncated=False)
+
+    asyncio.run(fetch.download_photos(result))
+
+    assert result.photos_downloaded == 0
+    assert len(result.photos_failed) == 1
+    assert "1 photos failed" in result.summary()
+
+
 def test_run_dir_is_named_for_the_query_not_an_auction(tmp_path):
     """A run spans several houses and trade days, so it is named after filters."""
     run_dir = fetch._new_run_dir(AuctionFilters(make="MAZDA", model="CX-30"), root=tmp_path)

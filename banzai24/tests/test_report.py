@@ -15,6 +15,7 @@ cross-check marks must qualify the value they belong to.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from datetime import date, datetime, timezone
@@ -362,6 +363,41 @@ def test_a_mismatch_is_marked_against_the_value_it_disagrees_with():
     assert re.search(r'<code class="bad">DMEJ3P-109999</code>', html)
 
 
+def test_the_photo_strip_prints_under_the_sheet_and_stays_inline():
+    """The photographs are the one thing the sheet cannot show you — what the
+    car looks like — so they have to survive the report being copied the same
+    way the sheet does."""
+    view = _view(extraction=_extraction(),
+                 sheet_uri="data:image/jpeg;base64,AA",
+                 photo_uris=["data:image/webp;base64,AA", "data:image/webp;base64,BB"])
+    html = _render([view])
+
+    assert html.count('class="shot"') == 2
+    assert all(src.startswith("data:") for src in re.findall(r'src="([^"]*)"', html))
+    # Under the sheet, not beside it: both live in the same column.
+    assert re.search(r'class="sheet".*class="photos"', html, re.S)
+
+
+def test_each_photo_is_its_own_full_size_toggle():
+    """Clicking one shot must enlarge that shot — and not the sheet, whose zoom
+    is the other checkbox in the same column."""
+    view = _view(sheet_uri="data:image/jpeg;base64,AA",
+                 photo_uris=["data:image/webp;base64,AA", "data:image/webp;base64,BB"])
+    html = _render([view])
+
+    ids = re.findall(r'<input type="checkbox" class="zoom photo-zoom" id="([^"]+)"', html)
+    assert len(ids) == len(set(ids)) == 2
+    assert all(f'<label class="shot" for="{photo_id}"' in html for photo_id in ids)
+    # The sheet's own checkbox is not one of them.
+    assert f'id="{ids[0]}"' != 'id="zoom-55-1850-33152"'
+
+
+def test_a_lot_with_no_photos_renders_no_strip():
+    """A run fetched with --no-photos, or a lot the API listed none for."""
+    html = _render([_view(sheet_uri="data:image/jpeg;base64,AA")])
+    assert 'class="photos"' not in html
+
+
 def test_a_lot_without_a_sheet_says_so_rather_than_rendering_a_gap():
     html = _render([_view(lot=_lot(sheet_status="no_sheet"))])
     assert "no sheet for this lot" in html
@@ -440,6 +476,36 @@ def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cypr
 
     html = report.render(built)
     assert all(src.startswith("data:") for src in re.findall(r'src="([^"]*)"', html))
+
+
+def test_collect_inlines_the_photos_the_run_downloaded(tmp_path, temp_db, no_cyprus,
+                                                      no_bid_prices):
+    """Photos are found on disk under the run, with no database column standing
+    between them and the card — and they are inlined in banzai24's order."""
+    run_dir = tmp_path / "run"
+    (run_dir / "sheets").mkdir(parents=True)
+    (run_dir / "photos").mkdir()
+    (run_dir / "lots.json").write_text(
+        (FIXTURES / "lots_run.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    from banzai24 import fetch, normalize
+
+    rows, _ = normalize.load_run(run_dir)
+    number = rows[0]["lot_number"]
+    # Deliberately out of glob order: "-photo-10" sorts before "-photo-2".
+    for index, body in ((2, b"RIFF\x00\x00\x00\x00WEBPsecond"), (1, b"RIFF\x00\x00\x00\x00WEBPfirst")):
+        (run_dir / "photos" / f"{fetch.photo_stem(number, index)}.webp").write_bytes(body)
+
+    built = report.collect(run_dir)
+    view = next(v for v in built.views if v.lot.lot_number == number)
+
+    assert len(view.photo_uris) == 2
+    assert all(uri.startswith("data:image/webp;base64,") for uri in view.photo_uris)
+    assert base64.b64decode(view.photo_uris[0].split(",", 1)[1]).endswith(b"first")
+    assert base64.b64decode(view.photo_uris[1].split(",", 1)[1]).endswith(b"second")
+    # …and only for the lot whose files are there.
+    assert [len(v.photo_uris) for v in built.views] == [2]
 
 
 def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no_cyprus,
