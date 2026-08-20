@@ -12,7 +12,7 @@ grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
-body_model_code = ["BP5P", "KF5P"]
+body_model_code = ["BP5P", "BP5R", "KF5P"]
 exclude_colours = ["black", "blue"]
 
 [sheet]
