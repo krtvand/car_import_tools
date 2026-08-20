@@ -616,6 +616,24 @@ def collect(
 # --- rendering ---------------------------------------------------------------
 
 
+def _yen(v: int | None) -> str | None:
+    """A yen price split as "¥ 1849 000" — thousands, space, the last three digits.
+
+    The bidding platform takes a bid in thousands of yen, so the number you
+    actually type is the group before the space. Grouping the usual way
+    ("¥1,849,000") means doing that division in your head at the one moment
+    you can least afford to get it wrong. Under ¥1000 there is nothing to
+    split, so those print plain.
+    """
+    if v is None:
+        return None
+    thousands, rest = divmod(abs(v), 1000)
+    sign = "-" if v < 0 else ""
+    if not thousands:
+        return f"¥{sign}{rest}"
+    return f"¥ {sign}{thousands} {rest:03d}"
+
+
 def _environment() -> Environment:
     # `autoescape=True` rather than `select_autoescape`: that helper keys on the
     # file extension and would see ".j2", not ".html", and quietly leave escaping
@@ -630,7 +648,7 @@ def _environment() -> Environment:
     )
     # Japanese text goes into the page verbatim; autoescape handles the escaping,
     # these only handle the numbers.
-    env.filters["yen"] = lambda v: f"¥{v:,}" if v is not None else None
+    env.filters["yen"] = _yen
     env.filters["km"] = lambda v: f"{v:,} km" if v is not None else None
     env.filters["check"] = _check_class
     env.filters["verdict"] = _verdict_class

@@ -35,6 +35,7 @@ class CarRecord:
     fuel_type: str | None = None
     gearbox: str | None = None
     seller_type: str | None = None
+    availability: str | None = None
     is_active: bool = True
     days_on_market: int | None = None
 
@@ -52,6 +53,7 @@ def to_records(listings) -> list[CarRecord]:
             fuel_type=l.fuel_type,
             gearbox=l.gearbox,
             seller_type=l.seller_type,
+            availability=getattr(l, "availability", None),
             is_active=l.is_active,
             days_on_market=l.days_on_market,
         )
@@ -126,6 +128,25 @@ def filter_fuel(records, fuel_type: str | None = None) -> list[CarRecord]:
     if fuel_key is None:
         return list(records)
     return [r for r in records if _normalise(r.fuel_type) == fuel_key]
+
+
+# Adverts the site marks as not yet on the island: the price is an import quote
+# for a car nobody can view or buy today, so it does not belong in a market fit.
+IN_TRANSIT = "In transit"
+
+
+def exclude_availability(records, *availabilities: str) -> list[CarRecord]:
+    """Drop records whose availability matches any of ``availabilities``.
+
+    Case/punctuation-insensitive, and the mirror image of :func:`filter_fuel`:
+    this is an *exclusion*, so a record whose availability is unknown
+    (``None``) is kept -- it cannot be shown to be one of the excluded states.
+    Calling it with no availabilities is a no-op.
+    """
+    keys = {_normalise(a) for a in availabilities}
+    if not keys:
+        return list(records)
+    return [r for r in records if _normalise(r.availability) not in keys]
 
 
 # ---------------------------------------------------------------------------
@@ -652,11 +673,15 @@ def estimate_from_db(
     mileage_range: tuple[int, int] | None = None,
     fuel_type: str | None = None,
 ) -> SalePriceEstimate:
-    """DB-backed :func:`estimate_sale_price`: reads listings and price histories."""
+    """DB-backed :func:`estimate_sale_price`: reads listings and price histories.
+
+    Adverts marked :data:`IN_TRANSIT` are dropped before anything is computed --
+    they are import quotes for cars not yet on the island, not the local market.
+    """
     from . import db
 
     listings = db.all_listings()
-    records = to_records(listings)
+    records = exclude_availability(to_records(listings), IN_TRANSIT)
     scoped = filter_model(records, make, model)
     histories = [[o.price for o in db.price_history(r.ad_id)] for r in scoped]
     return estimate_sale_price(

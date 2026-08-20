@@ -74,6 +74,29 @@ def test_filter_fuel_without_a_fuel_is_a_no_op():
     assert analysis.filter_fuel(records) == records
 
 
+# --- exclude_availability ---------------------------------------------------
+
+def test_exclude_availability_drops_the_named_state_case_insensitively():
+    records = [
+        rec(ad_id=1, availability="In stock"),
+        rec(ad_id=2, availability="In transit"),
+        rec(ad_id=3, availability="in-transit"),
+    ]
+    out = analysis.exclude_availability(records, analysis.IN_TRANSIT)
+    assert {r.ad_id for r in out} == {1}
+
+
+def test_exclude_availability_keeps_unknown_availability():
+    records = [rec(ad_id=1, availability=None), rec(ad_id=2, availability="In transit")]
+    out = analysis.exclude_availability(records, "In transit")
+    assert {r.ad_id for r in out} == {1}
+
+
+def test_exclude_availability_without_arguments_is_a_no_op():
+    records = [rec(ad_id=1, availability="In transit"), rec(ad_id=2, availability=None)]
+    assert analysis.exclude_availability(records) == records
+
+
 # --- outlier hygiene --------------------------------------------------------
 
 def test_is_usable_accepts_plausible_record():
@@ -444,6 +467,36 @@ def test_estimate_from_db_reads_listings_and_histories(tmp_path, monkeypatch):
     assert est.sale_price == pytest.approx(est.asking_estimate * est.adjustment_factor, rel=1e-9)
 
 
+def test_estimate_from_db_drops_in_transit_adverts(tmp_path, monkeypatch):
+    from sqlmodel import create_engine
+    from bazaraki import db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'transit.db'}")
+    monkeypatch.setattr(db, "_engine", engine)
+    db.init_db()
+
+    for i in range(10):
+        age, mileage = i, 20_000 + 12_000 * i
+        db.upsert_listing({
+            "ad_id": i, "title": f"Mazda CX-5 {i}", "url": f"/adv/{i}/",
+            "make": "Mazda", "model": "CX-5", "availability": "In stock",
+            "year": REF_YEAR - age, "mileage_km": mileage,
+            "price": _price(age, mileage),
+        })
+    # An in-transit import quote at triple the market price: excluded, so the
+    # fit is unchanged from the ten in-stock rows.
+    db.upsert_listing({
+        "ad_id": 99, "title": "Mazda CX-5 import", "url": "/adv/99/",
+        "make": "Mazda", "model": "CX-5", "availability": "In transit",
+        "year": REF_YEAR - 2, "mileage_km": 44_000, "price": 3 * _price(2, 44_000),
+    })
+
+    est = analysis.estimate_from_db(
+        "Mazda", "CX-5", year_range=(2018, 2022), mileage_range=(40_000, 80_000)
+    )
+    assert est.n == 10
+
+
 # --- to_records -------------------------------------------------------------
 
 # --- comparables ------------------------------------------------------------
@@ -532,6 +585,7 @@ def test_to_records_projects_listing_attributes():
         fuel_type = "Petrol"
         gearbox = "Automatic"
         seller_type = "dealer"
+        availability = "In stock"
         is_active = True
         days_on_market = 42
 
@@ -539,5 +593,6 @@ def test_to_records_projects_listing_attributes():
     assert r == CarRecord(
         ad_id=7, price=15000.0, year=2019, mileage_km=80000,
         make="Mazda", model="CX-5", fuel_type="Petrol", gearbox="Automatic",
-        seller_type="dealer", is_active=True, days_on_market=42,
+        seller_type="dealer", availability="In stock", is_active=True,
+        days_on_market=42,
     )
