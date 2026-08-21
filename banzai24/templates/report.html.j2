@@ -430,6 +430,30 @@
         </dd>
         {% endif %}
 
+        {# What that max bid costs on Cyprus plates, against what the car sells
+           for here. Priced from `max_bid` rather than `bid_reduced`: the area
+           price is paid in Japan for the car and belongs in the customs value.
+           The rates are the ones stamped into the run the morning it was
+           fetched, so this number never moves under a re-render. A string here
+           is a reason the car could not be priced — usually a missing model
+           spec — and prints where the money would go. #}
+        {% if view.margin %}
+        <dt>Landed</dt>
+        <dd class="money">
+          {% if view.margin is string %}
+          <span class="why">{{ view.margin }}</span>
+          {% else %}
+          {% for line in view.margin.lines() %}
+          {% if loop.index == 3 %}
+          <span class="result">{{ line }}</span>
+          {% else %}
+          <span>{{ line }}</span>
+          {% endif %}
+          {% endfor %}
+          {% endif %}
+        </dd>
+        {% endif %}
+
         <dt>Links</dt>
         <dd class="note">
           {% if view.lot_url %}<a href="{{ view.lot_url }}">banzai24 lot page</a> · {% endif %}
@@ -476,6 +500,12 @@
        still price — only the six houses it covers stop matching. #}
     {% if report.bid_reason %}
     <li>{{ report.bid_reason }}{% if not report.quoted %} — no bid price on any card below{% endif %}.</li>
+    {% endif %}
+    {# Report-wide, so it prints once. "No exchange rates for this run" is the
+       ordinary reason: runs fetched before rates were stamped have none, and
+       re-computing at today's rate would rewrite an old morning's decision. #}
+    {% if report.landed_reason %}
+    <li>No landed cost: {{ report.landed_reason }}.</li>
     {% endif %}
   </ul>
 </header>

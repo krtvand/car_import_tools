@@ -9,15 +9,19 @@ This is the step a spreadsheet cannot do: *the sheet scan next to the fields
 read off it*. Grade 4.5 with an `A1` on the roof means nothing without the
 picture — you need to see how big the scratch is drawn.
 
-Three sources meet here, and each answers something the others cannot:
+Several sources meet here, and each answers something the others cannot:
 
-* the **run directory** says which lots this run is about (``lots.json``);
+* the **run directory** says which lots this run is about (``lots.json``), and
+  carries the exchange rates the morning was priced at (``rates.json``);
 * **auction.db** holds what is known about them across every run — the API
   fields and the paid extraction;
 * **bazaraki.db** holds the Cyprus asking prices, which is the only thing that
   turns a grade and a mileage into a decision about money;
 * the **bid tables** under ``inputs/`` turn that into the number you type into
-  the bidding platform — see :mod:`banzai24.bidding`.
+  the bidding platform — see :mod:`banzai24.bidding`;
+* the **model specs** under ``price_calculator/inputs/`` turn that bid into a
+  landed cost in euro, and the landed cost into a margin — see
+  :mod:`price_calculator`.
 
 Regenerating is free — no network, no browser, no model call — so a template
 tweak is a re-run of ``report``, never a re-fetch or a re-extract.
@@ -35,6 +39,7 @@ from jinja2 import Environment, FileSystemLoader
 from . import db, normalize, search, sheets
 from .bidding import BidPricer, BidQuote
 from .models import AuctionLot, SheetExtraction
+from .money import format_yen
 from .requirements import (
     GROUP_BLURBS,
     GROUP_LABELS,
@@ -216,6 +221,75 @@ class CyprusPricer:
         )
 
 
+# --- landed cost and margin --------------------------------------------------
+
+
+class LandedPricer:
+    """What a lot costs on Cyprus plates, against what it sells for here.
+
+    Third pricer on this page and the only one that answers *money you keep*:
+    :class:`CyprusPricer` says what the same car is being asked for,
+    :class:`BidPricer` says what to type into the platform, and this one puts the
+    landed cost of that bid next to a resale estimate. See
+    :mod:`price_calculator` for the arithmetic — a port of the sheet, kept pure
+    so it can be checked against the sheet's own worked example.
+
+    **The rates come from the run, not from the clock.** ``fetch`` stamps
+    ``rates.json`` into the run directory the morning it runs; a run made before
+    that existed, or on a morning the rate API was down, simply has no landed
+    cost on its cards. Re-computing at today's rate would mean this page quietly
+    disagreeing in September with the decision you made in August, which is worth
+    less than a blank line.
+
+    The **auction price is the lot's ``max_bid``**, not its ``bid_reduced``.
+    ``max_bid`` is the all-in maximum *at the auction* — hammer plus the house's
+    area price — and every yen of it is paid in Japan for the car, so all of it
+    belongs in the customs value the VAT is charged on. Pricing from
+    ``bid_reduced`` would drop the area cost out of the landed total and flatter
+    every margin by ¥4,000–¥47,000.
+    """
+
+    def __init__(self, run_dir: Path | None = None, rates=None):
+        from price_calculator.sources import CyprusMarket, ModelSpecs, read_rates
+
+        self.rates = rates if rates is not None else (
+            read_rates(run_dir) if run_dir is not None else None)
+        self.reason: str | None = None
+        if self.rates is None:
+            self.specs = self.market = None
+            self.available = False
+            self.reason = "no exchange rates for this run"
+            return
+
+        self.specs = ModelSpecs()
+        self.market = CyprusMarket()
+        self.available = self.specs.available
+        self.reason = self.specs.reason
+
+    def for_lot(self, lot: AuctionLot, quote: BidQuote | None,
+                extraction: SheetExtraction | None = None):
+        """A :class:`~price_calculator.calculator.Margin`, a reason string, or ``None``.
+
+        ``None`` when the pricer itself is unavailable — that reason is
+        report-wide and prints once in the header rather than on every card. A
+        lot with no ``max_bid`` has nothing to price and also returns ``None``:
+        the bid line above already says why, and repeating it is the same fact
+        printed twice.
+        """
+        from banzai24.bidding import sheet_first
+        from price_calculator.sources import margin_for
+
+        if not self.available or quote is None or quote.max_bid is None:
+            return None
+
+        year, mileage = sheet_first(lot, extraction)
+        return margin_for(
+            make=lot.mark, model=lot.model, year=year, mileage_km=mileage,
+            auction_price_jpy=quote.max_bid, rates=self.rates,
+            specs=self.specs, market=self.market,
+        )
+
+
 # --- one lot, ready to render ------------------------------------------------
 
 
@@ -297,6 +371,7 @@ class LotView:
     checks: CrossCheck | None = None
     comp: CyprusComp | None = None
     quote: BidQuote | None = None      # None only when a bid table is missing
+    margin: object | None = None       # Margin, a reason string, or None (see LandedPricer)
     flags: list[Flag] = field(default_factory=list)
     sheet_uri: str | None = None
     photo_uris: list[str] = field(default_factory=list)   # a strip under the sheet
@@ -500,6 +575,7 @@ class Report:
     missing: list[str] = field(default_factory=list)   # in the run, not in the DB
     cyprus_reason: str | None = None                   # why the € column is empty
     bid_reason: str | None = None                      # why *no* card has a bid price
+    landed_reason: str | None = None                   # why *no* card has a landed cost
     definition: SearchDefinition | None = None         # the search this run ran
     search_reason: str | None = None                   # why it is missing, or stale
     output: Path | None = None
@@ -576,6 +652,7 @@ def collect(
     all_lots: bool = False,
     pricer: CyprusPricer | None = None,
     bid_pricer: BidPricer | None = None,
+    landed_pricer: LandedPricer | None = None,
     definition: SearchDefinition | None = None,
 ) -> Report:
     """Gather one run's lots into sorted, render-ready views.
@@ -606,6 +683,7 @@ def collect(
     extractions = db.extractions_by_numbers(numbers)
     pricer = pricer or CyprusPricer()
     bid_pricer = bid_pricer or BidPricer()
+    landed_pricer = landed_pricer or LandedPricer(run_dir)
 
     views, missing = [], []
     for row in rows:
@@ -618,12 +696,14 @@ def collect(
         extraction = extractions.get(number)
         checks = sheets.cross_check(extraction, lot) if extraction else None
 
+        quote = bid_pricer.for_lot(lot, extraction)
         views.append(LotView(
             lot=lot,
             extraction=extraction,
             checks=checks,
             comp=pricer.for_lot(lot),
-            quote=bid_pricer.for_lot(lot, extraction),
+            quote=quote,
+            margin=landed_pricer.for_lot(lot, quote, extraction),
             flags=_flags(extraction, checks),
             sheet_uri=_data_uri(_sheet_file(lot)),
             photo_uris=_photo_uris(run_dir, number),
@@ -637,28 +717,11 @@ def collect(
     views.sort(key=lambda view: view.sort_key)
     return Report(run_dir=run_dir, views=views, missing=missing,
                   cyprus_reason=pricer.reason, bid_reason=bid_pricer.reason,
+                  landed_reason=landed_pricer.reason,
                   definition=definition, search_reason=search_reason)
 
 
 # --- rendering ---------------------------------------------------------------
-
-
-def _yen(v: int | None) -> str | None:
-    """A yen price split as "¥ 1849 000" — thousands, space, the last three digits.
-
-    The bidding platform takes a bid in thousands of yen, so the number you
-    actually type is the group before the space. Grouping the usual way
-    ("¥1,849,000") means doing that division in your head at the one moment
-    you can least afford to get it wrong. Under ¥1000 there is nothing to
-    split, so those print plain.
-    """
-    if v is None:
-        return None
-    thousands, rest = divmod(abs(v), 1000)
-    sign = "-" if v < 0 else ""
-    if not thousands:
-        return f"¥{sign}{rest}"
-    return f"¥ {sign}{thousands} {rest:03d}"
 
 
 def _environment() -> Environment:
@@ -675,7 +738,7 @@ def _environment() -> Environment:
     )
     # Japanese text goes into the page verbatim; autoescape handles the escaping,
     # these only handle the numbers.
-    env.filters["yen"] = _yen
+    env.filters["yen"] = format_yen
     env.filters["km"] = lambda v: f"{v:,} km" if v is not None else None
     env.filters["check"] = _check_class
     env.filters["verdict"] = _verdict_class

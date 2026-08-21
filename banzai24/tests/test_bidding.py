@@ -96,7 +96,7 @@ def test_the_money_block_names_all_three_numbers_and_the_house(tmp_path):
     rendering — and so the page stays a layout."""
     quote = _pricer(tmp_path).for_lot(_lot(), _extraction())
     assert quote.describe() == (
-        "max bid ¥1,855,000 · area (U Tokyo) −¥12,000 · bid reduced ¥1,843,000"
+        "max bid ¥ 1855 000 · area (U Tokyo) −¥ 12 000 · bid reduced ¥ 1843 000"
     )
 
 
@@ -108,7 +108,7 @@ def test_a_null_bid_reduced_prints_its_reason_where_the_number_was(tmp_path):
     assert quote.bid_reduced is None
     assert quote.extra_costs == 12_000
     assert quote.describe() == (
-        "max bid — · area (U Tokyo) −¥12,000 · "
+        "max bid — · area (U Tokyo) −¥ 12 000 · "
         "no table row for MAZDA CX-30 2017 · 15,000 km · private"
     )
 
@@ -271,7 +271,7 @@ def test_an_area_cost_above_the_max_bid_is_not_a_bid_of_zero(tmp_path):
     quote = pricer.for_lot(_lot(), _extraction())
 
     assert quote.bid_reduced is None
-    assert quote.reason == "area cost ¥47,000 exceeds max bid ¥30,000"
+    assert quote.reason == "area cost ¥ 47 000 exceeds max bid ¥ 30 000"
     assert quote.max_bid == 30_000 and quote.extra_costs == 47_000
 
 

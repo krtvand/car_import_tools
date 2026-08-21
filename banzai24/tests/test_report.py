@@ -313,7 +313,7 @@ def test_a_failing_lot_still_carries_its_bid_price():
         extraction=_extraction(damage_marks=json.dumps([{"panel": "door", "code": "W2"}])),
         quote=BidQuote(max_bid=1_855_000, extra_costs=6_000, bid_reduced=1_849_000)))
     assert view.group == "fails"
-    assert "1,849,000" in _render([view])
+    assert "¥ 1849 000" in _render([view])
 
 
 # --- rendering ---------------------------------------------------------------
@@ -602,9 +602,9 @@ def test_the_money_block_reaches_the_card():
                      house="U Tokyo")
     html = _render([_view(extraction=_extraction(), quote=quote)])
 
-    assert "max bid ¥1,855,000" in html
-    assert "area (U Tokyo) −¥12,000" in html
-    assert "bid reduced ¥1,843,000" in html
+    assert "max bid ¥ 1855 000" in html
+    assert "area (U Tokyo) −¥ 12 000" in html
+    assert "bid reduced ¥ 1843 000" in html
 
 
 def test_a_lot_that_cannot_be_priced_prints_why_instead_of_a_number():
@@ -618,7 +618,7 @@ def test_a_lot_that_cannot_be_priced_prints_why_instead_of_a_number():
     html = _render([_view(quote=quote)])
 
     assert "sheet does not say rental or private" in html
-    assert "area (U Tokyo) −¥12,000" in html
+    assert "area (U Tokyo) −¥ 12 000" in html
     assert "bid reduced" not in html
 
 

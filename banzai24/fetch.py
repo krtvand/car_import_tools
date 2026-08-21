@@ -510,7 +510,29 @@ async def fetch_lots(
         lots_filtered_out=len(chosen.rejected),
     )
     _write_lots_json(result, definition, url, payloads)
+    _stamp_rates(run_dir)
     return result
+
+
+def _stamp_rates(run_dir: Path) -> None:
+    """Record today's exchange rates in the run, for the landed cost on the report.
+
+    Here rather than in ``report`` because a landed cost is a statement about a
+    *moment*: the rate that decides whether you bid on a car this morning is this
+    morning's rate, and re-opening the page in September must not quietly rewrite
+    the decision. Stamping it also keeps ``report`` free of the network, which is
+    the promise that makes re-rendering a template tweak cost nothing.
+
+    A failure here is silent by design. The rate API being down is not a reason to
+    lose a morning's fetch — it costs the landed-cost line on those cards, and
+    ``report`` says so per card rather than here.
+    """
+    from price_calculator.sources import RatesUnavailable, fetch_rates, write_rates
+
+    try:
+        write_rates(run_dir, fetch_rates())
+    except (RatesUnavailable, OSError):
+        pass
 
 
 def _enough(

@@ -38,6 +38,14 @@ Whether the sheet says the car was privately owned, ex-rental, ex-lease and so
 on. A price input, not a requirement — an unreadable box is priced as private.
 _Avoid_: History, ownership, usage
 
+**Model spec**:
+The manufacturer's figures for one model over a span of years — body length,
+width, height, CO₂. True of every car of that model, never of one lot: a lot is
+one car on one day, a model spec is the catalogue behind it. Only the dimensions
+are read today; they decide shipping volume, and so the freight half of a landed
+cost.
+_Avoid_: Dimensions, car spec, vehicle data, model (which is a string on a lot)
+
 ### Deciding what to look at
 
 **Search definition**:
@@ -99,5 +107,30 @@ _Avoid_: Final bid, our bid, target price
 
 **Cyprus comparable**:
 The median asking price for the same make, model, year and mileage band in
-Cyprus. Context for a decision, never an input to a bid.
+Cyprus. Context for a decision, never an input to a bid — it still sets no
+number you type anywhere. It now also sits beside a *margin*, which is a thing
+you read rather than a thing that bids; the day a comparable starts choosing a
+max bid, this line stops being true and should be rewritten rather than quietly
+stretched.
 _Avoid_: Market price, resale value
+
+**Landed cost**:
+Everything paid between the hammer falling in Japan and the car standing on
+Cyprus plates — auction price, exporter fees, freight, VAT, and the fixed bills
+at this end. Your profit is not in it. Ported from the operator's spreadsheet;
+see `price_calculator/price_calculator_spec.md`.
+_Avoid_: Total cost, import price, all-in (which is what a *max bid* is, at the
+auction and in yen)
+
+**Cyprus estimate**:
+What the same car would realistically *sell* for here — the fitted asking curve
+with a resale haircut on it. A different claim from a **Cyprus comparable**,
+which is what cars are being *asked* for: one is the market's opening position,
+the other a guess at where it closes.
+_Avoid_: Sale price, market value, resale price
+
+**Margin**:
+`Cyprus estimate − landed cost − resale costs`, in euro and as a percentage of
+the landed cost. What the car is expected to earn. Never an input to anything —
+it is the number the page exists to show you.
+_Avoid_: Profit, spread, ROI

@@ -500,6 +500,15 @@ def sale_adjustment_factor(
     With neither signal available it returns ``default``. The combination is
     intentionally simple and provisional — Part D calibrates it once weeks of
     delisting data have accrued.
+
+    **A survivorship factor at or above 1.0 is ignorance, not the absence of a
+    discount** — see ``docs/adr/0002-unmeasured-survivorship-is-ignorance.md``.
+    The clamp below encodes the belief that this factor can only ever *be* a
+    discount; a value above 1 is that belief being contradicted by the data, and
+    treating it as a measured "no discount" is how a signal that learned nothing
+    came to suppress ``default`` entirely. The CX-5's 14 fast sales against 82
+    lingering adverts produced 1.0059 — plenty of rows, no signal — and it
+    silently held every Mazda's sale price at its asking price.
     """
     factor = 1.0
     used = False
@@ -510,7 +519,11 @@ def sale_adjustment_factor(
     ):
         factor *= 1.0 - price_cut.median_cut
         used = True
-    if survivorship is not None and survivorship.factor is not None:
+    if (
+        survivorship is not None
+        and survivorship.factor is not None
+        and survivorship.factor < 1.0
+    ):
         factor *= survivorship.factor
         used = True
     if not used:

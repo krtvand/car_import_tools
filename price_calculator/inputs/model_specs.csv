@@ -1,0 +1,10 @@
+Model specs — manufacturer figures per model generation. SEEDED, UNVERIFIED.
+Dimensions drive shipping volume and freight was 17% of CNF on the reference car:
+check these against a catalogue before trusting a margin. A wrong length of 20 cm
+is roughly EUR 150. co2_gkm is recorded but unread (road tax is flat EUR 11 today).
+body_model_code lists the codes a row covers; it is read by humans, matched by nothing.
+make,model,year_from,year_to,length_cm,width_cm,height_cm,co2_gkm,body_model_code
+MAZDA,CX-30,2019,2026,439.5,179.5,154.0,133,DMEJ3P DMEJ3R DMFP
+MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,KFEP KF5P
+MAZDA,3,2019,2026,446.0,179.5,144.0,128,BP5P BP5R
+TOYOTA,RAV4,2019,2026,460.0,185.5,169.0,126,AXAH54 AXAP54 MXAA52 MXAA54

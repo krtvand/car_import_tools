@@ -52,6 +52,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .money import format_yen
+
 INPUTS_DIR = Path(__file__).parent / "inputs"
 BID_PRICES_PATH = INPUTS_DIR / "bid_prices.csv"
 AREA_PRICES_PATH = INPUTS_DIR / "auction_area_prices_2026.csv"
@@ -318,12 +320,12 @@ class BidQuote:
     def lines(self) -> list[str]:
         """The money block, one string per line."""
         assumed = " — assuming private, sheet did not say" if self.assumed_private else ""
-        parts = [f"max bid ¥{self.max_bid:,}{assumed}" if self.max_bid is not None
+        parts = [f"max bid {format_yen(self.max_bid)}{assumed}" if self.max_bid is not None
                  else "max bid —"]
         label = f" ({self.house})" if self.house else ""
-        parts.append(f"area{label} −¥{self.extra_costs:,}" if self.extra_costs is not None
+        parts.append(f"area{label} −{format_yen(self.extra_costs)}" if self.extra_costs is not None
                      else f"area{label} —")
-        parts.append(f"bid reduced ¥{self.bid_reduced:,}" if self.bid_reduced is not None
+        parts.append(f"bid reduced {format_yen(self.bid_reduced)}" if self.bid_reduced is not None
                      else (self.reason or "no bid price"))
         return parts
 
@@ -350,6 +352,33 @@ def _rental_kind(extraction) -> tuple[str, bool]:
         if extraction.private_car_note:
             return "private", False
     return "private", True
+
+
+def sheet_first(lot, extraction) -> tuple[int | None, int | None]:
+    """``(year, mileage_km)`` with **the sheet winning and the API filling its nulls**.
+
+    ``docs/adr/0001-sheet-outranks-api.md``. The API rounds mileage to the nearest
+    1,000 while the sheet prints it to the kilometre, so a car whose sheet reads
+    50,415 km must not be priced from the *under-50,000* band.
+
+    Public and shared because the max bid is no longer the only number keyed on
+    these two: :class:`banzai24.report.LandedPricer` looks up a model spec and a
+    Cyprus resale estimate on the same pair. Two copies of this precedence is
+    exactly the bug the ADR describes — one number read off the sheet and the one
+    below it off a rounded copy — so there is one copy.
+
+    A sheet null is not a zero: where the sheet is silent the API's value is used
+    unchanged, and where neither has one the answer is ``None``.
+    """
+    year = extraction.first_registration_year if extraction else None
+    if year is None:
+        year = lot.registration_year
+
+    mileage = extraction.sheet_mileage_km if extraction else None
+    if mileage is None:
+        mileage = lot.mileage_km
+
+    return year, mileage
 
 
 def _load(label, path, loader, empty, quiet_when_absent=False):
@@ -421,8 +450,8 @@ class BidPricer:
                 # Not a bid of nothing, and not a negative number to type into a
                 # platform — it is "do not buy this car at this house", and it
                 # should not look like a price.
-                reason = (f"area cost ¥{extra_costs:,} exceeds "
-                          f"max bid ¥{max_bid:,}")
+                reason = (f"area cost {format_yen(extra_costs)} exceeds "
+                          f"max bid {format_yen(max_bid)}")
             else:
                 bid_reduced = remaining
 
@@ -455,15 +484,9 @@ class BidPricer:
         """
         rental, assumed_private = _rental_kind(extraction)
 
-        year = (extraction.first_registration_year if extraction else None)
-        if year is None:
-            year = lot.registration_year
+        year, mileage = sheet_first(lot, extraction)
         if year is None:
             return None, "missing year", assumed_private
-
-        mileage = (extraction.sheet_mileage_km if extraction else None)
-        if mileage is None:
-            mileage = lot.mileage_km
         if mileage is None:
             return None, "missing mileage", assumed_private
 
