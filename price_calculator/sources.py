@@ -1,4 +1,4 @@
-"""Where the calculator's inputs come from: a CSV, a rate API, two databases.
+"""Where the calculator's inputs come from: a CSV, a TOML, a rate API, two databases.
 
 :mod:`price_calculator.calculator` is pure and knows none of this. Everything
 that reads a file, opens a socket or looks at a clock lives here — the same
@@ -20,15 +20,24 @@ from __future__ import annotations
 import csv
 import json
 import re
+import tomllib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from .calculator import Margin, ModelSpec, Rates, landed_cost
+from .calculator import (
+    CostBook,
+    Margin,
+    ModelSpec,
+    Rates,
+    ServiceFeeTier,
+    landed_cost,
+)
 
 INPUTS_DIR = Path(__file__).parent / "inputs"
 MODEL_SPECS_PATH = INPUTS_DIR / "model_specs.csv"
+COSTS_PATH = INPUTS_DIR / "costs.toml"
 
 MODEL_SPEC_HEADER = ("make", "model", "year_from", "year_to", "length_cm",
                      "width_cm", "height_cm", "co2_gkm", "body_model_code")
@@ -194,6 +203,172 @@ class ModelSpecs:
         for spec in self.specs:
             if (_fold(spec.make), _fold(spec.model)) == key and spec.covers(year):
                 return spec
+        return None
+
+
+# --- the cost book -----------------------------------------------------------
+
+COSTS_FILENAME = "costs.json"
+
+
+class CostBookError(ValueError):
+    """``costs.toml`` is unreadable, incomplete, or holds something that is not a price.
+
+    Unlike :class:`ModelSpecError` this is **not** degraded into a ``reason``
+    string by its callers, and the difference is blast radius. A missing model
+    spec costs you one card; a fat-fingered comma in the cost book makes every
+    number on every card wrong, and forty rows silently reading "no landed cost"
+    is a worse morning than one line on stderr. See ADR 0003.
+    """
+
+
+def _at(payload: dict, dotted: str, path: Path):
+    """The value at ``exporter.fixed_fee_jpy``, or a ``CostBookError`` naming it."""
+    node = payload
+    for key in dotted.split("."):
+        if not isinstance(node, dict) or key not in node:
+            raise CostBookError(f"{path.name}: missing {dotted}")
+        node = node[key]
+    return node
+
+
+def _price(payload: dict, dotted: str, path: Path) -> Decimal:
+    """One number from the file, as a :class:`~decimal.Decimal`.
+
+    A TOML float is rejected rather than converted. ``vat_rate = 0.19`` parses to
+    a binary float that is not 0.19, and a fraction of a cent per car is exactly
+    the kind of drift that makes a port disagree with the spreadsheet for no
+    findable reason — so rates are written quoted, and this says so when they
+    are not.
+    """
+    value = _at(payload, dotted, path)
+    if isinstance(value, float):
+        raise CostBookError(
+            f"{path.name}: {dotted} is a decimal number ({value}) — quote it "
+            f'as a string ("{value}") so it is read exactly')
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise CostBookError(f"{path.name}: {dotted} is not a number ({value!r})")
+    try:
+        return Decimal(str(value).strip())
+    except InvalidOperation:
+        raise CostBookError(f"{path.name}: {dotted} is not a number ({value!r})") from None
+
+
+def load_cost_book(path: Path = COSTS_PATH) -> CostBook:
+    """Read ``costs.toml``. Raises :class:`CostBookError` on anything at all.
+
+    Every field is required. There is no default, no partial book and no
+    last-known-good copy in code, because that copy is the one that would go
+    stale unnoticed — which is the failure ADR 0003 exists to prevent.
+    """
+    try:
+        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise CostBookError(f"{path}: no cost book (expected {path.name})") from None
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as exc:
+        raise CostBookError(f"{path.name}: {exc}") from exc
+
+    rows = _at(payload, "exporter.service_fee", path)
+    if not isinstance(rows, list) or not rows:
+        raise CostBookError(f"{path.name}: exporter.service_fee has no tiers")
+    tiers = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise CostBookError(f"{path.name}: exporter.service_fee #{index} is not a table")
+        tiers.append(ServiceFeeTier(
+            up_to_jpy=_price({"t": row}, "t.up_to_jpy", path),
+            fee_jpy=_price({"t": row}, "t.fee_jpy", path),
+        ))
+
+    updated = payload.get("updated")
+    if updated is not None and not isinstance(updated, date):
+        raise CostBookError(f"{path.name}: updated is not a date ({updated!r})")
+
+    book = CostBook(
+        service_fee_tiers=tuple(tiers),
+        exporter_fixed_fee_jpy=_price(payload, "exporter.fixed_fee_jpy", path),
+        certificate_of_origin_jpy=_price(payload, "exporter.certificate_of_origin_jpy", path),
+        roro_per_m3_usd=_price(payload, "freight.roro_per_m3_usd", path),
+        freight_insurance_usd=_price(payload, "freight.insurance_usd", path),
+        vat_rate=_price(payload, "taxes.vat_rate", path),
+        duty_rate=_price(payload, "taxes.duty_rate", path),
+        bank_fx_rate=_price(payload, "bank.fx_rate", path),
+        international_transfer_eur=_price(payload, "bank.international_transfer_eur", path),
+        eur_jpy_spread=_price(payload, "bank.eur_jpy_spread", path),
+        sva_test_eur=_price(payload, "cyprus.sva_test_eur", path),
+        mot_eur=_price(payload, "cyprus.mot_eur", path),
+        registration_eur=_price(payload, "cyprus.registration_eur", path),
+        customs_clearance_eur=_price(payload, "cyprus.customs_clearance_eur", path),
+        number_plates_eur=_price(payload, "cyprus.number_plates_eur", path),
+        car_service_eur=_price(payload, "cyprus.car_service_eur", path),
+        insurance_eur=_price(payload, "cyprus.insurance_eur", path),
+        road_tax_eur=_price(payload, "cyprus.road_tax_eur", path),
+        resale_costs_eur=_price(payload, "resale.costs_eur", path),
+        updated=updated,
+        source=str(payload.get("source", "")),
+    )
+
+    problems = book.problems()
+    if problems:
+        raise CostBookError(f"{path.name}: " + "; ".join(problems))
+    return book
+
+
+def write_costs(run_dir: Path, costs: CostBook) -> Path:
+    """Stamp the prices into a run, for the reason :func:`write_rates` gives.
+
+    The rates were never the only thing that moves. Exporter service fees went up
+    by ¥3,000–¥23,000 a band in August; a report that re-read today's book would
+    reprice every car it had already priced, and August's page would stop
+    matching August's decision.
+    """
+    path = run_dir / COSTS_FILENAME
+    payload = {
+        "service_fee_tiers": [{"up_to_jpy": str(t.up_to_jpy), "fee_jpy": str(t.fee_jpy)}
+                              for t in costs.service_fee_tiers],
+        "updated": costs.updated.isoformat() if costs.updated else None,
+        "source": costs.source,
+    }
+    for field in ("exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
+                  "roro_per_m3_usd", "freight_insurance_usd", "vat_rate",
+                  "duty_rate", "bank_fx_rate", "international_transfer_eur",
+                  "eur_jpy_spread", "sva_test_eur", "mot_eur", "registration_eur",
+                  "customs_clearance_eur", "number_plates_eur", "car_service_eur",
+                  "insurance_eur", "road_tax_eur", "resale_costs_eur"):
+        payload[field] = str(getattr(costs, field))
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def read_costs(run_dir: Path) -> CostBook | None:
+    """The prices this run was quoted at, or ``None`` for a run predating them.
+
+    ``None`` behaves exactly as a missing ``rates.json`` does: the cards carry no
+    landed cost. Falling back to today's book would be the report claiming a car
+    cost in August what it would cost now, which is the one thing stamping the
+    book was for.
+    """
+    path = run_dir / COSTS_FILENAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        updated = payload.get("updated")
+        return CostBook(
+            service_fee_tiers=tuple(
+                ServiceFeeTier(up_to_jpy=Decimal(row["up_to_jpy"]),
+                               fee_jpy=Decimal(row["fee_jpy"]))
+                for row in payload["service_fee_tiers"]),
+            updated=date.fromisoformat(updated) if updated else None,
+            source=payload.get("source", ""),
+            **{field: Decimal(payload[field]) for field in (
+                "exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
+                "roro_per_m3_usd", "freight_insurance_usd", "vat_rate",
+                "duty_rate", "bank_fx_rate", "international_transfer_eur",
+                "eur_jpy_spread", "sva_test_eur", "mot_eur", "registration_eur",
+                "customs_clearance_eur", "number_plates_eur", "car_service_eur",
+                "insurance_eur", "road_tax_eur", "resale_costs_eur")},
+        )
+    except (FileNotFoundError, KeyError, TypeError, ValueError,
+            InvalidOperation, OSError):
         return None
 
 
@@ -421,11 +596,16 @@ def margin_for(
     mileage_km: int | None,
     auction_price_jpy: int | Decimal,
     rates: Rates,
+    costs: CostBook,
     specs: ModelSpecs,
     market: CyprusMarket,
-    resale_costs_eur: Decimal | None = None,
 ) -> Margin | str:
     """One car's landed cost against the Cyprus market, or a reason there is none.
+
+    The cost book is a required argument and never loaded here: a book that
+    cannot be read has already stopped the run (:class:`CostBookError`), so by
+    the time one car is priced there is always exactly one set of prices in play
+    and it is the one recorded on the answer.
 
     Returns a ``str`` only when the *landed cost itself* cannot be computed — a
     missing model spec, an unusable auction price. A missing **Cyprus** estimate
@@ -433,8 +613,6 @@ def margin_for(
     comparison is blank: knowing a car lands at €17,946 is useful on a row that
     cannot say what it sells for, and the two halves fail independently.
     """
-    from .calculator import RESALE_COSTS_EUR
-
     spec = specs.for_car(make, model, year)
     if spec is None:
         if specs.reason:
@@ -442,7 +620,7 @@ def margin_for(
         return f"no model spec for {make or '?'} {model or '?'} {year or '?'}"
 
     try:
-        landed = landed_cost(auction_price_jpy, spec, rates)
+        landed = landed_cost(auction_price_jpy, spec, rates, costs)
     except ValueError as exc:
         return str(exc)
 
@@ -450,8 +628,7 @@ def margin_for(
     return Margin(
         landed=landed,
         cyprus_eur=cyprus.sale_price,
-        resale_costs_eur=(RESALE_COSTS_EUR if resale_costs_eur is None
-                          else resale_costs_eur),
+        resale_costs_eur=costs.resale_costs_eur,
         cyprus_confidence=cyprus.confidence if cyprus.sale_price is not None else None,
         adjustment_factor=cyprus.adjustment_factor if cyprus.sale_price is not None else None,
         reason=cyprus.reason,

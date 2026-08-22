@@ -1,0 +1,103 @@
+# The cost book — every price in force that is not a property of one car.
+#
+# Edit this when a supplier or the state changes a price. Never edit it to
+# change how the money is worked out: that argument lives in
+# price_calculator/calculator.py, which holds no numbers at all.
+#
+# Cell references are the operator's spreadsheet, kept so the two can be
+# reconciled; the formulas are in price_calculator_spec.md §3.
+#
+# A run stamps this whole file into costs.json, so a report re-opened months
+# later shows the prices it was priced with. Raising a number here changes what
+# you bid tomorrow, not what you decided last week.
+
+updated = 2026-08-22
+source = "exporter price list, Aug 2026"
+
+# --- the exporter, JPY -------------------------------------------------------
+
+[exporter]
+fixed_fee_jpy = 17_000              # C8 = 10,000 + 7,000
+certificate_of_origin_jpy = 1_200   # C9
+
+# Exporter service fees!A3:C6 — a sorted VLOOKUP on the hammer price. Bands are
+# inclusive of their upper bound: at 59,000/74,000 below, ¥1,000,000 pays
+# ¥59,000 and ¥1,000,001 pays ¥74,000. Above the last band the fee is held and
+# the report says so, because a VLOOKUP running off the end is an accident
+# rather than a quote. Keep these ascending by `up_to_jpy`; the loader refuses
+# a table that is not.
+[[exporter.service_fee]]
+up_to_jpy = 1_000_000
+fee_jpy = 59_000
+
+[[exporter.service_fee]]
+up_to_jpy = 1_500_000
+fee_jpy = 74_000
+
+[[exporter.service_fee]]
+up_to_jpy = 2_000_000
+fee_jpy = 94_000
+
+[[exporter.service_fee]]
+up_to_jpy = 2_500_000
+fee_jpy = 114_000
+
+[[exporter.service_fee]]
+up_to_jpy = 9_000_000
+fee_jpy = 134_000
+
+# --- shipping, USD -----------------------------------------------------------
+
+[freight]
+roro_per_m3_usd = 168       # C10, billed on the body's box
+insurance_usd = 0          # B19, flat. Set to 0 to ship uninsured.
+
+# --- the state, EUR ----------------------------------------------------------
+
+[taxes]
+vat_rate = "0.19"           # B34, Cyprus. Charged on customs value plus duty.
+
+# B35: "Starting January 2026, import duty on cars originating from Japan is
+# reduced to zero, provided that all required documentation is submitted." The
+# zero is a condition being met, not a property of the world — if the paperwork
+# is ever short, this is the line that changes.
+duty_rate = "0"
+
+# --- money moving, EUR -------------------------------------------------------
+
+[bank]
+fx_rate = "0.01"                # B10, Revolut's 1% on the exchange
+international_transfer_eur = 60 # two payments x EUR 30
+
+# B32: the sheet reads EUR/JPY live and knocks two yen off it. Nobody charges
+# this — it is a deliberate haircut on the rate the bank actually gives you, and
+# it errs towards the car costing more. USD/JPY deliberately has no equivalent.
+eur_jpy_spread = 2
+
+# --- the bills at this end, EUR (B21:B29) ------------------------------------
+
+# Itemised rather than totalled so a diff shows which one moved. Every line is
+# a bill that arrives before a buyer can take the keys; there is no flag to
+# exclude the ownership-flavoured ones, and calculator.py says why.
+[cyprus]
+sva_test_eur = 140              # B22
+mot_eur = 35                    # B23
+registration_eur = 200          # B24 = 150 department + 50 agent
+customs_clearance_eur = 513     # B25 = 339 + 10 + 10 + 10 + 15 + 10 + 119
+number_plates_eur = 30          # B26
+car_service_eur = 120           # B27, oil and filters
+insurance_eur = 50              # B29
+
+# B28. Road tax is a function of CO2 emissions (spec §5); this is the sheet's
+# figure for its reference car and stands in until the Cyprus band table is
+# ported.
+road_tax_eur = 50
+
+# --- turning the car back into cash, EUR -------------------------------------
+
+# Transfer of ownership and advertising. Zero until you have receipts — a
+# made-up number here would be indistinguishable from a measured one on the
+# page. Zero is not the same as free, and it is emphatically not "no VAT to
+# worry about": calculator.py explains what this line does not hold.
+[resale]
+costs_eur = 0

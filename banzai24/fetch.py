@@ -510,28 +510,46 @@ async def fetch_lots(
         lots_filtered_out=len(chosen.rejected),
     )
     _write_lots_json(result, definition, url, payloads)
-    _stamp_rates(run_dir)
+    _stamp_prices(run_dir)
     return result
 
 
-def _stamp_rates(run_dir: Path) -> None:
-    """Record today's exchange rates in the run, for the landed cost on the report.
+def _stamp_prices(run_dir: Path) -> None:
+    """Record today's exchange rates *and* today's cost book in the run.
 
     Here rather than in ``report`` because a landed cost is a statement about a
-    *moment*: the rate that decides whether you bid on a car this morning is this
-    morning's rate, and re-opening the page in September must not quietly rewrite
-    the decision. Stamping it also keeps ``report`` free of the network, which is
-    the promise that makes re-rendering a template tweak cost nothing.
+    *moment*: the rates and the exporter's fees that decide whether you bid on a
+    car this morning are this morning's, and re-opening the page in September
+    must not quietly rewrite the decision. The fees move too — five bands went up
+    in August — so stamping the rate alone would have left the report repricing
+    old runs against a price list they never saw. Stamping both also keeps
+    ``report`` free of the network, which is the promise that makes re-rendering
+    a template tweak cost nothing.
 
     A failure here is silent by design. The rate API being down is not a reason to
     lose a morning's fetch — it costs the landed-cost line on those cards, and
-    ``report`` says so per card rather than here.
+    ``report`` says so per card rather than here. A cost book that will not load
+    is silent for the same reason and no other: it is a bug you want to hear
+    about, and you will hear about it the moment you run the calculator, which
+    refuses to start.
     """
-    from price_calculator.sources import RatesUnavailable, fetch_rates, write_rates
+    from price_calculator.sources import (
+        CostBookError,
+        RatesUnavailable,
+        fetch_rates,
+        load_cost_book,
+        write_costs,
+        write_rates,
+    )
 
     try:
         write_rates(run_dir, fetch_rates())
     except (RatesUnavailable, OSError):
+        pass
+
+    try:
+        write_costs(run_dir, load_cost_book())
+    except (CostBookError, OSError):
         pass
 
 

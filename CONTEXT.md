@@ -117,10 +117,20 @@ _Avoid_: Market price, resale value
 **Landed cost**:
 Everything paid between the hammer falling in Japan and the car standing on
 Cyprus plates — auction price, exporter fees, freight, VAT, and the fixed bills
-at this end. Your profit is not in it. Ported from the operator's spreadsheet;
-see `price_calculator/price_calculator_spec.md`.
+at this end. Your profit is not in it. The arithmetic is a port of the operator's
+spreadsheet (`price_calculator/price_calculator_spec.md`); the prices it runs on
+are a **cost book**.
 _Avoid_: Total cost, import price, all-in (which is what a *max bid* is, at the
 auction and in yen)
+
+**Cost book**:
+Every price in force on a date that is not a property of one car — exporter
+fees, the RoRo rate, VAT, the FX haircut, the fixed Cyprus bills. Kept as a
+file, edited when a supplier or the state changes a price, never when the
+arithmetic changes. Stamped onto a run, so re-opening an old report shows the
+prices that priced it rather than today's.
+_Avoid_: Fees (which are *extra costs*), constants, config, rates (which is FX,
+and a different thing)
 
 **Cyprus estimate**:
 What the same car would realistically *sell* for here — the fitted asking curve

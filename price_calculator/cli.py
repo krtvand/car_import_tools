@@ -10,6 +10,10 @@ actually import sit, and pricing at the band's midpoint would flatter every
 number on the page. Where a fitted curve has the sign of depreciation backwards
 the top of the band is no longer the conservative end, and the row says so.
 
+Prices come from the cost book (``inputs/costs.toml``) and are printed in the
+header, so a table you print today says which price list it was priced against.
+A cost book that will not load stops the run before a single row is built.
+
 Rates are fetched live at invocation and printed in the header, because a
 standalone run has no run directory to stamp them into. ``--eur-jpy`` and
 ``--usd-jpy`` skip the network entirely, which is how the tests price the
@@ -19,19 +23,23 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
 from banzai24.bidding import BID_PRICES_PATH, BidTableError, load_bid_prices
 
-from .calculator import Margin, Rates
+from .calculator import CostBook, Margin, Rates
 from .sources import (
+    COSTS_PATH,
     MODEL_SPECS_PATH,
+    CostBookError,
     CyprusMarket,
     ModelSpecs,
     RatesUnavailable,
     fetch_rates,
+    load_cost_book,
     margin_for,
 )
 
@@ -75,7 +83,7 @@ def _cell(margin: Margin | str, attr: str) -> str:
 
 
 def build_rows(bid_prices_path: Path, model_specs_path: Path,
-               rates: Rates, resale_costs: Decimal | None = None):
+               rates: Rates, costs: CostBook):
     """``[(label, max_bid, margin_or_reason), …]`` in the order the CSV lists them."""
     rows = load_bid_prices(bid_prices_path)
     specs = ModelSpecs(model_specs_path)
@@ -87,18 +95,19 @@ def build_rows(bid_prices_path: Path, model_specs_path: Path,
         label = f"{row.make} {row.model} {row.year} · {band} · {row.rental}"
         result = margin_for(
             make=row.make, model=row.model, year=row.year, mileage_km=mileage,
-            auction_price_jpy=row.max_bid_jpy, rates=rates, specs=specs,
-            market=market, resale_costs_eur=resale_costs,
+            auction_price_jpy=row.max_bid_jpy, rates=rates, costs=costs,
+            specs=specs, market=market,
         )
         out.append((label, row.max_bid_jpy, result))
     return out, specs, market
 
 
-def render(rows, rates: Rates, specs: ModelSpecs, market: CyprusMarket,
-           model_specs_path: Path) -> str:
+def render(rows, rates: Rates, costs: CostBook, specs: ModelSpecs,
+           market: CyprusMarket, model_specs_path: Path) -> str:
     lines = [
         "Imported car price calculator — landed cost against the Cyprus market",
         f"rates   {rates.describe()}",
+        f"prices  {costs.describe()}",
         f"specs   {model_specs_path}",
     ]
     if specs.reason:
@@ -160,9 +169,19 @@ def main(argv=None) -> int:
                         help="skip the rate fetch (market rate; the −2 haircut still applies)")
     parser.add_argument("--usd-jpy", type=float, default=None,
                         help="skip the rate fetch")
+    parser.add_argument("--costs", type=Path, default=COSTS_PATH,
+                        help="the cost book to price with (default inputs/costs.toml)")
     parser.add_argument("--resale-costs", type=Decimal, default=None,
-                        help="EUR taken off the margin for transfer, advertising (default 0)")
+                        help="override the book's resale costs, EUR off the margin")
     args = parser.parse_args(argv)
+
+    try:
+        costs = load_cost_book(args.costs)
+    except CostBookError as exc:
+        print(f"could not read the cost book: {exc}", file=sys.stderr)
+        return 2
+    if args.resale_costs is not None:
+        costs = replace(costs, resale_costs_eur=args.resale_costs)
 
     try:
         rates = _rates(args)
@@ -174,12 +193,12 @@ def main(argv=None) -> int:
 
     try:
         rows, specs, market = build_rows(
-            args.bid_prices, args.model_specs, rates, args.resale_costs)
+            args.bid_prices, args.model_specs, rates, costs)
     except (BidTableError, FileNotFoundError, OSError) as exc:
         print(f"could not read {args.bid_prices}: {exc}", file=sys.stderr)
         return 2
 
-    print(render(rows, rates, specs, market, args.model_specs))
+    print(render(rows, rates, costs, specs, market, args.model_specs))
     return 0
 
 

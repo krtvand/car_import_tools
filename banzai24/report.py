@@ -234,12 +234,13 @@ class LandedPricer:
     :mod:`price_calculator` for the arithmetic — a port of the sheet, kept pure
     so it can be checked against the sheet's own worked example.
 
-    **The rates come from the run, not from the clock.** ``fetch`` stamps
-    ``rates.json`` into the run directory the morning it runs; a run made before
-    that existed, or on a morning the rate API was down, simply has no landed
-    cost on its cards. Re-computing at today's rate would mean this page quietly
-    disagreeing in September with the decision you made in August, which is worth
-    less than a blank line.
+    **The prices come from the run, not from the clock.** ``fetch`` stamps
+    ``rates.json`` *and* ``costs.json`` into the run directory the morning it
+    runs; a run made before those existed, or on a morning the rate API was down,
+    simply has no landed cost on its cards. Re-computing at today's rate — or
+    against today's exporter fees, which went up five bands in August —  would
+    mean this page quietly disagreeing in September with the decision you made in
+    August, which is worth less than a blank line.
 
     The **auction price is the lot's ``max_bid``**, not its ``bid_reduced``.
     ``max_bid`` is the all-in maximum *at the auction* — hammer plus the house's
@@ -249,16 +250,21 @@ class LandedPricer:
     every margin by ¥4,000–¥47,000.
     """
 
-    def __init__(self, run_dir: Path | None = None, rates=None):
-        from price_calculator.sources import CyprusMarket, ModelSpecs, read_rates
+    def __init__(self, run_dir: Path | None = None, rates=None, costs=None):
+        from price_calculator.sources import (
+            CyprusMarket, ModelSpecs, read_costs, read_rates,
+        )
 
         self.rates = rates if rates is not None else (
             read_rates(run_dir) if run_dir is not None else None)
+        self.costs = costs if costs is not None else (
+            read_costs(run_dir) if run_dir is not None else None)
         self.reason: str | None = None
-        if self.rates is None:
+        if self.rates is None or self.costs is None:
             self.specs = self.market = None
             self.available = False
-            self.reason = "no exchange rates for this run"
+            self.reason = ("no exchange rates for this run" if self.rates is None
+                           else "no cost book stamped into this run")
             return
 
         self.specs = ModelSpecs()
@@ -285,7 +291,7 @@ class LandedPricer:
         year, mileage = sheet_first(lot, extraction)
         return margin_for(
             make=lot.mark, model=lot.model, year=year, mileage_km=mileage,
-            auction_price_jpy=quote.max_bid, rates=self.rates,
+            auction_price_jpy=quote.max_bid, rates=self.rates, costs=self.costs,
             specs=self.specs, market=self.market,
         )
 

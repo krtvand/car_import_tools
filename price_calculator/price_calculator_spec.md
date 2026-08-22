@@ -3,6 +3,15 @@
 Computes the **expected landed price in EUR** of a car bought at a Japanese
 auction and imported to Cyprus.
 
+> **The values in this document are the spreadsheet as it stood at the port
+> (January 2026). They are not the prices anything runs on.** Today's prices are
+> `price_calculator/inputs/costs.toml` — the **cost book** — and that file is
+> the only place they are edited. This spec keeps the *formulas*, the cell
+> references and §6's worked example, because those are what you want when
+> reconciling the code against the sheet and they do not go stale. Its value
+> tables were removed after they spent a month disagreeing with both the sheet
+> and the code; see `docs/adr/0003-prices-are-data-not-code.md`.
+
 Source of truth: Google Sheet
 [Imported car price calculator public](https://docs.google.com/spreadsheets/d/19adWxKYk-NljDLaB_CVQ5IQ_BnJna_vpIDgRMaNIKv4/edit?gid=1620773452),
 sheets `Calculator` and `Exporter service fees`. Cell references below (`B4`,
@@ -18,90 +27,94 @@ sheets `Calculator` and `Exporter service fees`. Cell references below (`B4`,
 | `length_cm` | cm | `Calculator!B38` | Body length |
 | `width_cm` | cm | `Calculator!B39` | Body width |
 | `height_cm` | cm | `Calculator!B40` | Body height |
-| `road_tax_eur` | EUR | `Calculator!B28` | Depends on CO₂ emissions — see §5 |
 | `usd_jpy` | JPY per USD | `Calculator!B33` | Live: `GOOGLEFINANCE("CURRENCY:USDJPY")` |
 | `eur_jpy_market` | JPY per EUR | `Calculator!B32` | Live: `GOOGLEFINANCE("CURRENCY:EURJPY")` |
-| `with_freight_insurance` | bool | — | Optional, default **on** (the sheet always includes it) |
 
 Dimensions are the only car params that affect the price beyond the auction
 price: they drive the freight cost via shipping volume.
+
+Everything else the calculation needs — every fee, rate, tax and bill, including
+`road_tax_eur` — arrives as one `CostBook`, loaded from `costs.toml`. The sheet
+treats road tax as a per-car input because it is a function of CO₂ (§5); the
+code carries it on the book because it is flat today, and `dataclasses.replace`
+is how one car is priced with a different figure.
 
 ---
 
 ## 2. Rates and constants
 
+**Values live in `costs.toml`, not here.** This section maps each price to the
+cell it came from and to the key that now holds it, so the sheet and the book
+can be reconciled line by line. To see what a number *is*, open the book.
+
 ### Exchange rates
 
 ```
-eur_jpy_effective = eur_jpy_market - 2      # Calculator!B32, broker spread
+eur_jpy_effective = eur_jpy_market - bank.eur_jpy_spread   # Calculator!B32
 ```
 
-`usd_jpy` is used as-is. The `-2` haircut on EUR/JPY is a deliberate
-conservative margin on the conversion actually obtained by the bank.
+`usd_jpy` is used as-is. The haircut on EUR/JPY is a deliberate conservative
+margin on the conversion actually obtained by the bank, and USD/JPY has no
+equivalent.
 
 ### Tax rates (`Calculator!B34:B35`)
 
-| Constant | Value |
+| Sheet cell | Cost book key |
 |---|---|
-| `VAT_RATE` | 19% (Cyprus) |
-| `DUTY_RATE` | 0% |
+| `B34` VAT (Cyprus) | `taxes.vat_rate` |
+| `B35` Import duty | `taxes.duty_rate` |
 
 > Note on `Calculator!B35` (Duty): *"Starting January 2026, import duty on cars
 > originating from Japan is reduced to zero, provided that all required
-> documentation is submitted."* Keep `DUTY_RATE` configurable — it is 0 only
-> while the documentation requirement is met.
+> documentation is submitted."* The zero is a condition being met, not a
+> property of the world — which is why it is a line in the book rather than a
+> constant in the code.
 
 ### Exporter fees (`Exporter service fees` sheet)
 
-Tiered service fee by auction price, JPY (`A3:C6`, looked up with an
-approximate/sorted `VLOOKUP` on `auction_price`):
+A tiered service fee by auction price (`A3:C6`), looked up with an
+approximate/sorted `VLOOKUP` on `auction_price`. In the book it is
+`[[exporter.service_fee]]`, one table per band, ascending by `up_to_jpy`; bands
+are **inclusive of their upper bound**.
 
-| Auction price from | to | Service fee |
-|---|---|---|
-| ¥1 | ¥1 000 000 | ¥56 000 |
-| ¥1 000 001 | ¥1 500 000 | ¥71 000 |
-| ¥1 500 001 | ¥2 000 000 | ¥91 000 |
-| ¥2 000 001 | ¥9 000 000 | ¥111 000 |
+| Sheet cell | Cost book key |
+|---|---|
+| `C8` Exporter fixed fee | `exporter.fixed_fee_jpy` |
+| `C9` Certificate of origin | `exporter.certificate_of_origin_jpy` |
+| `C10` RoRo shipping, per m³ | `freight.roro_per_m3_usd` |
+| `B19` Freight insurance, flat | `freight.insurance_usd` |
 
-Plus, always:
-
-| Constant | Cell | Value |
-|---|---|---|
-| `EXPORTER_FIXED_FEE` | `C8` | ¥17 000 (= 10 000 + 7 000) |
-| `CERTIFICATE_OF_ORIGIN` | `C9` | ¥1 200 |
-| `RORO_PRICE_PER_M3_USD` | `C10` | $166 per m³ |
-| `FREIGHT_INSURANCE_USD` | `B19` | $50 (flat) |
-
-Behaviour outside the table: prices above ¥9 000 000 fall back to the last tier
-(¥111 000) under sorted `VLOOKUP`; below ¥1 the lookup fails. Implementation
-should treat `auction_price <= 0` as invalid and clamp/flag prices above
-¥9 000 000.
+Behaviour outside the table: a price above the last band falls back to the last
+tier under sorted `VLOOKUP`, and the code does the same while setting
+`above_fee_table`, because the sheet's silence there is an accident of `VLOOKUP`
+rather than a quoted price. Below ¥1 the lookup fails; `auction_price <= 0`
+raises.
 
 ### Fixed expenses in Cyprus, EUR (`Calculator!B21:B29`)
 
-| Item | Cell | EUR |
+| Item | Sheet cell | Cost book key |
 |---|---|---|
-| SVA test | `B22` | 140 |
-| MOT | `B23` | 35 |
-| Registration in Department of Road Transport | `B24` | 200 (= 150 department + 50 agent) |
-| Delivery order and other customs clearance expenses | `B25` | 513 (= 339 + 10 + 10 + 10 + 15 + 10 + 119) |
-| Number plates | `B26` | 30 |
-| Car service (oil, filters) | `B27` | 120 |
-| Road tax | `B28` | 11 *(car-dependent, see §5)* |
-| Insurance | `B29` | 50 |
-| **Total** | `B21` | **1 099** *(with road tax = 11)* |
+| SVA test | `B22` | `cyprus.sva_test_eur` |
+| MOT | `B23` | `cyprus.mot_eur` |
+| Registration in Department of Road Transport | `B24` | `cyprus.registration_eur` |
+| Delivery order and other customs clearance expenses | `B25` | `cyprus.customs_clearance_eur` |
+| Number plates | `B26` | `cyprus.number_plates_eur` |
+| Car service (oil, filters) | `B27` | `cyprus.car_service_eur` |
+| Road tax | `B28` | `cyprus.road_tax_eur` *(a function of CO₂ — see §5)* |
+| Insurance | `B29` | `cyprus.insurance_eur` |
+| **Total** | `B21` | `CostBook.fixed_expenses_base_eur` + road tax |
 
-Everything except road tax is a constant. Model as
-`FIXED_EXPENSES_BASE_EUR = 1 088` plus `road_tax_eur`.
+`fixed_expenses_base_eur` is the sum of the seven that never vary; road tax is
+added separately because it is the one line that depends on the car.
 
 ### Bank transfer fees (`Calculator!B10`)
 
 ```
-bank_transfer_fees_eur = cnf_price_eur * 0.01 + 60
+bank_transfer_fees_eur = cnf_price_eur * bank.fx_rate + bank.international_transfer_eur
 ```
 
-- `0.01` — Revolut FX/exchange fee (1%)
-- `60` — two international payments × €30
+- `bank.fx_rate` — Revolut FX/exchange fee
+- `bank.international_transfer_eur` — two international payments × €30
 
 ---
 
@@ -112,15 +125,15 @@ All intermediate money is JPY until the CNF conversion, then EUR.
 ### 3.1 CNF price (JPY) — `Calculator!B15`
 
 ```
-exporter_fees_jpy = tier_fee(auction_price)      # Exporter service fees!A3:C6
-                  + 17_000                       # fixed fee
-                  + 1_200                        # certificate of origin
+exporter_fees_jpy = tier_fee(auction_price)              # exporter.service_fee
+                  + exporter.fixed_fee_jpy
+                  + exporter.certificate_of_origin_jpy
 
 volume_m3   = (length_cm * width_cm * height_cm) / 1_000_000
 
-freight_jpy = 166 * usd_jpy * volume_m3          # RORO, $166/m³
+freight_jpy = freight.roro_per_m3_usd * usd_jpy * volume_m3
 
-insurance_jpy = 50 * usd_jpy                     # if with_freight_insurance
+insurance_jpy = freight.insurance_usd * usd_jpy          # 0 ships uninsured
 
 cnf_price_jpy = auction_price
               + exporter_fees_jpy
@@ -156,10 +169,11 @@ cnf_price_eur = cnf_price_jpy / eur_jpy_effective
 ### 3.3 Costs payable in Cyprus (EUR) — `Calculator!B9`
 
 ```
-bank_transfer_fees = cnf_price_eur * 0.01 + 60           # B10
-duty               = cnf_price_eur * DUTY_RATE           # B11
-vat                = (cnf_price_eur + duty) * VAT_RATE   # B12
-fixed_expenses     = FIXED_EXPENSES_BASE_EUR + road_tax  # B13 -> B21
+bank_transfer_fees = cnf_price_eur * bank.fx_rate                    # B10
+                   + bank.international_transfer_eur
+duty               = cnf_price_eur * taxes.duty_rate                 # B11
+vat                = (cnf_price_eur + duty) * taxes.vat_rate         # B12
+fixed_expenses     = fixed_expenses_base_eur + cyprus.road_tax_eur   # B13 -> B21
 
 to_pay_in_cyprus = bank_transfer_fees + duty + vat + fixed_expenses
 ```
@@ -193,8 +207,12 @@ cnf_price_jpy
   exporter_fees_jpy
   freight_jpy
   freight_insurance_jpy
-rates_used: { usd_jpy, eur_jpy_market, eur_jpy_effective }
+rates_used: { usd_jpy, eur_jpy_market }
+costs_used: the whole CostBook, stamped onto the answer
 ```
+
+Both are carried on the result, not looked up inside it: a landed cost is a
+statement about a moment, and re-rendering it must not reprice it.
 
 ---
 
@@ -207,8 +225,9 @@ emissions (g/km). From the sheet comment on `Calculator!A28`:
 - CO₂ figures for a given model can be looked up in the drom.ru catalog,
   e.g. <https://www.drom.ru/catalog/mazda/cx-60/431143/>
 
-Until CO₂ per model is available, default `road_tax_eur = 11` (the sheet's
-value for the reference car).
+Until CO₂ per model is available, `cyprus.road_tax_eur` in the cost book holds a
+flat figure (the sheet's value for its reference car). `ModelSpec.co2_gkm` is
+recorded and unread against the day this becomes a band lookup.
 
 ---
 
@@ -240,11 +259,16 @@ at USD/JPY ≈ 158.9 and EUR/JPY effective ≈ 183.6.
   presentation. The sheet's displayed values are rounded per cell, so a port
   will differ from a screenshot by a euro or two — that is expected.
 - The exchange rates are live in the sheet. The module needs a rate source
-  (or injected rates) and should record which rates a quote was produced with.
+  (or injected rates) and records which rates a quote was produced with. The
+  same now goes for prices: `costs.toml` is loaded once and stamped into the
+  run (ADR 0003).
 - `total_eur` excludes the buyer's own margin/profit — it is a landed cost.
 - Insurance, car service, MOT and road tax are post-import ownership costs
-  bundled into the total; if the module is used to price *lots* rather than
-  *ownership*, expose a flag to exclude `B27:B29`.
+  bundled into the total. This spec suggested a flag to exclude `B27:B29`;
+  **the port deliberately has none.** Those lines are €181 of an €11,760 landed
+  cost, and a switch that can only ever make a car look cheaper is a switch that
+  gets left on. A book with those lines set to zero does the same job, on
+  purpose and on the record.
 
 
 Q1 - C
