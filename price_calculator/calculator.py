@@ -134,10 +134,11 @@ class ModelSpec:
 # are inclusive of their upper bound, which is how the sheet's own boundaries
 # read: ¥1,000,000 pays ¥56,000 and ¥1,000,001 pays ¥71,000.
 SERVICE_FEE_TIERS: tuple[tuple[int, int], ...] = (
-    (1_000_000, 56_000),
-    (1_500_000, 71_000),
-    (2_000_000, 91_000),
-    (9_000_000, 111_000),
+    (1_000_000, 59_000),
+    (1_500_000, 74_000),
+    (2_000_000, 94_000),
+    (2_500_000, 114_000),
+    (9_000_000, 134_000),
 )
 
 EXPORTER_FIXED_FEE_JPY = Decimal(17_000)     # C8 = 10,000 + 7,000

@@ -1,5 +1,5 @@
 make,model,year,mileage_min,mileage_max,rental,max_bid_jpy
-MAZDA,CX-30,2023,0,50000,private,1855000
+MAZDA,CX-30,2023,0,50000,private,1805000
 MAZDA,CX-30,2023,50001,60000,private,1705000
 MAZDA,CX-5,2023,0,50000,private,2055000
 MAZDA,CX-5,2023,50001,60000,private,1955000
