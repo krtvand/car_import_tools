@@ -25,7 +25,7 @@ exec uv run python -m bazaraki scrape \
     --make mazda \
     --model cx-30 \
     --year-min 2022 \
-    --mileage-min 0 \
-    --mileage-max 60000 \
+    --mileage-min 20000 \
+    --mileage-max 70000 \
     --max-pages 10 \
     "$@"
