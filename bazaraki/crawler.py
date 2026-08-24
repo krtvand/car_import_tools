@@ -22,7 +22,7 @@ async def run_scrape(
 
     When the filters include year/engine-size (whose codes are site-specific),
     a one-off "bootstrap" fetch of the category page resolves those codes from
-    the live <select> options before the filtered crawl begins.
+    the live filter options before the filtered crawl begins.
     """
     filters = filters or config.DEFAULT_FILTERS
     db.init_db()
@@ -71,7 +71,7 @@ async def run_scrape(
         if detail_requests:
             await context.add_requests(detail_requests)
 
-        has_next = parsers.has_next_page(context.soup, page)
+        has_next = parsers.has_next_page(context.soup)
         if page < max_pages and has_next:
             nxt = parsers.with_page(context.request.url, page + 1)
             await context.add_requests([Request.from_url(nxt, user_data={"page": page + 1})])

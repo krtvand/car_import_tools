@@ -239,7 +239,10 @@ over-50,000 band. See `docs/adr/0001-sheet-outranks-api.md`.
   year/engine codes from the live page when needed, parses listing pages, follows
   pagination (preserving filters), enqueues detail pages (unless `--no-details`),
   and on finish delists in-scope adverts it didn't see.
-- `bazaraki/parsers.py` — pure HTML→dict parsing (`parse_cards`, `parse_detail`,
+- `bazaraki/payload.py` — pulls the JSON payload bazaraki's Next.js pages render
+  from out of their inline RSC "flight" scripts; the site's own API data, which
+  is steadier to read than the generated Tailwind markup.
+- `bazaraki/parsers.py` — pure payload→dict parsing (`parse_cards`, `parse_detail`,
   pagination + option-code helpers), no network, so they're easy to test.
 - `bazaraki/models.py` / `bazaraki/db.py` — `CarListing`, `PriceObservation` and
   `ScrapeRun` SQLModels; a SQLite upsert keyed on bazaraki's advert id (re-runs

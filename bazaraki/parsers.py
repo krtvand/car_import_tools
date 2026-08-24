@@ -1,18 +1,22 @@
-"""Pure HTML-parsing helpers for bazaraki car pages.
+"""Pure parsing helpers for bazaraki car pages.
 
-Kept free of network/Crawlee dependencies so they can be unit-tested against
-saved HTML fragments.
+The site renders from an embedded JSON payload (see `payload.py`), so these
+helpers read that payload rather than the generated DOM; the soup is only the
+envelope it arrives in. Kept free of network/Crawlee dependencies so they can
+be unit-tested against saved page fragments.
 """
 from __future__ import annotations
 
 import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
+
+from . import payload
 
 BASE_URL = "https://www.bazaraki.com"
 
-# Maps the label shown in the detail-page characteristics list to a model field
+# Maps the label shown in the detail-page features list to a model field
 # plus an optional converter.
 _CHAR_MAP: dict[str, tuple[str, callable]] = {
     "year": ("year", lambda v: _first_int(v)),
@@ -120,47 +124,43 @@ def _abs_url(href: str) -> str:
     return path if path.startswith("http") else BASE_URL + path
 
 
-def parse_cards(soup: BeautifulSoup) -> list[dict]:
-    """Extract base fields from every listing card on a category page.
+def listing_payload(soup: BeautifulSoup) -> dict:
+    """The search-results object embedded in a category page."""
+    return payload.find(soup, "adverts", "next_page", "count") or {}
 
-    Uses the list-view container (``div.advert.js-item-listing``), which is
-    present on every page and carries price, mileage, gearbox, fuel, location
-    and date inline.
+
+def parse_cards(soup: BeautifulSoup) -> list[dict]:
+    """Extract base fields from every listing on a category page.
+
+    Reads the ``adverts`` list of the page payload, which carries price,
+    mileage, gearbox, fuel, location and date for each advert.
     """
     results: list[dict] = []
-    for card in soup.select("div.advert.js-item-listing"):
-        link = card.select_one("a.advert__content-title")
-        if link is None or not link.get("href"):
-            continue
-        ad_id = _first_int(card.get("data-id", "")) or _ad_id_from_url(link["href"])
-        if ad_id is None:
+    for advert in listing_payload(soup).get("adverts", []):
+        ad_id, url = advert.get("id"), advert.get("url")
+        if not ad_id or not url:
             continue
 
-        price_el = card.select_one("a.advert__content-price")
-        place_el = card.select_one(".advert__content-place")
-        date_el = card.select_one(".advert__content-date")
-        photo_el = card.select_one(".advert__body-property._photo span[data-count]")
-        first_slide = card.select_one("a.swiper-slide[data-background]")
-
-        title = link.get_text(strip=True)
+        title = advert.get("title") or ""
         make, model = split_make_model(title)
+        price = _first_int(advert.get("price_without_currency") or "")
         record = {
-            "ad_id": ad_id,
+            "ad_id": int(ad_id),
             "title": title,
             "make": make,
             "model": model,
-            "url": _abs_url(link["href"]),
-            "price": float(_first_int(price_el.get_text())) if price_el and _first_int(price_el.get_text()) else None,
-            "currency": "EUR" if price_el and "€" in price_el.get_text() else None,
-            "image_url": first_slide.get("data-background") if first_slide else None,
-            "photo_count": _first_int(photo_el.get("data-count", "")) if photo_el else None,
-            "location": place_el.get_text(" ", strip=True) if place_el else None,
-            "posted_raw": date_el.get_text(strip=True) if date_el else None,
+            "url": _abs_url(url),
+            "price": float(price) if price else None,
+            "currency": advert.get("currency") or None,
+            "image_url": advert.get("first_thumb") or None,
+            "photo_count": advert.get("img_count") or None,
+            "location": advert.get("location") or None,
+            "posted_raw": advert.get("published") or None,
         }
 
         # Inline, unlabelled features: "13000 km" · "Automatic" · "Hybrid Diesel".
-        for feat in card.select(".advert__content-feature > div"):
-            text = feat.get_text(" ", strip=True)
+        for feature in advert.get("features", []):
+            text = (feature.get("text") or "").strip()
             if not text:
                 continue
             if "km" in text.lower():
@@ -174,19 +174,13 @@ def parse_cards(soup: BeautifulSoup) -> list[dict]:
     return results
 
 
-def next_page_url(soup: BeautifulSoup, current_page: int) -> str | None:
-    """Return the absolute URL of the next page, or None if there isn't one."""
-    target = str(current_page + 1)
-    for a in soup.select("a.page-number"):
-        if a.get("data-page") == target and a.get("href"):
-            return BASE_URL + a["href"]
-    return None
+def has_next_page(soup: BeautifulSoup) -> bool:
+    """True if the search has results beyond the page this soup came from.
 
-
-def has_next_page(soup: BeautifulSoup, current_page: int) -> bool:
-    """True if a pagination link to ``current_page + 1`` exists."""
-    target = str(current_page + 1)
-    return any(a.get("data-page") == target for a in soup.select("a.page-number"))
+    ``next_page`` is the site's own cursor for the following page and is null
+    on the last one, so it answers this without having to count adverts.
+    """
+    return bool(listing_payload(soup).get("next_page"))
 
 
 def with_page(url: str, page: int) -> str:
@@ -201,76 +195,72 @@ def with_page(url: str, page: int) -> str:
     return urlunparse(parts._replace(query=urlencode(query)))
 
 
+def _filter_choices(soup: BeautifulSoup, slug: str) -> list[tuple[str, str]]:
+    """``(code, label)`` pairs offered by the ``slug`` filter on this page."""
+    for value in payload.row_values(payload.flight_stream(soup)):
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            if isinstance(item, dict) and item.get("slug") == slug:
+                return [
+                    (str(code), str(label))
+                    for code, label in item.get("choices", [])
+                ]
+    return []
+
+
 def parse_year_codes(soup: BeautifulSoup) -> dict[int, str]:
-    """Map calendar year -> site option code from the year filter <select>."""
-    codes: dict[int, str] = {}
-    sel = soup.select_one("select[name='attrs__year_min']")
-    if sel:
-        for opt in sel.select("option"):
-            value = opt.get("value")
-            text = opt.get_text(strip=True)
-            if value and text.isdigit():
-                codes[int(text)] = value
-    return codes
+    """Map calendar year -> site option code from the year filter."""
+    return {
+        int(label): code
+        for code, label in _filter_choices(soup, "attrs__year")
+        if label.isdigit()
+    }
 
 
 def parse_engine_codes(soup: BeautifulSoup) -> dict[str, str]:
     """Map engine-size label (lowercased) -> site option code."""
-    codes: dict[str, str] = {}
-    sel = soup.select_one("select[name='attrs__engine-size_min']")
-    if sel:
-        for opt in sel.select("option"):
-            value = opt.get("value")
-            text = opt.get_text(strip=True)
-            if value:
-                codes[text.lower()] = value
-    return codes
+    return {
+        label.lower(): code
+        for code, label in _filter_choices(soup, "attrs__engine-size")
+    }
 
 
 def parse_detail(soup: BeautifulSoup) -> dict:
     """Extract enrichment fields from an advert detail page."""
-    data: dict = {}
+    advert = payload.find(soup, "id", "features", "counters", "user", "gallery")
+    if advert is None:
+        return {}
 
-    for li in soup.select("ul.chars-column li"):
-        text = li.get_text(" ", strip=True)
-        if ":" not in text:
-            continue
-        label, _, value = text.partition(":")
-        mapping = _CHAR_MAP.get(label.strip().lower())
+    data: dict = {}
+    for feature in advert.get("features", []):
+        mapping = _CHAR_MAP.get((feature.get("name") or "").strip().lower())
         if mapping:
             field, convert = mapping
-            data[field] = convert(value.strip())
+            data[field] = convert((feature.get("value") or "").strip())
 
-    address = soup.select_one("[itemprop='address']")
-    if address:
-        data["location"] = address.get_text(" ", strip=True)
+    location = (advert.get("location") or {}).get("name")
+    if location:
+        data["location"] = location
 
-    date_meta = soup.select_one("span.date-meta")
-    if date_meta:
-        # "Posted: 19.06.2026 09:56" -> "19.06.2026 09:56"
-        data["posted_raw"] = date_meta.get_text(" ", strip=True).replace("Posted:", "").strip()
+    published = (advert.get("counters") or {}).get("published")
+    if published:
+        data["posted_raw"] = published  # e.g. "Yesterday", "19.06.2026 09:56"
 
-    seller_type = _parse_seller_type(soup)
+    seller_type = _seller_type(advert.get("user"))
     if seller_type:
         data["seller_type"] = seller_type
 
     return data
 
 
-def _parse_seller_type(soup: BeautifulSoup) -> str | None:
+def _seller_type(user: dict | None) -> str | None:
     """Classify the seller as 'dealer' or 'private'.
 
-    Bazaraki has no explicit label; the reliable signal is the verified-account
-    marker in the seller box (``div.author-info``): businesses/dealers get a
-    verified badge, private individuals don't. The seller's shop-link path is
-    NOT reliable — some dealers link via /items/author/<id>/ (same as private
-    sellers), so only the verified marker distinguishes them.
+    The payload states it outright: business accounts (and companies, which the
+    site flags separately) are the dealers, everyone else is a private seller.
     """
-    author = soup.select_one("div.author-info")
-    if author is None:
+    if not user:
         return None
-    is_dealer = (
-        "_verified" in author.get("class", [])
-        or author.select_one("span.verified") is not None
-    )
+    is_dealer = bool(user.get("is_business_account") or user.get("is_company"))
     return "dealer" if is_dealer else "private"

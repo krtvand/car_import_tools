@@ -9,7 +9,7 @@ How filters map to the site:
                                => /car-motorbikes-boats-and-parts/cars-trucks-and-vans/mazda/cx-30/
   * price_*, mileage_*       -> raw integer query params (EUR / km)
   * year_*, engine_size_*    -> internal option codes, resolved live from the
-                               page's <select> options (see parsers.parse_*_codes)
+                               page's filter options (see parsers.parse_*_codes)
   * gearbox/fuel/drive/doors -> small, stable label->code maps baked in below
   * body_type/colour/extras  -> raw site option codes (multi-select)
   * seats                    -> actual seat counts (the site code equals the count)

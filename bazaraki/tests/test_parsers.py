@@ -63,10 +63,9 @@ def test_abs_url_keeps_absolute():
 
 # --- parse_cards ------------------------------------------------------------
 
-def test_parse_cards_count_ignores_card_without_title(list_soup):
-    cards = parsers.parse_cards(list_soup)
-    # Three .advert blocks in the fixture; the last has no title link.
-    assert len(cards) == 2
+def test_parse_cards_skips_entries_without_an_advert(list_soup):
+    # Three entries in the fixture payload; the last has no id/url.
+    assert len(parsers.parse_cards(list_soup)) == 2
 
 
 def test_parse_cards_full_card(list_soup):
@@ -100,35 +99,19 @@ def test_parse_cards_minimal_card_has_no_optional_fields(list_soup):
     assert card["ad_id"] == 6564331
     assert card["price"] == 15000.0
     assert card["currency"] == "EUR"
-    # Always-present card fields fall back to None when their element is absent.
+    # Always-present card fields fall back to None when the payload sends "".
     assert card["location"] is None
     assert card["posted_raw"] is None
     assert card["image_url"] is None
     assert card["photo_count"] is None
-    # Feature-derived fields are omitted entirely when no feature row matched.
+    # Feature-derived fields are omitted entirely when no feature matched.
     for missing in ("mileage_km", "gearbox", "fuel_type"):
         assert missing not in card
 
 
-def test_parse_cards_url_uses_clean_link_even_when_title_has_query(list_soup):
-    # Title href has ?p=2; result must be stripped.
-    card = parsers.parse_cards(list_soup)[0]
-    assert "?" not in card["url"]
-
-
-# --- next_page_url ----------------------------------------------------------
-
-def test_next_page_url(list_soup):
-    assert parsers.next_page_url(list_soup, 1) == (
-        "https://www.bazaraki.com/car-motorbikes-boats-and-parts/cars-trucks-and-vans/?page=2"
-    )
-    assert parsers.next_page_url(list_soup, 2) == (
-        "https://www.bazaraki.com/car-motorbikes-boats-and-parts/cars-trucks-and-vans/?page=3"
-    )
-
-
-def test_next_page_url_none_when_no_more_pages(list_soup):
-    assert parsers.next_page_url(list_soup, 3) is None
+def test_parse_cards_returns_nothing_without_a_payload():
+    soup = BeautifulSoup("<html><body>no payload here</body></html>", "html.parser")
+    assert parsers.parse_cards(soup) == []
 
 
 # --- parse_detail -----------------------------------------------------------
@@ -153,87 +136,53 @@ def test_parse_detail_maps_all_known_characteristics(detail_soup):
 def test_parse_detail_location_and_date(detail_soup):
     data = parsers.parse_detail(detail_soup)
     assert data["location"] == "Limassol, Agios Tychon"
-    assert data["posted_raw"] == "19.06.2026 09:56"  # "Posted:" prefix stripped
+    assert data["posted_raw"] == "19.06.2026 09:56"
 
 
-def test_parse_detail_ignores_unlabelled_rows(detail_soup):
+def test_parse_detail_ignores_unmapped_features(detail_soup):
     data = parsers.parse_detail(detail_soup)
-    # The "No colon here" li must not create a bogus field.
-    assert all(v != "No colon here should be skipped" for v in data.values())
+    assert all(v != "should be skipped" for v in data.values())
+
+
+def test_parse_detail_returns_nothing_without_a_payload():
+    soup = BeautifulSoup("<html><body>no payload here</body></html>", "html.parser")
+    assert parsers.parse_detail(soup) == {}
 
 
 # --- seller_type ------------------------------------------------------------
 
-# Real-world seller-box variants observed on live bazaraki advert pages.
-_DEALER_SHOP_LINK = """
-<div class="author-info _verified" itemscope itemtype="http://schema.org/Person">
-  <div class="author-name js-online-user" data-user="49444" itemprop="name">
-    <a href="/c/carbidcy/"><img src="//cdn/logo.webp" alt="CarBid CY"></a>
-    CarBid CY
-  </div>
-  <span class="verified" title="Verified account">Verified account</span>
-  <p class="date-registration">Posting since feb, 2017</p>
-  <a href="/c/carbidcy/" class="other-announcement-author">Other ads from this seller</a>
-</div>
-"""
-
-# A verified dealer whose links use /items/author/<id>/ — the SAME path shape a
-# private seller uses. This is why the shop-link path can't be the signal.
-_DEALER_AUTHOR_LINK = """
-<div class="author-info _verified" itemscope itemtype="http://schema.org/Person">
-  <div class="author-name js-online-user" data-user="9954894" itemprop="name">
-    <a href="/items/author/9954894/"><img src="//cdn/logo.webp" alt="Kalopsidiotes Motors"></a>
-    Kalopsidiotes Motors
-  </div>
-  <span class="verified" title="Verified account">Verified account</span>
-  <p class="date-registration">Posting since jun, 2025</p>
-  <a href="/items/author/9954894/" class="other-announcement-author">Other ads from this seller</a>
-</div>
-"""
-
-_PRIVATE = """
-<div class="author-info " itemscope itemtype="http://schema.org/Person">
-  <div class="author-name js-online-user" data-user="9247153" itemprop="name"> Efthimios </div>
-  <p class="date-registration">Posting since feb, 2024</p>
-  <a href="/items/author/9247153/" class="other-announcement-author">Other ads from this seller</a>
-</div>
-"""
-
-
 @pytest.mark.parametrize(
-    "html, expected",
+    "user, expected",
     [
-        (_DEALER_SHOP_LINK, "dealer"),
-        (_DEALER_AUTHOR_LINK, "dealer"),  # verified wins over the /items/author/ path
-        (_PRIVATE, "private"),
+        ({"is_business_account": True, "is_company": True}, "dealer"),
+        ({"is_business_account": True, "is_company": False}, "dealer"),
+        # A company posting from a personal-looking account is still a dealer.
+        ({"is_business_account": False, "is_company": True}, "dealer"),
+        ({"is_business_account": False, "is_company": False}, "private"),
+        # Verification alone doesn't make a dealer.
+        ({"is_verified": True}, "private"),
+        (None, None),
     ],
 )
-def test_parse_seller_type_classifies_verified_as_dealer(html, expected):
-    soup = BeautifulSoup(html, "html.parser")
-    assert parsers._parse_seller_type(soup) == expected
+def test_seller_type(user, expected):
+    assert parsers._seller_type(user) == expected
 
 
-def test_parse_seller_type_none_when_no_author_box():
-    soup = BeautifulSoup("<div>no seller box here</div>", "html.parser")
-    assert parsers._parse_seller_type(soup) is None
-
-
-def test_parse_detail_includes_seller_type():
-    soup = BeautifulSoup(_DEALER_SHOP_LINK, "html.parser")
-    assert parsers.parse_detail(soup)["seller_type"] == "dealer"
-
-
-def test_parse_detail_omits_seller_type_when_absent(detail_soup):
-    # The full detail fixture has no author-info box -> field simply absent.
-    assert "seller_type" not in parsers.parse_detail(detail_soup)
+def test_parse_detail_includes_seller_type(detail_soup):
+    assert parsers.parse_detail(detail_soup)["seller_type"] == "dealer"
 
 
 # --- pagination helpers -----------------------------------------------------
 
-def test_has_next_page(list_soup):
-    assert parsers.has_next_page(list_soup, 1) is True
-    assert parsers.has_next_page(list_soup, 2) is True
-    assert parsers.has_next_page(list_soup, 3) is False
+def test_has_next_page(list_soup, last_list_soup):
+    assert parsers.has_next_page(list_soup) is True
+    # The last page's next-page cursor is null.
+    assert parsers.has_next_page(last_list_soup) is False
+
+
+def test_has_next_page_without_a_payload():
+    soup = BeautifulSoup("<html><body>no payload here</body></html>", "html.parser")
+    assert parsers.has_next_page(soup) is False
 
 
 def test_with_page_adds_param():
@@ -269,5 +218,5 @@ def test_parse_year_codes(filter_form_soup):
 
 def test_parse_engine_codes(filter_form_soup):
     codes = parsers.parse_engine_codes(filter_form_soup)
-    assert codes["2,0l"] == "20"
+    assert codes["2,0l"] == "17"
     assert codes["electric"] == "80"

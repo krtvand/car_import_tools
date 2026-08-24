@@ -19,6 +19,11 @@ def list_soup() -> BeautifulSoup:
 
 
 @pytest.fixture
+def last_list_soup() -> BeautifulSoup:
+    return _soup("list_page_last.html")
+
+
+@pytest.fixture
 def detail_soup() -> BeautifulSoup:
     return _soup("detail_page.html")
 

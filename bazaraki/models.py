@@ -32,7 +32,7 @@ class CarListing(SQLModel, table=True):
 
     # Enrichment from the advert detail page.
     location: str | None = None
-    posted_raw: str | None = None  # e.g. "19.06.2026 09:56"
+    posted_raw: str | None = None  # as shown: "Today", "Yesterday", "19.06.2026 09:56"
     year: int | None = None
     mileage_km: int | None = None
     fuel_type: str | None = None
@@ -47,7 +47,7 @@ class CarListing(SQLModel, table=True):
     mot_till: str | None = None
     availability: str | None = None
     extras: str | None = None
-    seller_type: str | None = None  # "private" / "dealer"; from parsers._parse_seller_type (verified badge)
+    seller_type: str | None = None  # "private" / "dealer"; from the advert's business-account flag
 
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
