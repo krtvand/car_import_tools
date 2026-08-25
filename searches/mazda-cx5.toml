@@ -20,9 +20,8 @@ exclude_colours = ["black", "blue"]
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
 
-# No [dashboard] section means the dashboard is on. Without an
-# expected_profit_eur it cannot work out a cyprus sell price, so the panel says
-# so rather than showing an empty competitor list.
+[dashboard]
+enabled = false
 
 [[band]]
 year = 2023
