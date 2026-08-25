@@ -14,8 +14,23 @@ exclude_colours = ["black", "blue"]
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
 
+[dashboard]
+enabled = true
+expected_profit_eur = 5000
+
+# What a Cyprus advert must be, beyond being a CX-30, to count as competition.
+# Matched case-insensitively against what the scraper stored, and applied in
+# memory rather than at the crawl — which is why fuel_type can be a list.
+[competitors]
+fuel_type = ["petrol", "hybrid petrol"]
+engine_size_start = 2.5
+engine_size_end = 2.5
+
 [[band]]
 year = 2023
 mileage_start = 0
 mileage_end = 50000
 max_bid_jpy = { private = 2_405_000 }
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
