@@ -646,7 +646,7 @@ def margin_for(
     rates: Rates,
     costs: CostBook,
     specs: ModelSpecs,
-    market: CyprusMarket,
+    market: CyprusMarket | None,
 ) -> Margin | str:
     """One car's landed cost against the Cyprus market, or a reason there is none.
 
@@ -660,6 +660,12 @@ def margin_for(
     still returns a :class:`Margin`, carrying the landed cost and the reason the
     comparison is blank: knowing a car lands at €17,946 is useful on a row that
     cannot say what it sells for, and the two halves fail independently.
+
+    ``market=None`` asks for the landed half alone, and is not the same as a
+    market that came back empty: nothing is looked up, so ``bazaraki.db`` is
+    never opened. Callers that print only the landed cost pass it — the estimate
+    costs a full listings query, and the reason on the answer says it was not
+    asked for rather than that it failed.
     """
     spec = specs.for_car(make, model, year)
     if spec is None:
@@ -671,6 +677,14 @@ def margin_for(
         landed = landed_cost(auction_price_jpy, spec, rates, costs)
     except ValueError as exc:
         return str(exc)
+
+    if market is None:
+        return Margin(
+            landed=landed,
+            cyprus_eur=None,
+            resale_costs_eur=costs.resale_costs_eur,
+            reason="Cyprus estimate not requested",
+        )
 
     cyprus = market.estimate(make, model, year, mileage_km)
     return Margin(

@@ -311,17 +311,6 @@
         </dd>
         {% endif %}
 
-        {% if view.extraction %}
-        <dt>Shaken 車検</dt>
-        <dd>
-          {% if view.extraction.shaken_expiry_raw %}
-          {{ view.extraction.shaken_expiry_raw }}
-          {% else %}
-          <span class="warn">none — the buyer re-registers</span>
-          {% endif %}
-        </dd>
-        {% endif %}
-
         {# The damage row is the assertion, not the inventory: when the search
            bans codes, the label says which and the verdict marker answers it.
            The marks themselves are still listed, with the offending one picked
@@ -392,15 +381,6 @@
         {% endif %}
         {% endif %}{# view.extraction #}
 
-        <dt>Cyprus</dt>
-        <dd>
-          {% if view.comp %}
-          {{ view.comp.describe() }}
-          {% else %}
-          <span class="note">no comparable query (needs year + mileage)</span>
-          {% endif %}
-        </dd>
-
         <dt>Price</dt>
         <dd>
           start {{ lot.start_price_jpy | yen or '—' }}
@@ -430,26 +410,26 @@
         </dd>
         {% endif %}
 
-        {# What that max bid costs on Cyprus plates, against what the car sells
-           for here. Priced from `max_bid` rather than `bid_reduced`: the area
-           price is paid in Japan for the car and belongs in the customs value.
-           The rates are the ones stamped into the run the morning it was
-           fetched, so this number never moves under a re-render. A string here
-           is a reason the car could not be priced — usually a missing model
-           spec — and prints where the money would go. #}
+        {# What that max bid costs on Cyprus plates. Priced from `max_bid` rather
+           than `bid_reduced`: the area price is paid in Japan for the car and
+           belongs in the customs value. The rates are the ones stamped into the
+           run the morning it was fetched, so this number never moves under a
+           re-render. A string here is a reason the car could not be priced —
+           usually a missing model spec — and prints where the money would go.
+
+           Only the landed cost prints. `Margin.lines()` also carries the resale
+           estimate and the gap to it, and those were crowding out the half of
+           the card this page is actually for — reading the condition off the
+           sheet. The resale side is a curve fitted to asking prices with a
+           haircut on top; it belongs in a pricing report, not next to the
+           damage diagram. #}
         {% if view.margin %}
         <dt>Landed</dt>
         <dd class="money">
           {% if view.margin is string %}
           <span class="why">{{ view.margin }}</span>
           {% else %}
-          {% for line in view.margin.lines() %}
-          {% if loop.index == 3 %}
-          <span class="result">{{ line }}</span>
-          {% else %}
-          <span>{{ line }}</span>
-          {% endif %}
-          {% endfor %}
+          <span class="result">{{ view.margin.lines()[0] }}</span>
           {% endif %}
         </dd>
         {% endif %}
@@ -491,9 +471,6 @@
         requirements{% if report.search_reason %}: {{ report.search_reason }}{% endif %}.</li>
     {% elif report.search_reason %}
     <li>{{ report.search_reason }}.</li>
-    {% endif %}
-    {% if report.cyprus_reason %}
-    <li>No Cyprus comparables: {{ report.cyprus_reason }}</li>
     {% endif %}
     {# The consequence clause is conditional because it is not always true: a
        mis-edited *alias* file is worth saying out loud, but the cards below
@@ -538,8 +515,7 @@
   <p>A code carries a severity digit 1–4: <code>A1</code> is a light scratch,
      <code>U2</code> a more significant dent. A banned code is matched as a
      letter anywhere in the mark, so <code>X</code> catches <code>XX</code> and
-     the severity digit is ignored. Cyprus figures are median <em>asking</em>
-     prices from bazaraki.db, not sale prices.</p>
+     the severity digit is ignored.</p>
 </footer>
 
 </div>

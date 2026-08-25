@@ -313,7 +313,7 @@ class BidPricer:
     saved searches were files: those lots were never judged and are not priced
     either, rather than being priced against some other car's table.
 
-    Mirrors :class:`banzai24.report.CyprusPricer`: a missing input is reported,
+    Mirrors :class:`banzai24.report.LandedPricer`: a missing input is reported,
     not raised, because a report without the bid column is still the sheet next
     to the fields. A malformed *area price* file is likewise reported rather
     than raised — with the parser's complaint attached, so the edit that broke it

@@ -120,7 +120,6 @@ def _report_run(monkeypatch, tmp_path, argv, reviewer=None, index_exists=True):
     class Built:
         output = run_dir / "report.html"
         missing: list = []
-        cyprus_reason = None
         bid_reason = None
         quoted = 0
 

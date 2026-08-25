@@ -318,8 +318,6 @@ def main() -> None:
             if built.missing:
                 print(f"  {len(built.missing)} lot(s) rendered from the run file only — "
                       f"run `normalize {run_dir}` to fill them in.")
-            if built.cyprus_reason:
-                print(f"  no Cyprus comparables: {built.cyprus_reason}")
             if built.bid_reason:
                 # Said here as well as on the page: a mis-edited price table is
                 # your own edit, and you want to hear about it in the terminal

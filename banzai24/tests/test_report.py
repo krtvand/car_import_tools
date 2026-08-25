@@ -39,22 +39,10 @@ def temp_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def no_cyprus(monkeypatch):
-    """Report without the bazaraki join.
-
-    The Cyprus figure comes from the *other* project's database, which the
-    report treats as optional context. Tests that are not about it pass an empty
-    pricer so they neither depend on that file existing nor on what is in it.
-    """
-    monkeypatch.setattr(report, "CyprusPricer", lambda *a, **kw: _EmptyPricer())
-    return None
-
-
-@pytest.fixture
 def no_bid_prices(monkeypatch):
     """Report without the bid tables.
 
-    Same reasoning as :func:`no_cyprus`: the price tables are operator-authored
+    The price tables are operator-authored
     files that tests not about them should neither depend on nor be perturbed by
     when you re-tune a number in one.
     """
@@ -448,7 +436,7 @@ def test_japanese_is_escaped_not_mangled():
 # --- collecting from a saved run --------------------------------------------
 
 
-def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cyprus,
+def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db,
                                                       no_bid_prices):
     """End to end over the saved fixture run, with one lot extracted."""
     run_dir = tmp_path / "run"
@@ -478,7 +466,7 @@ def test_collect_reads_the_run_and_joins_the_database(tmp_path, temp_db, no_cypr
     assert all(src.startswith("data:") for src in re.findall(r'src="([^"]*)"', html))
 
 
-def test_collect_inlines_the_photos_the_run_downloaded(tmp_path, temp_db, no_cyprus,
+def test_collect_inlines_the_photos_the_run_downloaded(tmp_path, temp_db,
                                                       no_bid_prices):
     """Photos are found on disk under the run, with no database column standing
     between them and the card — and they are inlined in banzai24's order."""
@@ -508,7 +496,7 @@ def test_collect_inlines_the_photos_the_run_downloaded(tmp_path, temp_db, no_cyp
     assert [len(v.photo_uris) for v in built.views] == [2]
 
 
-def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no_cyprus,
+def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db,
                                                            no_bid_prices):
     """Skipping `normalize` should thin the report, not empty it — and say so."""
     run_dir = tmp_path / "run"
@@ -524,7 +512,7 @@ def test_a_run_lot_missing_from_the_database_still_renders(tmp_path, temp_db, no
     assert "run <code>normalize</code>" in report.render(built)
 
 
-def test_run_report_writes_a_standalone_file(tmp_path, temp_db, no_cyprus, no_bid_prices):
+def test_run_report_writes_a_standalone_file(tmp_path, temp_db, no_bid_prices):
     run_dir = tmp_path / "run"
     (run_dir / "sheets").mkdir(parents=True)
     (run_dir / "lots.json").write_text(
@@ -537,55 +525,6 @@ def test_run_report_writes_a_standalone_file(tmp_path, temp_db, no_cyprus, no_bi
     html = built.output.read_text(encoding="utf-8")
     assert html.startswith("<!doctype html>")
     assert "</html>" in html
-
-
-# --- the Cyprus join ---------------------------------------------------------
-
-
-def test_cyprus_comparable_comes_from_the_bazaraki_records():
-    """The two databases join on make/model strings, spelled differently.
-
-    banzai24 writes ``MAZDA``/``CX-30`` and bazaraki writes ``Mazda``/``CX-30``;
-    the match has to survive that, which is why it goes through
-    :func:`bazaraki.analysis.filter_model` rather than an equality test.
-    """
-    from bazaraki.analysis import CarRecord
-
-    records = [
-        CarRecord(ad_id=i, price=18_000 + i * 100, year=2023, mileage_km=15_000,
-                  make="Mazda", model="CX-30")
-        for i in range(8)
-    ]
-    comp = report.CyprusPricer(records=records).for_lot(_lot())
-
-    assert comp is not None and comp.n == 8
-    assert comp.median == pytest.approx(18_350)
-    assert "€18,350" in comp.describe()
-
-
-def test_a_lot_without_year_or_mileage_has_no_comparable_query():
-    """Distinct from asking and finding nothing — there is nothing to ask."""
-    from bazaraki.analysis import CarRecord
-
-    pricer = report.CyprusPricer(records=[
-        CarRecord(ad_id=1, price=18_000, year=2023, mileage_km=15_000,
-                  make="Mazda", model="CX-30")
-    ])
-    assert pricer.for_lot(_lot(mileage_km=None)) is None
-
-
-def test_no_cyprus_data_is_reported_not_raised(monkeypatch):
-    """bazaraki.db is optional context — a report without it is still the point."""
-    def boom():
-        raise FileNotFoundError("bazaraki.db")
-
-    import bazaraki.db as bazaraki_db
-    monkeypatch.setattr(bazaraki_db, "all_listings", boom)
-
-    pricer = report.CyprusPricer()
-    assert pricer.available is False
-    assert "bazaraki.db" in pricer.reason
-    assert pricer.for_lot(_lot()) is None
 
 
 # --- the bid price -----------------------------------------------------------

@@ -15,13 +15,10 @@ Several sources meet here, and each answers something the others cannot:
   carries the exchange rates the morning was priced at (``rates.json``);
 * **auction.db** holds what is known about them across every run — the API
   fields and the paid extraction;
-* **bazaraki.db** holds the Cyprus asking prices, which is the only thing that
-  turns a grade and a mileage into a decision about money;
 * the **bid tables** under ``inputs/`` turn that into the number you type into
   the bidding platform — see :mod:`banzai24.bidding`;
 * the **model specs** under ``price_calculator/inputs/`` turn that bid into a
-  landed cost in euro, and the landed cost into a margin — see
-  :mod:`price_calculator`.
+  landed cost in euro — see :mod:`price_calculator`.
 
 Regenerating is free — no network, no browser, no model call — so a template
 tweak is a re-run of ``report``, never a re-fetch or a re-extract.
@@ -130,107 +127,17 @@ def _flags(
     return flags
 
 
-# --- Cyprus comparables ------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CyprusComp:
-    """What the same car is being asked for in Cyprus, from ``bazaraki.db``."""
-
-    median: float | None
-    n: int
-    confidence: str
-    year_tol: int
-    mileage_band: int
-
-    def describe(self) -> str:
-        if self.median is None:
-            return "no Cyprus comparables"
-        band = f"±{self.year_tol}y ±{self.mileage_band // 1000}k km"
-        return f"€{self.median:,.0f} · n={self.n} · {self.confidence} · {band}"
-
-
-class CyprusPricer:
-    """Median Cyprus asking price for a lot's make/model/year/mileage.
-
-    The two databases are joined on nothing but the make and model strings, so
-    :func:`bazaraki.analysis.filter_model` does the matching — it normalises
-    case and punctuation, which is exactly the gap between banzai24's ``MAZDA``
-    / ``CX-30`` and bazaraki's ``Mazda`` / ``CX-30``.
-
-    Listings are loaded once per report and the per-model subsets are cached:
-    a run is usually one model, so this is one query and one filter no matter
-    how many lots it holds.
-
-    An unavailable or empty ``bazaraki.db`` is not an error. The Cyprus number
-    is context, not a prerequisite — a report without it is still the sheet next
-    to the fields, which is the point of the page.
-    """
-
-    def __init__(self, records=None):
-        self._analysis = None
-        self._records = records
-        self._by_model: dict[tuple[str, str], list] = {}
-        self.available = records is not None
-        self.reason: str | None = None if records is not None else "not loaded"
-
-        if records is None:
-            try:
-                from bazaraki import analysis, db as bazaraki_db
-
-                self._analysis = analysis
-                self._records = analysis.to_records(bazaraki_db.all_listings())
-                self.available = True
-                self.reason = None
-            except Exception as exc:  # missing db, missing package, unreadable file
-                self.reason = f"{type(exc).__name__}: {exc}"
-                return
-
-        if self._analysis is None:
-            from bazaraki import analysis
-
-            self._analysis = analysis
-
-    def for_lot(self, lot: AuctionLot) -> CyprusComp | None:
-        """``None`` when there is nothing to compare on — no data, or no query.
-
-        A lot missing its year or mileage has no query to ask, which is a
-        different thing from asking and finding nothing; the second returns a
-        :class:`CyprusComp` with ``median=None`` so the report can say "we
-        looked".
-        """
-        if not self.available or not lot.mark or not lot.model:
-            return None
-        if lot.registration_year is None or lot.mileage_km is None:
-            return None
-
-        key = (lot.mark, lot.model)
-        if key not in self._by_model:
-            scoped = self._analysis.filter_model(self._records, lot.mark, lot.model)
-            self._by_model[key] = self._analysis.clean(scoped)
-
-        comp = self._analysis.comparables(
-            self._by_model[key], lot.registration_year, lot.mileage_km
-        )
-        return CyprusComp(
-            median=comp.estimate,
-            n=comp.n,
-            confidence=comp.confidence,
-            year_tol=comp.year_tol,
-            mileage_band=comp.mileage_band,
-        )
-
-
 # --- landed cost and margin --------------------------------------------------
 
 
 class LandedPricer:
     """What a lot costs on Cyprus plates, against what it sells for here.
 
-    Third pricer on this page and the only one that answers *money you keep*:
-    :class:`CyprusPricer` says what the same car is being asked for,
-    :class:`BidPricer` says what to type into the platform, and this one puts the
-    landed cost of that bid next to a resale estimate. See
+    Second pricer on this page: :class:`BidPricer` says what to type into the
+    platform, and this one says what winning at that price costs on Cyprus
+    plates. Only the landed total reaches the card — the resale estimate and the
+    margin to it are computed and not printed, because a curve fitted to asking
+    prices was crowding out the condition read off the sheet. See
     :mod:`price_calculator` for the arithmetic — a port of the sheet, kept pure
     so it can be checked against the sheet's own worked example.
 
@@ -259,9 +166,7 @@ class LandedPricer:
     """
 
     def __init__(self, run_dir: Path | None = None, rates=None, costs=None):
-        from price_calculator.sources import (
-            CyprusMarket, ModelSpecs, read_costs, read_rates,
-        )
+        from price_calculator.sources import ModelSpecs, read_costs, read_rates
 
         self.rates = rates if rates is not None else (
             read_rates(run_dir) if run_dir is not None else None)
@@ -269,14 +174,13 @@ class LandedPricer:
             read_costs(run_dir) if run_dir is not None else None)
         self.reason: str | None = None
         if self.rates is None or self.costs is None:
-            self.specs = self.market = None
+            self.specs = None
             self.available = False
             self.reason = ("no exchange rates for this run" if self.rates is None
                            else "no cost book stamped into this run")
             return
 
         self.specs = ModelSpecs()
-        self.market = CyprusMarket()
         self.available = self.specs.available
         self.reason = self.specs.reason
 
@@ -300,7 +204,10 @@ class LandedPricer:
         return margin_for(
             make=lot.mark, model=lot.model, year=year, mileage_km=mileage,
             auction_price_jpy=quote.max_bid, rates=self.rates, costs=self.costs,
-            specs=self.specs, market=self.market,
+            # No market: the card prints the landed cost and nothing else, and
+            # the estimate behind the rest costs a full `bazaraki.db` query per
+            # report. See `margin_for`.
+            specs=self.specs, market=None,
         )
 
 
@@ -383,7 +290,6 @@ class LotView:
     lot: AuctionLot
     extraction: SheetExtraction | None = None
     checks: CrossCheck | None = None
-    comp: CyprusComp | None = None
     quote: BidQuote | None = None      # None only when a bid table is missing
     margin: object | None = None       # Margin, a reason string, or None (see LandedPricer)
     flags: list[Flag] = field(default_factory=list)
@@ -587,7 +493,6 @@ class Report:
     run_dir: Path
     views: list[LotView]
     missing: list[str] = field(default_factory=list)   # in the run, not in the DB
-    cyprus_reason: str | None = None                   # why the € column is empty
     bid_reason: str | None = None                      # why *no* card has a bid price
     landed_reason: str | None = None                   # why *no* card has a landed cost
     definition: SearchDefinition | None = None         # the search this run ran
@@ -664,7 +569,6 @@ class Report:
 def collect(
     run_dir: Path,
     all_lots: bool = False,
-    pricer: CyprusPricer | None = None,
     bid_pricer: BidPricer | None = None,
     landed_pricer: LandedPricer | None = None,
     definition: SearchDefinition | None = None,
@@ -696,7 +600,6 @@ def collect(
 
     stored = db.lots_by_numbers(numbers)
     extractions = db.extractions_by_numbers(numbers)
-    pricer = pricer or CyprusPricer()
     # The bands are the search's, so the pricer is built after the search is
     # resolved: a run that named none gets no bid column and says so once, in the
     # header, rather than being priced off whichever car's table loaded first.
@@ -723,7 +626,6 @@ def collect(
             lot=lot,
             extraction=extraction,
             checks=checks,
-            comp=pricer.for_lot(lot),
             quote=quote,
             margin=landed_pricer.for_lot(lot, quote, extraction),
             flags=_flags(extraction, checks),
@@ -738,7 +640,7 @@ def collect(
 
     views.sort(key=lambda view: view.sort_key)
     return Report(run_dir=run_dir, views=views, missing=missing,
-                  cyprus_reason=pricer.reason, bid_reason=bid_pricer.reason,
+                  bid_reason=bid_pricer.reason,
                   landed_reason=landed_pricer.reason,
                   definition=definition, search_reason=search_reason)
 

@@ -339,6 +339,25 @@ def test_margin_for_prices_the_car_even_with_no_cyprus_data(tmp_path):
     assert "no Cyprus listings" in result.reason
 
 
+def test_margin_for_skips_the_market_when_asked_for_the_landed_half_only(tmp_path):
+    """``market=None`` is "do not look", not "looked and found nothing".
+
+    The report prints the landed cost and nothing else, so it passes None and
+    bazaraki.db is never opened. A market object here would be a full listings
+    query per report for four lines nobody renders.
+    """
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    result = margin_for("MAZDA", "CX-5", 2023, 40_000, 2_055_000,
+                        RATES, COSTS, specs, None)
+
+    assert not isinstance(result, str)
+    assert result.landed.total_eur > 0
+    assert result.cyprus_eur is None
+    assert result.reason == "Cyprus estimate not requested"
+    assert result.warning is None
+    assert result.adjustment_factor is None
+
+
 def test_margin_for_compares_against_a_hand_built_market(tmp_path):
     """A whole margin end to end, with no database anywhere near it."""
     from bazaraki.analysis import CarRecord
