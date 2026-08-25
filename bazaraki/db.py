@@ -109,6 +109,25 @@ def start_run(filters=None) -> int:
         return run.run_id
 
 
+def _model_matches(listing_model: str | None, run: ScrapeRun) -> bool:
+    """True if a listing's model is the one a run's model *slug* names.
+
+    The two sides are spelled differently. A run stores bazaraki's URL slug,
+    and the site prefixes the make on some of them — the RAV4 lives at
+    ``/toyota/toyota-rav4/`` (see ``bazaraki.cars``) — while a listing stores
+    the model as its ad title spells it ("RAV4"). Comparing the two directly
+    made every make-prefixed search delist nothing at all: no RAV4 could ever
+    look in scope, so none was ever marked sold.
+    """
+    listing_key, run_key = _normalise(listing_model), _normalise(run.model)
+    if listing_key == run_key:
+        return True
+    make_key = _normalise(run.make)
+    if make_key and run_key is not None and run_key.startswith(make_key):
+        return listing_key == run_key[len(make_key):]
+    return False
+
+
 def _in_scope(listing: CarListing, run: ScrapeRun) -> bool:
     """True if ``listing`` falls within the run's filter scope.
 
@@ -119,7 +138,7 @@ def _in_scope(listing: CarListing, run: ScrapeRun) -> bool:
     """
     if _normalise(listing.make) != _normalise(run.make):
         return False
-    if run.model is not None and _normalise(listing.model) != _normalise(run.model):
+    if run.model is not None and not _model_matches(listing.model, run):
         return False
     checks = [
         (listing.year, run.year_min, run.year_max),

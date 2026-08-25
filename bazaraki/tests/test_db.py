@@ -134,6 +134,31 @@ def test_delisting_respects_model_scope(temp_db):
     assert db.all_listings()[0].is_active is True
 
 
+def test_delisting_handles_a_make_prefixed_model_slug(temp_db):
+    """bazaraki spells the RAV4 "toyota-rav4" in the URL but "RAV4" in a title.
+
+    Comparing the slug to the title raw put every RAV4 out of its own run's
+    scope, so a sold one stayed active forever.
+    """
+    run = db.start_run(_filters(make="toyota", model="toyota-rav4"))
+    db.upsert_listing({"ad_id": 7, "title": "Toyota RAV4 2.5L 2023",
+                       "make": "Toyota", "model": "RAV4", "url": "u",
+                       "price": 26500.0})
+
+    assert db.finalize_run(run, seen_ad_ids=set(), completed=True) == 1
+    assert db.all_listings()[0].is_active is False
+
+
+def test_make_prefixed_slug_still_respects_model_scope(temp_db):
+    """Stripping the make prefix must not widen the scope to the whole make."""
+    run = db.start_run(_filters(make="toyota", model="toyota-rav4"))
+    db.upsert_listing({"ad_id": 8, "title": "Toyota Corolla", "make": "Toyota",
+                       "model": "Corolla", "url": "u", "price": 100.0})
+
+    assert db.finalize_run(run, seen_ad_ids=set(), completed=True) == 0
+    assert db.all_listings()[0].is_active is True
+
+
 def test_delisting_respects_numeric_scope(temp_db):
     run = db.start_run(_filters(make="mazda", model="cx-30", year_min=2018))
     db.upsert_listing({"ad_id": 6, "title": "Mazda CX-30", "make": "Mazda",
