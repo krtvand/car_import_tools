@@ -6,9 +6,11 @@ kilometre, a year that is not in the table, a house whose name is spelled
 differently in two files. Each of those must come back as a reason on the card —
 never a guessed number, and never an exception that costs you the whole report.
 
-The lookup is pure, so all of this runs against three-line fixture CSVs written
-into ``tmp_path``; nothing here touches the real tables, the database, or a
-rendered page.
+The lookup is pure, so all of this runs against hand-built bands and two-line
+fixture CSVs written into ``tmp_path``; nothing here touches the real tables, the
+database, or a rendered page. The bands arrive already parsed and already checked
+for overlap — :mod:`searches` refuses to load a file whose bands collide — so the
+tests for *that* live in ``searches/tests/test_definition.py``.
 """
 from __future__ import annotations
 
@@ -17,11 +19,19 @@ from pathlib import Path
 
 import pytest
 
+from searches.cars import Car
+from searches.definition import Band
+
 from banzai24 import bidding
 from banzai24.models import AuctionLot, SheetExtraction
 
-BIDS_HEADER = "make,model,year,mileage_min,mileage_max,rental,max_bid_jpy"
 AREA_HEADER = "AUCTION NAME,AREA PRICE $,AREA PRICE JPY"
+
+CX30 = Car(key="mazda-cx30", make="Mazda", model="CX-30")
+DEFAULT_BANDS = (
+    Band(year=2023, mileage_start=0, mileage_end=50_000,
+         max_bid_jpy={"private": 1_855_000}),
+)
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -32,20 +42,20 @@ def _write(path: Path, *lines: str) -> Path:
     return path
 
 
-def _tables(tmp_path, bids=(), areas=(), aliases=(), title=True) -> dict:
-    """The three CSVs on disk, as ``BidPricer`` keyword arguments.
+def _tables(tmp_path, bands=None, areas=(), aliases=(), title=True) -> dict:
+    """The two CSVs on disk plus the bands, as ``BidPricer`` keyword arguments.
 
     ``title=True`` writes the Numbers-style sheet-name line above every header,
     because that is what a fresh export actually looks like — the parser has to
     survive it in the normal case, not only in the test that checks for it.
     """
-    bids = bids or ("MAZDA,CX-30,2023,0,50000,private,1855000",)
     areas = areas or ("USS TOKYO,110,12000",)
     aliases = aliases or ("U Tokyo,USS TOKYO",)
     lead = ("some_export_2026",) if title else ()
 
     return {
-        "bid_prices_path": _write(tmp_path / "bids.csv", *lead, BIDS_HEADER, *bids),
+        "bands": DEFAULT_BANDS if bands is None else bands,
+        "car": CX30,
         "area_prices_path": _write(tmp_path / "areas.csv", *lead, AREA_HEADER, *areas),
         "aliases_path": _write(tmp_path / "aliases.csv", *lead,
                                "db_name,area_price_name", *aliases),
@@ -109,7 +119,7 @@ def test_a_null_bid_reduced_prints_its_reason_where_the_number_was(tmp_path):
     assert quote.extra_costs == 12_000
     assert quote.describe() == (
         "max bid — · area (U Tokyo) −¥ 12 000 · "
-        "no table row for MAZDA CX-30 2017 · 15,000 km · private"
+        "no band for MAZDA CX-30 2017 · 15,000 km"
     )
 
 
@@ -126,8 +136,9 @@ def test_mileage_bands_are_inclusive_at_both_ends(tmp_path, mileage, priced):
     assert (quote.bid_reduced is not None) is priced
 
 
-def test_a_blank_mileage_max_is_open_ended(tmp_path):
-    pricer = _pricer(tmp_path, bids=("MAZDA,CX-30,2023,50001,,private,1200000",))
+def test_an_omitted_mileage_end_is_open_ended(tmp_path):
+    pricer = _pricer(tmp_path, bands=(
+        Band(year=2023, mileage_start=50_001, max_bid_jpy={"private": 1_200_000}),))
     quote = pricer.for_lot(_lot(mileage_km=310_000), _extraction())
     assert quote.max_bid == 1_200_000
 
@@ -137,14 +148,13 @@ def test_the_year_must_match_exactly_rather_than_borrowing_a_neighbour(tmp_path)
     alternative is a number that looks authored and is not."""
     quote = _pricer(tmp_path).for_lot(_lot(registration_year=2022), _extraction())
     assert quote.bid_reduced is None
-    assert quote.reason == "no table row for MAZDA CX-30 2022 · 15,000 km · private"
+    assert quote.reason == "no band for MAZDA CX-30 2022 · 15,000 km"
 
 
 def test_rental_and_private_are_priced_separately(tmp_path):
-    pricer = _pricer(tmp_path, bids=(
-        "MAZDA,CX-30,2023,0,50000,private,1855000",
-        "MAZDA,CX-30,2023,0,50000,rental,1400000",
-    ))
+    pricer = _pricer(tmp_path, bands=(
+        Band(year=2023, mileage_start=0, mileage_end=50_000,
+             max_bid_jpy={"private": 1_855_000, "rental": 1_400_000}),))
     private = pricer.for_lot(_lot(), _extraction())
     rental = pricer.for_lot(_lot(), _extraction(private_car_note=None,
                                                 rental_car_note="レンタカー"))
@@ -265,7 +275,8 @@ def test_an_area_cost_above_the_max_bid_is_not_a_bid_of_zero(tmp_path):
     """Nor a negative number. It is "do not buy this car at this house", and it
     must not look like a price."""
     pricer = _pricer(tmp_path,
-                     bids=("MAZDA,CX-30,2023,0,50000,private,30000",),
+                     bands=(Band(year=2023, mileage_end=50_000,
+                                 max_bid_jpy={"private": 30_000}),),
                      areas=("USS TOKYO,365,47000",),
                      aliases=("U Tokyo,USS TOKYO",))
     quote = pricer.for_lot(_lot(), _extraction())
@@ -278,15 +289,26 @@ def test_an_area_cost_above_the_max_bid_is_not_a_bid_of_zero(tmp_path):
 # --- missing and malformed tables --------------------------------------------
 
 
-def test_an_absent_table_costs_the_column_and_not_the_report(tmp_path):
-    tables = _tables(tmp_path)
-    tables["bid_prices_path"].unlink()
-
-    pricer = bidding.BidPricer(**tables)
+def test_a_run_that_named_no_search_has_no_bands_and_says_so(tmp_path):
+    """The only way the bid column goes missing now. A run fetched before saved
+    searches were files named none, so nothing declares what to pay for its lots
+    — and pricing them off whichever car's table happened to load would be worse
+    than a blank column."""
+    pricer = bidding.BidPricer(**{**_tables(tmp_path), "bands": ()})
 
     assert pricer.available is False
-    assert pricer.reason == "bid prices not loaded"
+    assert pricer.reason == "no bid bands: this run named no saved search"
     assert pricer.for_lot(_lot(), _extraction()) is None
+
+
+def test_a_lot_that_is_not_the_search_s_car_is_not_priced_off_its_bands(tmp_path):
+    """A run holds one search's lots, so this only fires when a run's provenance
+    and its lots disagree — worth saying rather than pricing a RAV4 off a
+    CX-30's band."""
+    quote = _pricer(tmp_path).for_lot(_lot(mark="TOYOTA", model="RAV4"), _extraction())
+
+    assert quote.max_bid is None
+    assert quote.reason == "TOYOTA RAV4 is not the Mazda CX-30 this search prices"
 
 
 def test_an_absent_area_table_says_which_file_is_gone(tmp_path):
@@ -318,59 +340,6 @@ def test_a_mis_edited_alias_file_is_said_out_loud_but_suppresses_nothing(tmp_pat
     assert pricer.available is True
     assert "aliased twice" in pricer.reason
     assert pricer.for_lot(_lot(auction_name="BAY AUC"), _extraction()).extra_costs == 4_000
-
-
-def test_two_rows_that_could_both_match_one_car_are_caught_at_load(tmp_path):
-    """Checked as band overlap rather than "this lot matched twice": at load
-    there is no lot, and a shadowed row is a wrong price you never see."""
-    path = _write(tmp_path / "bids.csv", BIDS_HEADER,
-                  "MAZDA,CX-30,2023,0,50000,private,1855000",
-                  "MAZDA,CX-30,2023,40000,60000,private,1705000")
-
-    with pytest.raises(bidding.BidTableError) as caught:
-        bidding.load_bid_prices(path)
-
-    assert "lines 2 and 3" in str(caught.value)
-
-
-def test_rows_differing_only_in_rental_never_conflict(tmp_path):
-    path = _write(tmp_path / "bids.csv", BIDS_HEADER,
-                  "MAZDA,CX-30,2023,0,50000,private,1855000",
-                  "MAZDA,CX-30,2023,0,50000,rental,1400000")
-    assert len(bidding.load_bid_prices(path)) == 2
-
-
-@pytest.mark.parametrize("row, complaint", [
-    ("MAZDA,CX-30,2023,0,50000,,1855000", "rental must be one of"),
-    ("MAZDA,CX-30,2023,0,50000,ex-fleet,1855000", "rental must be one of"),
-    ("MAZDA,CX-30,20xx,0,50000,private,1855000", "year is not a whole number"),
-    ("MAZDA,CX-30,2023,0,50000,private,", "max_bid_jpy is empty"),
-    ("MAZDA,CX-30,2023,60000,50000,private,1855000", "is below mileage_min"),
-])
-def test_an_unusable_row_names_the_line_and_the_column(tmp_path, row, complaint):
-    """A blank ``rental`` is a typo, not a wildcard: a lot whose sheet says
-    neither never consults the table, so the row could never match."""
-    path = _write(tmp_path / "bids.csv", BIDS_HEADER, row)
-
-    with pytest.raises(bidding.BidTableError) as caught:
-        bidding.load_bid_prices(path)
-
-    assert "line 2" in str(caught.value)
-    assert complaint in str(caught.value)
-
-
-def test_a_mis_edited_table_is_reported_on_the_page_not_raised_at_the_reader(tmp_path):
-    """Loud, but not fatal: the parser's own complaint reaches the header, so
-    the broken edit is named rather than silently dropped — and the other
-    sixty-one cards still render."""
-    tables = _tables(tmp_path, bids=("MAZDA,CX-30,2023,0,50000,ex-fleet,1855000",))
-
-    pricer = bidding.BidPricer(**tables)
-
-    assert pricer.available is False
-    assert pricer.reason.startswith("bid prices not loaded: ")
-    assert "rental must be one of" in pricer.reason
-    assert pricer.for_lot(_lot(), _extraction()) is None
 
 
 # --- reading the files as they actually arrive -------------------------------
@@ -406,18 +375,21 @@ def test_the_dollar_column_is_ignored(tmp_path):
 
 
 def test_a_file_without_the_expected_header_is_named_as_such(tmp_path):
-    path = _write(tmp_path / "bids.csv", "make,model,price", "MAZDA,CX-30,1")
+    path = _write(tmp_path / "areas.csv", "house,price", "USS TOKYO,1")
     with pytest.raises(bidding.BidTableError, match="no header row"):
-        bidding.load_bid_prices(path)
+        bidding.load_area_prices(path)
 
 
 def test_the_shipped_tables_load_and_price_a_real_house():
     """The defaults are committed, so a fresh clone gets a priced report — and
     the six aliases are exercised against the real 123-row cost file."""
-    pricer = bidding.BidPricer()
+    import searches
+
+    definition = searches.load("mazda-cx30")
+    pricer = bidding.BidPricer(bands=definition.bands, car=definition.car)
 
     assert pricer.available is True and pricer.reason is None
-    assert pricer.rows and len(pricer.aliases) == 6
+    assert pricer.bands and len(pricer.aliases) == 6
     for db_name in ("U Tokyo", "U Nagoya", "U Kyushu", "U Osaka",
                     "U Yokohama", "Honda AA Tokyo", "BAY AUC", "HAA Kobe"):
         cost, reason = pricer._area_cost(_lot(auction_name=db_name))

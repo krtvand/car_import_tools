@@ -1,6 +1,8 @@
 """Run-directory artifacts, day selection and sheet naming — no network here."""
 from __future__ import annotations
 
+import dataclasses
+
 import json
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -14,13 +16,22 @@ from banzai24.search import SearchDefinition
 
 
 def _definition(**overrides) -> SearchDefinition:
-    base = dict(
-        name="mazda-cx30",
-        filters=AuctionFilters(make="MAZDA", model="CX-30"),
-        lot_filters=LotFilters(body_model_code=("DMEJ3P",)),
-        requirements=SheetRequirements(drivetrain="4WD", no_damage_codes=("W",)),
-    )
-    return SearchDefinition(**{**base, **overrides})
+    """Built through the parser rather than by hand, so it carries its bands.
+
+    The provenance written into ``lots.json`` is the shared definition's own
+    payload — one spelling of what a search is on disk, rather than banzai24's
+    view of one — so a hand-built dataclass would have nothing to record.
+    """
+    from banzai24 import search as search_module
+
+    definition = search_module.parse({
+        "car": "mazda-cx30",
+        "api": {"body_model_code": ["DMEJ3P"]},
+        "sheet": {"drivetrain": "4WD", "no_damage_codes": ["W"]},
+        "band": [{"year": 2023, "mileage_end": 55_000,
+                  "max_bid_jpy": {"private": 1_805_000}}],
+    }, name="mazda-cx30")
+    return dataclasses.replace(definition, **overrides) if overrides else definition
 
 
 def _lot(number: str = "47-1312-35159", image: str | None = "https://x/img") -> dict:
@@ -217,7 +228,7 @@ def test_lots_json_records_the_search_by_name_as_well_as_by_value(tmp_path):
         .read_text(encoding="utf-8")
     )
     assert saved["search"]["name"] == "mazda-cx30"
-    assert saved["search"]["site"]["make"] == "MAZDA"
+    assert saved["search"]["car"] == "mazda-cx30"
     assert saved["search"]["api"]["body_model_code"] == ["DMEJ3P"]
     assert saved["search"]["sheet"]["no_damage_codes"] == ["W"]
 

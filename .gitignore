@@ -26,3 +26,5 @@ storage/
 runs/
 banzai24/.chrome-profile/
 banzai24/.session.json
+# macOS
+.DS_Store

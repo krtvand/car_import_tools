@@ -77,7 +77,11 @@ def test_the_saved_cx30_search_reproduces_the_phase0_reference_url():
     assert parsed.netloc == "banzai24.com"
     assert parsed.path == "/MAZDA/CX-30/transmissions-auto"
     assert q["yearStart"] == ["2023"] and q["yearEnd"] == ["2023"]
-    assert q["mileageEnd"] == ["55000"]
+    # 60,000, not the 55,000 recon used: the bound is now the union of the
+    # bands, and the table has always priced to 60,000. The old hand-written
+    # ceiling meant every lot between them was priced and never fetched, which
+    # is the drift `docs/adr/0005-one-search-file-two-parsers.md` describes.
+    assert q["mileageEnd"] == ["60000"]
     assert q["engineCapacityStart"] == ["1.9"]
     assert sorted(q["gradeOrigin"]) == ["4", "4.5", "5"]
     assert q["source"] == ["auctions"]

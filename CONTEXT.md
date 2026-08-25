@@ -49,9 +49,17 @@ _Avoid_: Dimensions, car spec, vehicle data, model (which is a string on a lot)
 ### Deciding what to look at
 
 **Search definition**:
-One TOML file naming one car and everything wanted from it. The complete
-declaration — nothing is inherited from anywhere else.
+One TOML file naming one car and everything wanted from it — in Japan and in
+Cyprus. The complete declaration: nothing is inherited from anywhere else, and
+both parsers read this one file. Made of *bands*.
 _Avoid_: Config, filters, saved search, profile
+
+**Band**:
+One row of a search's bid table: a year, a mileage range, and the max bid for it
+per 車歴. What a search is actually made of — the search's own fetch bounds are
+the union of its bands, never written separately, because a bound written beside
+a price drifts from it.
+_Avoid_: Tier, block, range, row
 
 **Requirement**:
 One condition a lot must satisfy, declared in a search definition. Every
@@ -94,8 +102,10 @@ listing describes, which is a separate concern from whether it is wanted.
 ### Money
 
 **Max bid**:
-The all-in maximum for a car, in JPY, read off an operator-authored table keyed
-by make, model, year, mileage band and 車歴.
+The all-in maximum for a car, in JPY, read off the *band* it falls in. Operator-
+authored, re-tuned often, and read live rather than from the run — so
+re-rendering an old report re-prices it. See
+`docs/adr/0004-bid-prices-are-read-live.md`.
 
 **Extra costs**:
 The auction house's area price. The only thing subtracted from a max bid.
@@ -144,3 +154,20 @@ _Avoid_: Sale price, market value, resale price
 the landed cost. What the car is expected to earn. Never an input to anything —
 it is the number the page exists to show you.
 _Avoid_: Profit, spread, ROI
+
+**Cyprus sell price**:
+`landed cost + resale costs + the profit required from this car`. What you
+**must** get. The same arithmetic as a *margin* run backwards: a margin is read
+off the market, this is declared and the market judged against it.
+_Avoid_: Sell price, asking price — and above all not a **Cyprus estimate**,
+which is what the market says you **would** get. The two disagreeing is the
+point: when the required price is above the estimate, the car does not work at
+any profit, and no competitor has to do anything for that to be true.
+
+**Competitor**:
+One live Cyprus advert, inside a band's declared competitor bounds, asking less
+than that band's *cyprus sell price*. Deliberately not the same car: an older
+one, or one with more kilometres on it, still takes the sale. Not a **Cyprus
+comparable**, which is a median over similar cars and describes a market — a
+competitor is one advert, with a link, that undercuts you specifically.
+_Avoid_: Rival, listing, comp

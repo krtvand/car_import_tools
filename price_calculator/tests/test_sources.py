@@ -53,16 +53,24 @@ def write(tmp_path: Path, body: str, preamble: str = "") -> Path:
 # --- the shipped file --------------------------------------------------------
 
 
-def test_the_shipped_specs_load_and_cover_every_bid_price_row():
-    """Every car you bid on must be priceable, or the table has a hole in it."""
-    from banzai24.bidding import load_bid_prices
+def test_the_shipped_specs_cover_every_band_of_every_saved_search():
+    """Every car you bid on must be priceable, or the table has a hole in it.
+
+    A missing spec is not an error anywhere — it degrades to a reason on one
+    card — so nothing else would notice a car being added to a search without
+    its dimensions. Freight is 17% of the CNF price, and it is the half of a
+    landed cost that this would silently remove.
+    """
+    import searches
 
     specs = ModelSpecs()
     assert specs.available, specs.reason
 
-    for row in load_bid_prices():
-        assert specs.for_car(row.make, row.model, row.year) is not None, \
-            f"no model spec covers {row.make} {row.model} {row.year}"
+    for name, search, problem in searches.load_all():
+        assert problem is None, f"{name}: {problem}"
+        for band in search.bands:
+            assert specs.for_car(search.car.make, search.car.model, band.year) is not None, \
+                f"no model spec covers {search.car} {band.year} ({name})"
 
 
 def test_the_shipped_specs_have_plausible_volumes():

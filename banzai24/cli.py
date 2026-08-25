@@ -1,6 +1,6 @@
 """CLI for the banzai24 Japanese-auction scraper.
 
-Every search is a file: ``banzai24/searches/<name>.toml`` holds one car's whole
+Every search is a file: ``searches/<name>.toml`` holds one car's whole
 declaration — what banzai24 filters on, what we filter on, and what the auction
 sheet has to say before a lot counts as wanted. Nothing is inherited from
 anywhere, so a filter that is not in the file is not applied.
@@ -48,9 +48,14 @@ import dataclasses
 from datetime import date
 from pathlib import Path
 
-from . import bidding, config, db, fetch, index, normalize, search, session
+from . import bidding, config, db, fetch, normalize, search, session
 
 _ROOT = Path(__file__).parent.parent   # only to print the default paths readably
+
+
+# The index page. Written by `dashboard build` and only opened here, so this is
+# the one place `report` needs to know where it lives.
+INDEX_PATH = _ROOT / "runs" / "index.html"
 
 
 def _load_search(name: str) -> search.SearchDefinition:
@@ -132,29 +137,26 @@ def _build_parser() -> argparse.ArgumentParser:
     rep.add_argument("-o", "--output", metavar="PATH",
                      help="Write somewhere other than <run>/report.html.")
     rep.add_argument("--open", action="store_true", dest="open_report",
-                     help="Open runs/index.html — the last "
-                          f"{index.DEFAULT_LIMIT} runs, newest first — in the "
-                          "parser's signed-in Chrome, so a click through to a "
-                          "lot lands authenticated. One tab, whatever this "
-                          "command built; the index is rewritten either way. "
-                          "Waits until you close the window: the browser is "
-                          "signed in only for as long as this command runs.")
+                     help="Open runs/index.html in the parser's signed-in Chrome, "
+                          "so a click through to a lot lands authenticated. One "
+                          "tab, whatever this command built. The page itself is "
+                          "written by `dashboard build`, not here — this opens "
+                          "what is already there. Waits until you close the "
+                          "window: the browser is signed in only for as long as "
+                          "this command runs.")
     rep.add_argument("--jpy-per-eur", type=float, metavar="RATE", dest="jpy_per_eur",
                      help="Also show start prices in euro at this rate, so they compare "
                           "with the Cyprus figures. No default: a hard-coded rate would "
                           "go stale silently, and a wrong one is worse than none.")
-    rep.add_argument("--bid-prices", metavar="PATH", dest="bid_prices",
-                     help=f"Your max bids, keyed by make/model/year/mileage/rental. "
-                          f"Default {bidding.BID_PRICES_PATH.relative_to(_ROOT)}. "
-                          f"Absent or mis-edited costs the bid column and says so on "
-                          f"the report — it never stops one being written.")
     rep.add_argument("--area-prices", metavar="PATH", dest="area_prices",
                      help=f"The auction houses' area costs, subtracted from the max bid. "
                           f"Default {bidding.AREA_PRICES_PATH.relative_to(_ROOT)} — the "
                           f"year in that name is part of the path, not read off the "
                           f"clock, so nothing silently changes file on 1 January.")
 
-    sub.add_parser("searches", help="List the saved searches and what each asks for")
+    sub.add_parser("searches",
+                   help="List the saved searches and what each asks for "
+                        "(the same list as `python -m searches list`)")
 
     for name, help_text in (("fetch", "Fetch lots + auction sheets into a run directory"),):
         p = sub.add_parser(name, help=help_text)
@@ -216,17 +218,12 @@ def main() -> None:
         return
 
     if args.command == "searches":
-        names = search.available()
-        if not names:
-            raise SystemExit(f"No saved searches in {search.SEARCH_DIR}.")
-        for name in names:
-            try:
-                print(f"{name}\n  {search.load(name).describe()}")
-            except search.SearchDefinitionError as exc:
-                # Listed, not hidden: a definition that will not load is exactly
-                # what you came here to find out about.
-                print(f"{name}\n  BROKEN: {exc}")
-        return
+        # An alias, kept because it is in muscle memory and in every script. The
+        # searches are no longer banzai24's — both parsers and the dashboard read
+        # them — so the listing itself lives with the files.
+        from searches.cli import main as searches_main
+
+        return searches_main(["list"]) and None
 
     if args.command == "normalize":
         run_dir = Path(args.run_dir) if args.run_dir else normalize.latest_run()
@@ -315,7 +312,6 @@ def main() -> None:
                 output=Path(args.output) if args.output else None,
                 all_lots=args.all_lots,
                 jpy_per_eur=args.jpy_per_eur,
-                bid_prices=Path(args.bid_prices) if args.bid_prices else None,
                 area_prices=Path(args.area_prices) if args.area_prices else None,
             )
             print(built.summary())
@@ -336,11 +332,17 @@ def main() -> None:
                 gone = "" if built.quoted else " — no bid price on any card"
                 print(f"  {built.bid_reason}{gone}")
 
-        # Rebuilt on every `report`, opened or not: it is derived from directory
-        # names and costs nothing, so there is no reason to let it go stale.
-        listing = index.write()
+        # Not written here. The index is the dashboard's page now — it carries a
+        # link to the competitors panel, which needs both databases and the cost
+        # book, and `report` is the command that promises to touch no network and
+        # cost nothing. So this opens what `dashboard build` last wrote.
+        listing = INDEX_PATH
 
         if args.open_report:
+            if not listing.exists():
+                raise SystemExit(
+                    f"{listing} does not exist yet — run `uv run python -m "
+                    f"dashboard build` to write it.")
             # One tab, always the index — never one per report. A two-car
             # morning used to open two windows and still left every earlier run
             # findable only in Finder.
@@ -351,6 +353,7 @@ def main() -> None:
             # one. That browser only stays signed in for as long as this command
             # runs; see session.review.
             print(f"\nOpening {listing} — close the window when you are done.")
+            print("  It is as fresh as your last `dashboard build`.")
             # Not a warning about a broken state: banzai24 does not reliably
             # hand a session between browsers, so signing in here is the normal
             # path. The snapshot loop in review() captures it for the next fetch.

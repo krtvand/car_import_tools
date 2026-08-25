@@ -1,13 +1,9 @@
-# Mazda 3 (Japan auctions). See mazda-cx30.toml for what the sections mean.
+# Mazda 3. See mazda-cx30.toml for what the sections mean.
+
+car = "mazda-3"
 
 [site]
-make = "MAZDA"
-model = "3"
 transmission = "auto"
-year_start = 2023
-year_end = 2023
-mileage_start = 0
-mileage_end = 50000
 grade = ["4", "4.5", "5"]
 source = "auctions"
 
@@ -18,3 +14,9 @@ exclude_colours = ["black", "blue"]
 [sheet]
 drivetrain = "2WD"
 no_damage_codes = ["W", "X", "欠"]
+
+[[band]]
+year = 2023
+mileage_start = 0
+mileage_end = 50000
+max_bid_jpy = { private = 1_605_000 }

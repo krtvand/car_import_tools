@@ -1,5 +1,10 @@
 """The runs index: one page listing recent runs, and the only tab ``--open`` opens.
 
+It lives in the dashboard rather than in ``banzai24`` because it is a page a
+person looks at, not a step in a fetch — and because it now carries a link to
+the competitors panel, which needs both databases. ``banzai24 report`` opens it
+and no longer writes it; ``dashboard build`` writes it.
+
 A morning is several runs — a two-car day is two — and ``report --open`` used to
 open one browser tab per report it wrote. Two cars meant two tabs, and every run
 older than the one just built was reachable only through Finder. This replaces
@@ -10,7 +15,8 @@ Everything on it is derived from the run directory itself: the name carries the
 timestamp and the car, ``lots.csv`` carries how many lots were kept, and whether
 ``report.html`` exists says whether the run was ever reported. So building the
 index touches no network, no model and no database — which is why it is simply
-rewritten in full on every ``report`` rather than kept up to date incrementally.
+rewritten in full on every ``dashboard build`` rather than kept up to date
+incrementally.
 """
 from __future__ import annotations
 
@@ -21,9 +27,12 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from .fetch import RUNS_DIR
-
 TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+# Where ``banzai24 fetch`` puts its run directories. Spelled out rather than
+# imported from :mod:`banzai24.fetch`, which pulls in Playwright and httpx — a
+# page built from directory names should not need a browser driver to import.
+RUNS_DIR = Path(__file__).parent.parent / "runs"
 
 # How many runs the index shows. Ten is about a fortnight of two-car mornings:
 # far enough back to find the run you half-remember, short of the scroll that
@@ -138,6 +147,7 @@ def render(
     entries: list[RunEntry],
     generated_at: datetime | None = None,
     total: int | None = None,
+    competitors_summary: str = "",
 ) -> str:
     """The whole page as one string. No file written, so this is testable."""
     # Same autoescape reasoning as report.py: the loader keys on ".j2", so
@@ -152,6 +162,7 @@ def render(
         entries=entries,
         total=len(entries) if total is None else total,
         generated_at=(generated_at or datetime.now()).strftime("%Y-%m-%d %H:%M"),
+        competitors_summary=competitors_summary,
     )
 
 
@@ -159,17 +170,20 @@ def write(
     root: Path | None = None,
     limit: int = DEFAULT_LIMIT,
     output: Path | None = None,
+    competitors_summary: str = "",
 ) -> Path:
     """(Re)write ``runs/index.html`` and return where it went.
 
     Always a full rewrite. The page is derived from directory names and costs
     nothing to rebuild, so the only real failure mode is staleness, and
-    rebuilding it on every ``report`` removes that failure mode entirely.
+    rebuilding it on every ``dashboard build`` removes that failure mode.
     """
     root = root or RUNS_DIR
     dirs = _run_dirs(root)
     entries = [_entry(d) for d in dirs[:limit]]
     output = output or root / "index.html"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render(entries, total=len(dirs)), encoding="utf-8")
+    output.write_text(
+        render(entries, total=len(dirs), competitors_summary=competitors_summary),
+        encoding="utf-8")
     return output

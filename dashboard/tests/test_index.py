@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from banzai24 import index
+from dashboard import index
 
 
 def make_run(root: Path, name: str, lots: int = 0, reported: bool = True) -> Path:

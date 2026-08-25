@@ -1,0 +1,220 @@
+{# The competitors panel: per band, what you must charge and who is under it.
+   Same palette as index.html.j2 and report.html.j2 so moving between the three
+   does not feel like leaving the tool. Self-contained — inline CSS, no images,
+   no JavaScript — and the link back to the index is relative, so the pair
+   survives `runs/` being copied elsewhere. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>competitors in Cyprus</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #6b6b6b; --line: #e0ddd7; --paper: #faf9f7;
+    --card: #ffffff; --warn: #9a6700; --bad: #a11; --good: #1a7f4b; --link: #1a4f8a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.5rem 4rem; background: var(--paper); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  a { color: var(--link); }
+
+  header h1 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 600; }
+  header .meta { margin: 0; color: var(--muted); font-size: .875rem; }
+  header .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .back { display: inline-block; margin-bottom: 1rem; font-size: .875rem; }
+
+  .car { margin: 1.75rem 0 0; }
+  .car > h2 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: 600; }
+  .car > h2 .file { font-weight: 400; color: var(--muted); font-size: .8125rem;
+                    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* A warning is never a reason to hide the thing it is about: a search that
+     cannot be priced still gets its section, saying what is missing. */
+  .note { margin: .5rem 0; padding: .5rem .75rem; border-radius: 6px;
+          background: #fdf6e3; color: var(--warn); font-size: .875rem; }
+  .note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .band { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+          margin: .625rem 0 0; padding: .875rem 1rem; }
+  .band.underwater { border-left: 4px solid var(--bad); }
+  .band > h3 { margin: 0 0 .5rem; font-size: .9375rem; font-weight: 600; }
+  .band > h3 .bid { font-weight: 400; color: var(--muted); }
+
+  .money { display: flex; flex-wrap: wrap; gap: .25rem 1.75rem; margin: 0 0 .5rem; }
+  .money div { font-size: .875rem; }
+  .money .label { display: block; color: var(--muted); font-size: .75rem;
+                  text-transform: uppercase; letter-spacing: .04em; }
+  .money .value { font-size: 1.05rem; font-weight: 600; }
+  .money .value.bad { color: var(--bad); }
+  .money .value.good { color: var(--good); }
+
+  .verdict { margin: .25rem 0 .5rem; font-size: .875rem; }
+  .verdict.bad { color: var(--bad); }
+  .verdict.good { color: var(--good); }
+
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: .75rem;
+       text-transform: uppercase; letter-spacing: .04em;
+       border-bottom: 1px solid var(--line); padding: .25rem .5rem .25rem 0; }
+  td { padding: .3125rem .5rem .3125rem 0; border-bottom: 1px solid var(--line);
+       vertical-align: baseline; }
+  td.num, th.num { text-align: right; padding-right: 1rem; }
+  td.under { color: var(--bad); }
+  tr:last-child td { border-bottom: 0; }
+
+  .sold { margin: .5rem 0 0; color: var(--muted); font-size: .8125rem; }
+  footer { margin: 2.5rem 0 0; color: var(--muted); font-size: .8125rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="index.html">← Auction runs</a>
+
+<header>
+  <h1>Competitors in Cyprus</h1>
+  <p class="meta">
+    {{ dashboard.competitor_count }} advert{{ '' if dashboard.competitor_count == 1 else 's' }}
+    asking less than a cyprus sell price, across
+    {{ dashboard.panels|length }} search{{ '' if dashboard.panels|length == 1 else 'es' }}.
+  </p>
+  <p class="meta">
+    {% if dashboard.rates %}rates {{ dashboard.rates }}{% endif %}
+    {% if dashboard.costs %}<br>prices {{ dashboard.costs }}{% endif %}
+  </p>
+</header>
+
+{% if dashboard.money_problem %}
+<p class="note">{{ dashboard.money_problem|backticks }}</p>
+{% endif %}
+
+{% for panel in dashboard.panels %}
+<section class="car">
+  <h2>
+    {{ panel.car if panel.car else panel.name }}
+    <span class="file">{{ panel.name }}.toml</span>
+  </h2>
+
+  {% if panel.problem %}
+  <p class="note">This search will not load: {{ panel.problem|backticks }}</p>
+  {% endif %}
+  {% if panel.coverage %}
+  <p class="note">{{ panel.coverage|backticks }}</p>
+  {% endif %}
+
+  {% for band in panel.bands %}
+  <div class="band{{ ' underwater' if band.underwater }}">
+    <h3>
+      {{ band.band.label }}
+      <span class="bid">· max bid ¥{{ '{:,}'.format(band.max_bid_jpy) }}</span>
+    </h3>
+
+    {% if band.problem and band.sell_price_eur is none %}
+      <p class="note">{{ band.problem|backticks }}</p>
+    {% else %}
+      <div class="money">
+        <div>
+          <span class="label">landed</span>
+          <span class="value">€{{ '{:,.0f}'.format(band.landed_eur) }}</span>
+        </div>
+        <div>
+          <span class="label">+ profit</span>
+          <span class="value">€{{ '{:,.0f}'.format(band.profit_eur) }}</span>
+        </div>
+        <div>
+          <span class="label">cyprus sell price</span>
+          <span class="value">€{{ '{:,.0f}'.format(band.sell_price_eur) }}</span>
+        </div>
+        <div>
+          <span class="label">cyprus estimate</span>
+          {% if band.cyprus_estimate_eur is not none %}
+          <span class="value {{ 'bad' if band.underwater else 'good' }}">€{{ '{:,.0f}'.format(band.cyprus_estimate_eur) }}</span>
+          {% else %}
+          <span class="value">—</span>
+          {% endif %}
+        </div>
+        <div>
+          <span class="label">under it</span>
+          <span class="value {{ 'bad' if band.competitors else 'good' }}">{{ band.competitors|length }}</span>
+        </div>
+      </div>
+
+      {% if band.underwater %}
+      {# Said before the list, because it outranks it: no competitor has to do
+         anything for this band to be a losing trade. #}
+      <p class="verdict bad">
+        The market is asking less than you would have to charge — this band does
+        not work at €{{ '{:,.0f}'.format(band.profit_eur) }} profit, whoever else
+        is selling.
+      </p>
+      {% endif %}
+      {% if band.problem %}
+      <p class="note">no Cyprus estimate: {{ band.problem }}</p>
+      {% endif %}
+      {% if band.warning %}
+      <p class="note">{{ band.warning }}</p>
+      {% endif %}
+
+      {% if band.competitors %}
+      <table>
+        <thead>
+          <tr>
+            <th class="num">price</th>
+            <th class="num">under by</th>
+            <th class="num">year</th>
+            <th class="num">km</th>
+            <th>fuel</th>
+            <th>gearbox</th>
+            <th>seller</th>
+            <th class="num">days up</th>
+            <th>advert</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in band.competitors %}
+          <tr>
+            <td class="num">€{{ '{:,.0f}'.format(row.price) }}</td>
+            <td class="num under">−€{{ '{:,.0f}'.format(row.under_by) }}</td>
+            <td class="num">{{ row.year or '—' }}</td>
+            <td class="num">{{ '{:,}'.format(row.mileage_km) if row.mileage_km is not none else '—' }}</td>
+            <td>{{ row.fuel_type or '—' }}</td>
+            <td>{{ row.gearbox or '—' }}</td>
+            <td>{{ row.seller_type or '—' }}</td>
+            <td class="num">{{ row.days_on_market if row.days_on_market is not none else '—' }}</td>
+            <td><a href="{{ row.url }}">{{ row.title }}</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="verdict good">
+        Nothing under €{{ '{:,.0f}'.format(band.sell_price_eur) }} — of
+        {{ band.considered }} advert{{ '' if band.considered == 1 else 's' }} inside
+        this band's competitor bounds.
+      </p>
+      {% endif %}
+
+      {% if band.sold %}
+      <p class="sold">{{ band.sold.describe() }}.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+
+<footer>
+  Built {{ generated_at }} by <code>dashboard build</code>.
+  A cyprus sell price is the landed cost plus resale costs plus the profit the
+  search asks for; a competitor is a live advert under it, inside the band's own
+  competitor bounds. Delisting is a sold-proxy, not a sale record.
+</footer>
+
+</div>
+</body>
+</html>

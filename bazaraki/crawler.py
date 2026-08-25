@@ -24,7 +24,11 @@ async def run_scrape(
     a one-off "bootstrap" fetch of the category page resolves those codes from
     the live filter options before the filtered crawl begins.
     """
-    filters = filters or config.DEFAULT_FILTERS
+    if filters is None:
+        # No fallback. A crawl with no scope would delist against the whole cars
+        # category, since `db._in_scope` reads the run's own filters.
+        raise ValueError("run_scrape needs filters — build them with "
+                         "config.filters_for(search) or by hand.")
     db.init_db()
     run_id = db.start_run(filters)
 

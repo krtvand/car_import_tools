@@ -172,6 +172,31 @@ def all_listings() -> list[CarListing]:
         return list(session.exec(select(CarListing).order_by(CarListing.ad_id)))
 
 
+def latest_run_for(make: str | None, model: str | None) -> ScrapeRun | None:
+    """The newest completed scrape whose scope was this make and model.
+
+    The dashboard asks this before it shows a competitor list. An empty list has
+    two very different causes — nobody is undercutting you, or nobody has crawled
+    this car — and only one of them is good news. ``_in_scope`` already bounds
+    delisting to a run's own filters, so a run's scope is exactly the range whose
+    "still on sale" flags can be trusted.
+
+    Incomplete runs are ignored: a crawl stopped by ``--max-pages`` skipped
+    delisting, so what it saw says nothing about what has since gone.
+    """
+    with Session(_engine) as session:
+        runs = session.exec(
+            select(ScrapeRun)
+            .where(ScrapeRun.completed == True)  # noqa: E712 — SQLModel needs the operator
+            .order_by(ScrapeRun.started_at.desc())
+        ).all()
+    make_key, model_key = _normalise(make), _normalise(model)
+    for run in runs:
+        if _normalise(run.make) == make_key and _normalise(run.model) == model_key:
+            return run
+    return None
+
+
 def count_listings() -> int:
     with Session(_engine) as session:
         return len(session.exec(select(CarListing.ad_id)).all())

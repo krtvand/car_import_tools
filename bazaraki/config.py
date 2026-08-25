@@ -1,8 +1,10 @@
 """Search filter configuration for the bazaraki cars scraper.
 
 `CarFilters` is the single place that describes every input the scraper accepts.
-Edit `DEFAULT_FILTERS` (or build your own `CarFilters` and pass it in) to choose
-the make/model and the price/year/mileage/etc. ranges to scrape.
+It is built from a saved search — `searches/mazda-cx30.toml` — by `filters_for`,
+which reads the car's URL slugs from `bazaraki.cars` and the year/mileage bounds
+from the union of that search's competitor bounds. The flags on `scrape` build
+one by hand for a one-off probe.
 
 How filters map to the site:
   * make / model            -> URL path slugs:  Motors > Cars > Mazda > CX-30
@@ -69,16 +71,52 @@ class CarFilters:
     ordering: str | None = None      # raw site sort value
 
 
-# Edit this to change what gets scraped. Mirrors the user's example:
-# Motors > Cars > Mazda > CX-30, 2018+, up to €25,000.
-DEFAULT_FILTERS = CarFilters(
-    make="mazda",
-    model="cx-30",
-    year_min=2022,
-    # year_max=2022,
-    mileage_min=0,
-    mileage_max=60000,
-)
+class NoCompetitorBounds(ValueError):
+    """A search names a car but never says who counts as competition for it."""
+
+
+# There is deliberately no DEFAULT_FILTERS. It used to hold a CX-30 search and
+# was the fallback for a bare `scrape`, which meant every saved search had to
+# pass --no-defaults to avoid inheriting it — a RAV4 search picking up the
+# CX-30's mileage ceiling was a real hazard the flag existed to defend against.
+# A search is now a complete file (`searches/`), so there is nothing to inherit.
+
+
+def filters_for(search) -> CarFilters:
+    """The crawl one saved search wants: its car, over its competitor bounds.
+
+    **Deliberately wider than the panel.** Only what bazaraki can express
+    cleanly in one request is set here — the car and the year/mileage union of
+    the search's bands. Fuel, engine size and the rest of ``[competitors]`` are
+    checked in memory against the stored rows afterwards, which is what lets
+    ``fuel_type`` be a list where this filter is single-choice, keeps raw site
+    option codes out of the .toml, and keeps the dashboard correct when those
+    bounds are widened without a re-scrape.
+
+    One scrape per search, not one per band: ``db._in_scope`` bounds delisting
+    to a single run's scope, so overlapping runs would mean crawling the same
+    adverts repeatedly and then reasoning about overlapping delisting windows.
+    """
+    from . import cars
+
+    make, model = cars.slugs(search.car)
+    scope = search.competitor_scope()
+    if not scope.declared:
+        # Not a wide crawl by default. Undeclared bounds would mean every CX-5
+        # ever listed in Cyprus, which is slow, and worse, is a scope that
+        # matches no panel — `db._in_scope` would then be delisting over a range
+        # the dashboard never asks about.
+        raise NoCompetitorBounds(
+            f"{search.name}: no [band.competitors] bounds declared, so there is "
+            f"nothing to crawl. Add them to {search.source or search.name}.")
+    return CarFilters(
+        make=make,
+        model=model,
+        year_min=scope.year_start,
+        year_max=scope.year_end,
+        mileage_min=scope.mileage_start,
+        mileage_max=scope.mileage_end,
+    )
 
 
 def _norm(value: str) -> str:

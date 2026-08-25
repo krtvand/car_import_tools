@@ -1,11 +1,11 @@
-"""``python -m price_calculator`` — every row of ``bid_prices.csv``, priced and compared.
+"""``python -m price_calculator`` — every band of every saved search, priced and compared.
 
-Four rows you can check by hand, which is the point: this exists so you find out
+A handful of rows you can check by hand, which is the point: this exists so you find out
 whether the landed cost is right *before* the same arithmetic starts printing
 itself on sixty report cards. It answers "are my max bids sane?", not "should I
 bid on this car" — the report answers that one, off the same engine.
 
-Each row is priced at the **top** of its mileage band. That is where the cars you
+Each band is priced at the **top** of its mileage range. That is where the cars you
 actually import sit, and pricing at the band's midpoint would flatter every
 number on the page. Where a fitted curve has the sign of depreciation backwards
 the top of the band is no longer the conservative end, and the row says so.
@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from banzai24.bidding import BID_PRICES_PATH, BidTableError, load_bid_prices
+import searches
+from searches.definition import RENTAL_KINDS
 
 from .calculator import CostBook, Margin, Rates
 from .sources import (
@@ -58,7 +59,7 @@ def _rates(args) -> Rates:
     return fetch_rates()
 
 
-def _band(row) -> tuple[int, str]:
+def _at(band) -> tuple[int, str]:
     """``(mileage to price at, label)`` — the top of the band, where possible.
 
     An open-ended band has no top, so it is priced at its floor and labelled
@@ -66,9 +67,9 @@ def _band(row) -> tuple[int, str]:
     honest way to show it is to leave the label unbounded rather than invent a
     ceiling that would look like a measurement.
     """
-    if row.mileage_max is not None:
-        return row.mileage_max, f"{row.mileage_min:,}–{row.mileage_max:,} km"
-    return row.mileage_min, f"{row.mileage_min:,}+ km"
+    if band.mileage_end is not None:
+        return band.mileage_end, f"{band.mileage_start:,}–{band.mileage_end:,} km"
+    return band.mileage_start, f"{band.mileage_start:,}+ km"
 
 
 def _cell(margin: Margin | str, attr: str) -> str:
@@ -82,23 +83,40 @@ def _cell(margin: Margin | str, attr: str) -> str:
     return f"€{value:,.0f}"
 
 
-def build_rows(bid_prices_path: Path, model_specs_path: Path,
-               rates: Rates, costs: CostBook):
-    """``[(label, max_bid, margin_or_reason), …]`` in the order the CSV lists them."""
-    rows = load_bid_prices(bid_prices_path)
+def build_rows(model_specs_path: Path, rates: Rates, costs: CostBook,
+               only: str | None = None):
+    """``[(label, max_bid, margin_or_reason), …]``, one row per band per 車歴.
+
+    A band carries both prices where the operator set both, and they land as two
+    rows: the whole question this table answers is whether a max bid is sane, and
+    a rental price you never see is one you never check.
+
+    A search that will not load is a row of its own saying so, rather than a
+    missing car you have to notice is missing.
+    """
     specs = ModelSpecs(model_specs_path)
     market = CyprusMarket()
 
     out = []
-    for row in rows:
-        mileage, band = _band(row)
-        label = f"{row.make} {row.model} {row.year} · {band} · {row.rental}"
-        result = margin_for(
-            make=row.make, model=row.model, year=row.year, mileage_km=mileage,
-            auction_price_jpy=row.max_bid_jpy, rates=rates, costs=costs,
-            specs=specs, market=market,
-        )
-        out.append((label, row.max_bid_jpy, result))
+    for name, search, problem in searches.load_all():
+        if only and name != only:
+            continue
+        if problem:
+            out.append((f"{name} (will not load)", None, problem))
+            continue
+        for band in search.bands:
+            mileage, label = _at(band)
+            for kind in RENTAL_KINDS:
+                if kind not in band.max_bid_jpy:
+                    continue
+                price = band.max_bid_jpy[kind]
+                result = margin_for(
+                    make=search.car.make, model=search.car.model, year=band.year,
+                    mileage_km=mileage, auction_price_jpy=price, rates=rates,
+                    costs=costs, specs=specs, market=market,
+                )
+                out.append((f"{search.car} {band.year} · {label} · {kind}",
+                            price, result))
     return out, specs, market
 
 
@@ -162,8 +180,9 @@ def render(rows, rates: Rates, costs: CostBook, specs: ModelSpecs,
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m price_calculator",
-        description="Price every row of bid_prices.csv against the Cyprus market.")
-    parser.add_argument("--bid-prices", type=Path, default=BID_PRICES_PATH)
+        description="Price every band of every saved search against the Cyprus market.")
+    parser.add_argument("--search", metavar="NAME", default=None,
+                        help="Only this saved search (default: all of them)")
     parser.add_argument("--model-specs", type=Path, default=MODEL_SPECS_PATH)
     parser.add_argument("--eur-jpy", type=float, default=None,
                         help="skip the rate fetch (market rate; the −2 haircut still applies)")
@@ -193,9 +212,13 @@ def main(argv=None) -> int:
 
     try:
         rows, specs, market = build_rows(
-            args.bid_prices, args.model_specs, rates, costs)
-    except (BidTableError, FileNotFoundError, OSError) as exc:
-        print(f"could not read {args.bid_prices}: {exc}", file=sys.stderr)
+            args.model_specs, rates, costs, only=args.search)
+    except (FileNotFoundError, OSError) as exc:
+        print(f"could not read {args.model_specs}: {exc}", file=sys.stderr)
+        return 2
+    if not rows:
+        known = ", ".join(searches.available()) or "none found"
+        print(f"no bands to price (available searches: {known})", file=sys.stderr)
         return 2
 
     print(render(rows, rates, costs, specs, market, args.model_specs))

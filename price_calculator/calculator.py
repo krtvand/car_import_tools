@@ -219,7 +219,7 @@ class CostBook:
         Above the last band a sorted ``VLOOKUP`` keeps returning the last row, so
         this does too — but says so, because the sheet's silence there is an
         accident of how ``VLOOKUP`` works rather than a quoted price. Nothing in
-        ``bid_prices.csv`` comes close today; the flag is for the day something
+        the max bids come close today; the flag is for the day something
         does.
         """
         for tier in self.service_fee_tiers:

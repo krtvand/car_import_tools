@@ -1,12 +1,9 @@
-# Toyota RAV4 (Japan auctions). See mazda-cx30.toml for what the sections mean.
+# Toyota RAV4. See mazda-cx30.toml for what the sections mean.
+
+car = "toyota-rav4"
 
 [site]
-make = "TOYOTA"
-model = "RAV4"
 transmission = "auto"
-year_start = 2023
-year_end = 2023
-mileage_end = 50000
 grade = ["4", "4.5", "5"]
 source = "auctions"
 
@@ -16,3 +13,9 @@ exclude_colours = ["black", "blue"]
 
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
+
+[[band]]
+year = 2023
+mileage_start = 0
+mileage_end = 50000
+max_bid_jpy = { private = 2_405_000 }

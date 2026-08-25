@@ -10,10 +10,10 @@ it cannot be tested against the sheet if it needs a network to run.
 The dependency runs one way. ``banzai24.report`` imports this; this imports
 ``banzai24.bidding`` and ``bazaraki.analysis``. Nothing here imports back.
 
-``bid_prices.csv`` is **not** re-parsed here — :func:`banzai24.bidding.load_bid_prices`
-already reads it, validates the bands and rejects overlaps, and a second parser
-for the same file is a second place for the two to disagree about what a blank
-``mileage_max`` means.
+The **bands** are not re-parsed here either. :mod:`searches` reads them out of
+the search file, validates them and rejects overlaps, and a second parser for the
+same file would be a second place for the two to disagree about what an omitted
+``mileage_end`` means.
 """
 from __future__ import annotations
 
@@ -587,6 +587,54 @@ class CyprusMarket:
 
 
 # --- one car, priced and compared --------------------------------------------
+
+
+# --- money for a page that is not a run --------------------------------------
+
+
+def money_for_today(runs_dir: Path | None = None):
+    """``(rates, costs, note)`` for something that has no run directory.
+
+    :func:`read_rates` and :func:`read_costs` deliberately refuse to invent
+    prices for a *past* run: re-opening August's report must not reprice it at
+    September's freight. The dashboard is the other case. It is not a record of a
+    decision; it is the live question "should I be buying this car this morning",
+    and answering it at the rate of whenever you last fetched would be the same
+    staleness bug pointed the other way.
+
+    So: today's rate and today's cost book, and if the network is not there, the
+    newest stamped pair from ``runs/`` with a note saying how old it is. The note
+    is not decoration — it goes on the page, because a landed cost is a statement
+    about a moment and the page has to say which one.
+    """
+    costs = load_cost_book()
+
+    try:
+        return fetch_rates(), costs, None
+    except RatesUnavailable as exc:
+        pass
+
+    for run_dir in _newest_runs(runs_dir):
+        stamped = read_rates(run_dir)
+        if stamped is not None:
+            return stamped, costs, (
+                f"live rates unavailable ({exc}); using the ones stamped into "
+                f"{run_dir.name}")
+    return None, costs, f"no exchange rates: {exc}, and no run has any stamped"
+
+
+def _newest_runs(runs_dir: Path | None):
+    """Run directories, newest first, by the timestamp in the name.
+
+    By name and never by mtime: re-rendering an old report touches its directory,
+    and an mtime sort would then offer last week's exchange rate as the freshest
+    thing available.
+    """
+    root = runs_dir or (Path(__file__).parent.parent / "runs")
+    if not root.exists():
+        return []
+    return sorted((d for d in root.glob("*") if d.is_dir()),
+                  key=lambda d: d.name, reverse=True)
 
 
 def margin_for(

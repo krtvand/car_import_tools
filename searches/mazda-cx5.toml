@@ -1,0 +1,37 @@
+# Mazda CX-5. See mazda-cx30.toml for what the sections mean.
+#
+# MIGRATION NOTE. Before the merge this search fetched 30,000–70,000 km while
+# bid_prices.csv priced 0–60,000 — so lots above 60,000 km were fetched with no
+# max bid, and the rows below 30,000 km could never match anything. The bands
+# below keep the fetch floor at 30,000 km and drop the unpriced tail. If you
+# want 60,001–70,000 km back, give it a band and a price.
+
+car = "mazda-cx5"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+body_model_code = ["KFEP", "KF5P"]
+exclude_colours = ["black", "blue"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+# No [dashboard] section means the dashboard is on. Without an
+# expected_profit_eur it cannot work out a cyprus sell price, so the panel says
+# so rather than showing an empty competitor list.
+
+[[band]]
+year = 2023
+mileage_start = 30000
+mileage_end = 50000
+max_bid_jpy = { private = 2_055_000, rental = 1_995_000 }
+
+[[band]]
+year = 2023
+mileage_start = 50001
+mileage_end = 60000
+max_bid_jpy = { private = 1_955_000, rental = 1_940_000 }

@@ -1,0 +1,84 @@
+# Mazda CX-30.
+#
+# This file is the whole search — nothing is inherited from anywhere, so a
+# filter that is not here is not applied.
+#
+#   uv run python -m searches list
+#   uv run python -m banzai24 fetch --search mazda-cx30
+#   uv run python -m bazaraki scrape --search mazda-cx30
+#   uv run python -m dashboard build
+#
+# The [[band]] list is what this search is made of: a year, a mileage range and
+# the most this operation will pay for it. The site's year and mileage bounds
+# are the union of the bands and are never written by hand.
+#
+# The three requirement sections are named for *who can check them*:
+#
+#   [site]   banzai24 filters these out for us, and the auction sheet then
+#            re-judges them against its own better numbers. A lot the sheet
+#            fails here lands in "fails a requirement" on the report.
+#   [api]    we drop these ourselves, from list data, before any sheet is read.
+#            Rejects never reach the report at all.
+#   [sheet]  only the auction sheet can answer these.
+#
+# An absent bound is an absent key — there is no null in TOML, and no need for
+# one.
+
+car = "mazda-cx30"
+
+[site]
+transmission = "auto"
+engine_capacity_start = 1.9
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
+# Colours to drop, matched whole against the API's own colour code. Known
+# values: white, black, silver, gray, blue, red, brown, beige, green, other.
+# A lot the API gave no colour for is kept, not dropped.
+exclude_colours = ["black", "blue"]
+
+[sheet]
+drivetrain = "2WD"
+# Matched as letters contained anywhere in the code, so "X" catches "XX" and a
+# "W" inside a compound mark like "A3W2" is caught too. The severity digit is
+# deliberately ignored: W3 is a worse repair mark than W2.
+no_damage_codes = ["W", "X", "欠"]
+
+[dashboard]
+enabled = true
+# What this car has to earn, in euro. The cyprus sell price is the landed cost
+# plus resale costs plus this — what you must charge — and a competitor is any
+# Cyprus advert asking less.
+expected_profit_eur = 2000
+
+# What a Cyprus advert must be, beyond being a CX-30, to count as competition.
+# Matched case-insensitively against what the scraper stored, and applied in
+# memory rather than at the crawl — which is why fuel_type can be a list.
+[competitors]
+fuel_type = ["petrol", "hybrid petrol"]
+engine_size_start = 1.8
+engine_size_end = 2.5
+
+[[band]]
+year = 2023
+mileage_start = 0
+mileage_end = 50000
+max_bid_jpy = { private = 1_805_000 }
+
+  # Wider than the band on purpose: an older CX-30 with more kilometres on it
+  # still takes the sale. These bounds must contain the band itself.
+  [band.competitors]
+  year_start = 2019
+  mileage_end = 120000
+
+[[band]]
+year = 2023
+mileage_start = 50001
+mileage_end = 60000
+max_bid_jpy = { private = 1_705_000 }
+
+  [band.competitors]
+  year_start = 2019
+  mileage_end = 120000

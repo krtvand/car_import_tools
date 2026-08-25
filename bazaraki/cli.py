@@ -1,22 +1,28 @@
 """CLI for the bazaraki.com cars scraper.
 
-Filters come from config.DEFAULT_FILTERS (edit config.py); the flags below
-override the most common ones for quick one-off runs.
+A scrape normally names a **saved search** — the same ``searches/*.toml`` the
+auction side runs on — and crawls the car it names over the union of its
+competitor bounds. That is the whole configuration; there is nothing to inherit
+and no second place to keep in step:
 
-Examples:
-    uv run python main.py scrape --max-pages 3 --export
-    uv run python main.py scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
-    uv run python main.py scrape --max-pages 10 --no-details
-    uv run python main.py export --out cars.xlsx
+    uv run python -m bazaraki scrape --search mazda-cx30
+    uv run python -m bazaraki scrape --search mazda-cx30 --dry-run
 
-Saved searches live in ``bazaraki/searches/*.sh`` — one script per car, each
-pinning its own filters with --no-defaults.
+The individual flags are still here for a one-off probe — checking whether a
+model slug is right, seeing how much stock a bound would pull in — and they are
+not a saved search: nothing records them, and the dashboard will not know a
+scrape happened over that scope.
+
+    uv run python -m bazaraki scrape --make mazda --model cx-30 --year-min 2018
+    uv run python -m bazaraki export --out cars.xlsx
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import dataclasses
+
+import searches
 
 from . import config
 from . import db
@@ -31,21 +37,42 @@ _OVERRIDABLE = (
     "mileage_min", "mileage_max",
 )
 
-# Base for --no-defaults: every filter unset. Without it, a saved search that
-# omits a filter would silently inherit DEFAULT_FILTERS' value for it — e.g. a
-# RAV4 search picking up the CX-30's mileage ceiling.
+# Every filter unset. There is no DEFAULT_FILTERS to fall back to any more, so a
+# flag that is not given is a filter that is not applied — full stop.
 NEUTRAL_FILTERS = config.CarFilters()
 
 
 def _filters_from_args(args: argparse.Namespace) -> config.CarFilters:
-    """Apply CLI overrides on top of DEFAULT_FILTERS, or of nothing."""
-    base = NEUTRAL_FILTERS if getattr(args, "no_defaults", False) else config.DEFAULT_FILTERS
+    """The filters one scrape will use: a saved search, or the flags given.
+
+    The two do not mix. A ``--search`` that also carried ad-hoc overrides would
+    be a crawl whose scope no panel could reproduce, and ``db._in_scope`` bounds
+    delisting to that scope — so the overrides would silently decide which
+    adverts are allowed to go missing.
+    """
+    if getattr(args, "search", None):
+        if any(getattr(args, name, None) is not None for name in _OVERRIDABLE):
+            raise SystemExit(
+                "--search is the whole configuration; it cannot be combined with "
+                "the individual filter flags. Edit the search file instead.")
+        try:
+            return config.filters_for(searches.load(args.search))
+        except (searches.SearchDefinitionError, config.NoCompetitorBounds) as exc:
+            raise SystemExit(str(exc)) from None
+        except Exception as exc:      # bazaraki.cars.UnknownCar and friends
+            raise SystemExit(str(exc.args[0] if exc.args else exc)) from None
+
     overrides = {
         name: getattr(args, name)
         for name in _OVERRIDABLE
         if getattr(args, name, None) is not None
     }
-    return dataclasses.replace(base, **overrides)
+    if not overrides:
+        known = ", ".join(searches.available()) or "none found"
+        raise SystemExit(
+            f"Nothing to scrape. Name a saved search with --search "
+            f"(available: {known}), or give filter flags for a one-off probe.")
+    return dataclasses.replace(NEUTRAL_FILTERS, **overrides)
 
 
 def _describe(filters: config.CarFilters) -> str:
@@ -78,7 +105,14 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_scrape = sub.add_parser("scrape", help="Crawl listings into the SQLite DB")
-    p_scrape.add_argument("--make", help="Make slug, e.g. mazda (overrides config)")
+    p_scrape.add_argument(
+        "--search", metavar="NAME",
+        help="Saved search to crawl for — the file name without its suffix, from "
+             "searches/. Crawls that car over the union of its bands' competitor "
+             "bounds, which is the scope the dashboard's panels ask about. The "
+             "file is the complete declaration; it cannot be combined with the "
+             "filter flags below.")
+    p_scrape.add_argument("--make", help="Make slug, e.g. mazda (one-off probe)")
     p_scrape.add_argument("--model", help="Model slug, e.g. cx-30 (requires --make)")
     p_scrape.add_argument("--price-min", type=int, dest="price_min")
     p_scrape.add_argument("--price-max", type=int, dest="price_max")
@@ -87,13 +121,11 @@ def main() -> None:
     p_scrape.add_argument("--mileage-min", type=int, dest="mileage_min", metavar="KM")
     p_scrape.add_argument("--mileage-max", type=int, dest="mileage_max", metavar="KM")
     p_scrape.add_argument(
-        "--no-defaults",
-        action="store_true",
-        dest="no_defaults",
-        help="Ignore config.DEFAULT_FILTERS; use only the flags given. Saved "
-             "searches use this so they cannot inherit stray filters.",
-    )
-    p_scrape.add_argument("--max-pages", type=int, default=3, help="Listing pages to crawl")
+        "--max-pages", type=int, default=10,
+        help="Listing pages to crawl, 60 adverts each. Set well above what a "
+             "search needs and keep it there: a run stopped by --max-pages is "
+             "treated as truncated and skips delisting entirely, so adverts that "
+             "have sold would never be marked gone.")
     p_scrape.add_argument(
         "--dry-run",
         action="store_true",

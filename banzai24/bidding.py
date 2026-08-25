@@ -2,32 +2,36 @@
 
 Three names, used verbatim everywhere below and on the report:
 
-* **``max_bid``** — the all-in maximum for that car, read off
-  ``inputs/bid_prices.csv``. Operator-authored, re-tuned often, in JPY because
-  that is the currency you bid in.
+* **``max_bid``** — the all-in maximum for that car, read off the search's own
+  ``[[band]]`` list (``searches/mazda-cx30.toml``). Operator-authored, re-tuned
+  often, in JPY because that is the currency you bid in.
 * **``extra_costs``** — the auction house's ``AREA PRICE JPY``, read off
   ``inputs/auction_area_prices_2026.csv``. The only thing subtracted.
 * **``bid_reduced``** — ``max_bid − extra_costs``. This is the price to enter.
 
-Two CSVs rather than code or a database: the lists are already spreadsheet-shaped,
-they diff readably in git, and re-tuning one must never mean editing Python. The
-lookup here is pure — no network, no database — so :mod:`banzai24.report` stays
-free to regenerate.
+The bands used to be a third CSV of their own. They moved into the search file
+because they *are* the search: a band is a mileage range with a price on it, and
+the site bounds are now derived from the bands rather than written beside them,
+which is what stops the two drifting. The area prices stay a CSV — they are a
+price list for 123 auction houses, already spreadsheet-shaped, and no search
+declares them. The lookup here is pure — no network, no database — so
+:mod:`banzai24.report` stays free to regenerate.
 
 **Nothing about one lot can stop the report.** Every way a lot can fail to price
 resolves to a :class:`BidQuote` carrying a ``reason`` string instead of a number,
 and the card prints the reason where the number would go. The closed set, first
 match wins:
 
-1. ``bid prices not loaded`` — the file is absent or unreadable (report-wide)
-2. ``area prices not loaded`` — likewise (report-wide)
+1. ``no bid bands`` — this run named no saved search, so nothing prices it
+   (report-wide)
+2. ``area prices not loaded`` — the file is absent or unreadable (report-wide)
 3. ``unknown auction house: U Tokyo`` — no alias and no fold match
 4. ``missing year`` / ``missing mileage`` — neither the sheet nor the API has it
-5. ``no table row for MAZDA CX-30 2023 · 15,000 km · private``
+5. ``no band for MAZDA CX-30 2023 · 15,000 km``
 6. ``area cost ¥47,000 exceeds max bid ¥30,000``
 
 Reasons 3–6 sit on the card; 1 and 2 are report-wide and print once in the
-header, because repeating "bid prices not loaded" sixty-two times is noise.
+header, because repeating "area prices not loaded" sixty-two times is noise.
 
 **The sheet outranks the API** for year and mileage — see
 ``docs/adr/0001-sheet-outranks-api.md``. The API rounds mileage to the nearest
@@ -52,23 +56,16 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from searches.definition import PRIVATE, Band
+
 from .money import format_yen
 
 INPUTS_DIR = Path(__file__).parent / "inputs"
-BID_PRICES_PATH = INPUTS_DIR / "bid_prices.csv"
 AREA_PRICES_PATH = INPUTS_DIR / "auction_area_prices_2026.csv"
 ALIASES_PATH = INPUTS_DIR / "auction_aliases.csv"
 
-BID_PRICE_HEADER = ("make", "model", "year", "mileage_min", "mileage_max",
-                    "rental", "max_bid_jpy")
 AREA_PRICE_HEADER = ("AUCTION NAME", "AREA PRICE $", "AREA PRICE JPY")
 ALIAS_HEADER = ("db_name", "area_price_name")
-
-# What the ``rental`` column may say. A blank cell is a load-time error rather
-# than a wildcard: under the never-guess rule a lot whose sheet says neither
-# never consults the table at all, so a blank row could never match anything and
-# is therefore a typo.
-RENTAL_KINDS = ("rental", "private")
 
 # The year is not computed from the clock. A path like
 # f"auction_area_prices_{date.today().year}.csv" silently loses every
@@ -145,106 +142,6 @@ def _int(value: str | None, path: Path, line: int, column: str,
         raise BidTableError(
             f"{path.name} line {line}: {column} is not a whole number ({value!r})"
         ) from None
-
-
-@dataclass(frozen=True)
-class BidRow:
-    """One row of ``bid_prices.csv``.
-
-    Mileage bands are **inclusive at both ends** and blank means open-ended, so
-    ``,50000`` is "up to and including 50,000 km" and ``60001,`` is "60,001 km
-    and up". The year is an **exact match** — an unpriced year returns null
-    rather than borrowing the number next door.
-    """
-
-    make: str
-    model: str
-    year: int
-    mileage_min: int
-    mileage_max: int | None    # None = open-ended
-    rental: str
-    max_bid_jpy: int
-    line: int                  # for the overlap error, which names both rows
-
-    @property
-    def key(self) -> tuple[str, str, int, str]:
-        return (_fold(self.make), _fold(self.model), self.year, self.rental)
-
-    def covers(self, mileage_km: int) -> bool:
-        if mileage_km < self.mileage_min:
-            return False
-        return self.mileage_max is None or mileage_km <= self.mileage_max
-
-    def band(self) -> str:
-        top = f"{self.mileage_max:,}" if self.mileage_max is not None else "∞"
-        return f"{self.mileage_min:,}–{top} km"
-
-
-def load_bid_prices(path: Path = BID_PRICES_PATH) -> list[BidRow]:
-    """Read ``bid_prices.csv``. Raises :class:`BidTableError` on a bad edit."""
-    rows = []
-    for line, row in _rows(path, BID_PRICE_HEADER):
-        make = row.get("make", "").strip()
-        model = row.get("model", "").strip()
-        if not make or not model:
-            raise BidTableError(f"{path.name} line {line}: make and model are required")
-
-        rental = row.get("rental", "").strip().lower()
-        if rental not in RENTAL_KINDS:
-            raise BidTableError(
-                f"{path.name} line {line}: rental must be one of "
-                f"{' or '.join(RENTAL_KINDS)}, not {row.get('rental', '')!r}"
-            )
-
-        low = _int(row.get("mileage_min"), path, line, "mileage_min", blank=0)
-        high = _int(row.get("mileage_max"), path, line, "mileage_max", blank=None)
-        if high is not None and high < low:
-            raise BidTableError(
-                f"{path.name} line {line}: mileage_max {high:,} is below "
-                f"mileage_min {low:,}"
-            )
-
-        rows.append(BidRow(
-            make=make,
-            model=model,
-            year=_int(row.get("year"), path, line, "year"),
-            mileage_min=low,
-            mileage_max=high,
-            rental=rental,
-            max_bid_jpy=_int(row.get("max_bid_jpy"), path, line, "max_bid_jpy"),
-            line=line,
-        ))
-
-    _reject_overlaps(rows, path)
-    return rows
-
-
-def _reject_overlaps(rows: list[BidRow], path: Path) -> None:
-    """Two rows that could both match one car are an error, at load.
-
-    Checked as *band overlap* rather than "two rows matched this lot", because at
-    load time there is no lot — and because the stronger check catches a shadowed
-    row today rather than on the morning a car finally falls in the gap. Rows
-    differing only in ``rental`` never conflict; they cannot both match.
-    """
-    groups: dict[tuple, list[BidRow]] = {}
-    for row in rows:
-        groups.setdefault(row.key, []).append(row)
-
-    for group in groups.values():
-        for index, first in enumerate(group):
-            for second in group[index + 1:]:
-                low = max(first.mileage_min, second.mileage_min)
-                high = min(
-                    float("inf") if first.mileage_max is None else first.mileage_max,
-                    float("inf") if second.mileage_max is None else second.mileage_max,
-                )
-                if low <= high:
-                    raise BidTableError(
-                        f"{path.name} lines {first.line} and {second.line}: "
-                        f"{first.make} {first.model} {first.year} {first.rental} "
-                        f"bands overlap ({first.band()} and {second.band()})"
-                    )
 
 
 def load_area_prices(path: Path = AREA_PRICES_PATH) -> dict[str, int]:
@@ -333,6 +230,16 @@ class BidQuote:
         return " · ".join(self.lines())
 
 
+def _same_car(lot, car) -> bool:
+    """Folded make/model match, the same join the Cyprus databases use.
+
+    banzai24 stores ``MAZDA`` / ``CX-30`` and a car is written ``Mazda`` /
+    ``CX-30``; folding case and punctuation away is what makes one spelling of a
+    car serve every module that has to name it.
+    """
+    return _fold(lot.mark) == _fold(car.make) and _fold(lot.model) == _fold(car.model)
+
+
 def _rental_kind(extraction) -> tuple[str, bool]:
     """``(kind, assumed)`` — ``"private"`` when the sheet did not say.
 
@@ -350,8 +257,8 @@ def _rental_kind(extraction) -> tuple[str, bool]:
         if extraction.rental_car_note:
             return "rental", False
         if extraction.private_car_note:
-            return "private", False
-    return "private", True
+            return PRIVATE, False
+    return PRIVATE, True
 
 
 def sheet_first(lot, extraction) -> tuple[int | None, int | None]:
@@ -397,23 +304,33 @@ def _load(label, path, loader, empty, quiet_when_absent=False):
 
 
 class BidPricer:
-    """Both tables, loaded once per report; one pure lookup per lot.
+    """One search's bands and the area price list; one pure lookup per lot.
+
+    The bands come from the search the run named, so they arrive already parsed
+    and already checked for overlap — a malformed band never reaches this far,
+    because :mod:`searches` refuses to load the file at all. What is left to
+    report is a run that named *no* search, which is every run fetched before
+    saved searches were files: those lots were never judged and are not priced
+    either, rather than being priced against some other car's table.
 
     Mirrors :class:`banzai24.report.CyprusPricer`: a missing input is reported,
     not raised, because a report without the bid column is still the sheet next
-    to the fields. Unlike the Cyprus join, a *malformed* table is also reported
-    rather than raised — but with the parser's complaint attached, so the edit
-    that broke it is named on the page instead of being silently dropped.
+    to the fields. A malformed *area price* file is likewise reported rather
+    than raised — with the parser's complaint attached, so the edit that broke it
+    is named on the page instead of being silently dropped.
     """
 
     def __init__(
         self,
-        bid_prices_path: Path | None = None,
+        bands: tuple[Band, ...] = (),
+        car=None,
         area_prices_path: Path | None = None,
         aliases_path: Path | None = None,
     ):
-        self.rows, bid_problem = _load(
-            "bid prices", bid_prices_path or BID_PRICES_PATH, load_bid_prices, [])
+        self.bands = tuple(bands)
+        self.car = car
+        bid_problem = None if self.bands else (
+            "no bid bands: this run named no saved search")
         self.area_prices, area_problem = _load(
             "area prices", area_prices_path or AREA_PRICES_PATH, load_area_prices, {})
         # The aliases are an accelerator, not an input: without them six houses
@@ -473,8 +390,8 @@ class BidPricer:
         **The sheet wins, the API fills its nulls** — the reverse of what
         ``BID_PRICING_QUESTIONS.md`` Q3/Q14 recorded, and the reversal is the
         subject of ``docs/adr/0001-sheet-outranks-api.md``. The API rounds
-        mileage to the nearest 1,000 while :meth:`BidRow.covers` matches to the
-        kilometre, so under the old order a car whose sheet read 50,415 km and
+        mileage to the nearest 1,000 while :meth:`searches.Band.covers` matches to
+        the kilometre, so under the old order a car whose sheet read 50,415 km and
         whose API row read 50,000 km was priced from the *under-50,000* band:
         ¥150,000 too high against the shipped table, on a card whose own mileage
         row printed the exact figure.
@@ -490,10 +407,16 @@ class BidPricer:
         if mileage is None:
             return None, "missing mileage", assumed_private
 
-        key = (_fold(lot.mark), _fold(lot.model), year, rental)
-        for row in self.rows:
-            if row.key == key and row.covers(mileage):
-                return row.max_bid_jpy, None, assumed_private
+        # The bands belong to one car, and a run holds one search's lots, so this
+        # only ever fires on a run whose provenance and whose lots disagree —
+        # which is worth saying rather than pricing a RAV4 off a CX-30's band.
+        if self.car is not None and not _same_car(lot, self.car):
+            return None, (f"{lot.mark or '?'} {lot.model or '?'} is not the "
+                          f"{self.car} this search prices"), assumed_private
 
-        return None, (f"no table row for {lot.mark or '?'} {lot.model or '?'} "
-                      f"{year} · {mileage:,} km · {rental}"), assumed_private
+        for band in self.bands:
+            if band.year == year and band.covers(mileage):
+                return band.bid(rental), None, assumed_private
+
+        return None, (f"no band for {lot.mark or '?'} {lot.model or '?'} "
+                      f"{year} · {mileage:,} km"), assumed_private

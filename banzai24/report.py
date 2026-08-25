@@ -234,13 +234,21 @@ class LandedPricer:
     :mod:`price_calculator` for the arithmetic — a port of the sheet, kept pure
     so it can be checked against the sheet's own worked example.
 
-    **The prices come from the run, not from the clock.** ``fetch`` stamps
+    **The costs come from the run, not from the clock.** ``fetch`` stamps
     ``rates.json`` *and* ``costs.json`` into the run directory the morning it
     runs; a run made before those existed, or on a morning the rate API was down,
     simply has no landed cost on its cards. Re-computing at today's rate — or
-    against today's exporter fees, which went up five bands in August —  would
+    against today's exporter fees, which went up five bands in August — would
     mean this page quietly disagreeing in September with the decision you made in
     August, which is worth less than a blank line.
+
+    **The max bid does not.** It is read live off the search's bands, so
+    re-rendering an old run prices it at the bids you hold now rather than the
+    ones you held that morning. That is a deliberate exception and not an
+    oversight: an exporter's fee changes *under* you, while a max bid changes
+    because you changed it, and the version you want to see is yours. See
+    ``docs/adr/0004-bid-prices-are-read-live.md``; the run's own provenance keeps
+    the record of what it was priced at on the day.
 
     The **auction price is the lot's ``max_bid``**, not its ``bid_reduced``.
     ``max_bid`` is the all-in maximum *at the auction* — hammer plus the house's
@@ -660,6 +668,7 @@ def collect(
     bid_pricer: BidPricer | None = None,
     landed_pricer: LandedPricer | None = None,
     definition: SearchDefinition | None = None,
+    area_prices: Path | None = None,
 ) -> Report:
     """Gather one run's lots into sorted, render-ready views.
 
@@ -688,7 +697,14 @@ def collect(
     stored = db.lots_by_numbers(numbers)
     extractions = db.extractions_by_numbers(numbers)
     pricer = pricer or CyprusPricer()
-    bid_pricer = bid_pricer or BidPricer()
+    # The bands are the search's, so the pricer is built after the search is
+    # resolved: a run that named none gets no bid column and says so once, in the
+    # header, rather than being priced off whichever car's table loaded first.
+    bid_pricer = bid_pricer or BidPricer(
+        bands=definition.bands if definition else (),
+        car=definition.spec.car if definition and definition.spec else None,
+        area_prices_path=area_prices,
+    )
     landed_pricer = landed_pricer or LandedPricer(run_dir)
 
     views, missing = [], []
@@ -770,15 +786,16 @@ def run_report(
     output: Path | None = None,
     all_lots: bool = False,
     jpy_per_eur: float | None = None,
-    bid_prices: Path | None = None,
     area_prices: Path | None = None,
 ) -> Report:
-    """Build ``<run>/report.html``. Overwrites — regenerating is the normal case."""
-    report = collect(
-        run_dir,
-        all_lots=all_lots,
-        bid_pricer=BidPricer(bid_prices_path=bid_prices, area_prices_path=area_prices),
-    )
+    """Build ``<run>/report.html``. Overwrites — regenerating is the normal case.
+
+    The max bids are not a parameter any more: they belong to the search this run
+    named, which ``collect`` resolves from the run itself. Only the area prices
+    stay overridable, because that file is shared by every search and is the one
+    a test wants to point somewhere else.
+    """
+    report = collect(run_dir, all_lots=all_lots, area_prices=area_prices)
     output = output or run_dir / "report.html"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render(report, jpy_per_eur=jpy_per_eur), encoding="utf-8")

@@ -94,9 +94,9 @@ def test_extract_and_report_both_understand_today():
 
 # --- `report --open` -------------------------------------------------------
 
-def _report_run(monkeypatch, tmp_path, argv, reviewer=None):
+def _report_run(monkeypatch, tmp_path, argv, reviewer=None, index_exists=True):
     """Run `report ...` against a throwaway runs/ and record what it opened."""
-    from banzai24 import db, index, session
+    from banzai24 import db, session
 
     run_dir = tmp_path / "2026-08-17_222903_TOYOTA-RAV4"
     (run_dir / "sheets").mkdir(parents=True)
@@ -109,7 +109,10 @@ def _report_run(monkeypatch, tmp_path, argv, reviewer=None):
         if reviewer is not None:
             reviewer()
 
-    monkeypatch.setattr(index, "RUNS_DIR", tmp_path)
+    index_path = tmp_path / "index.html"
+    if index_exists:
+        index_path.write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(cli, "INDEX_PATH", index_path)
     monkeypatch.setattr(db, "init_db", lambda *a, **k: None)
     monkeypatch.setattr(session, "review", fake_review)
 
@@ -179,8 +182,17 @@ def test_a_busy_profile_is_reported_without_sending_you_to_login(monkeypatch, tm
     assert "banzai24 login" not in str(exc.value)
 
 
-def test_the_index_is_rebuilt_even_without_open(monkeypatch, tmp_path):
-    """Derived from directory names and free to build, so it never goes stale."""
-    opened = _report_run(monkeypatch, tmp_path, ["report"])
-    assert (tmp_path / "index.html").exists()
+def test_report_no_longer_writes_the_index(monkeypatch, tmp_path):
+    """It moved to the dashboard, which reads two databases and today's exchange
+    rate — none of which `report` is allowed to touch. It opens the page; it does
+    not build it."""
+    opened = _report_run(monkeypatch, tmp_path, ["report"], index_exists=False)
+    assert not (tmp_path / "index.html").exists()
     assert opened == []
+
+
+def test_open_without_a_built_index_says_which_command_writes_it(monkeypatch, tmp_path):
+    """Rather than a stack trace, or a browser opening on nothing."""
+    with pytest.raises(SystemExit) as exc:
+        _report_run(monkeypatch, tmp_path, ["report", "--open"], index_exists=False)
+    assert "dashboard build" in str(exc.value)
