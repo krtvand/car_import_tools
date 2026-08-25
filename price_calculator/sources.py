@@ -31,6 +31,8 @@ from .calculator import (
     Margin,
     ModelSpec,
     Rates,
+    RegistrationSurcharge,
+    RoadTaxBand,
     ServiceFeeTier,
     landed_cost,
 )
@@ -40,7 +42,27 @@ MODEL_SPECS_PATH = INPUTS_DIR / "model_specs.csv"
 COSTS_PATH = INPUTS_DIR / "costs.toml"
 
 MODEL_SPEC_HEADER = ("make", "model", "year_from", "year_to", "length_cm",
-                     "width_cm", "height_cm", "co2_gkm", "body_model_code")
+                     "width_cm", "height_cm", "co2_gkm", "euro_standard",
+                     "fuel", "body_model_code")
+
+# The eight cells of `[taxes.first_registration_surcharge]`, in the order
+# `RegistrationSurcharge` declares them. One list, used by the loader, the stamp
+# and the read-back, so a ninth row cannot be added to two of the three.
+SURCHARGE_FIELDS = ("euro6_petrol_eur", "euro6_diesel_eur",
+                    "euro5b_petrol_eur", "euro5b_diesel_eur",
+                    "euro5a_petrol_eur", "euro5a_diesel_eur",
+                    "euro4_petrol_eur", "euro4_diesel_eur")
+
+# Every flat Decimal on the book, in one place for the same reason. Road tax is
+# absent: it is no longer a price on the book at all, but a band table and a
+# surcharge table, and both round-trip as structures.
+COST_FIELDS = ("exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
+               "roro_per_m3_usd", "freight_insurance_usd", "vat_rate",
+               "duty_rate", "road_tax_cap_eur", "bank_fx_rate",
+               "international_transfer_eur", "eur_jpy_spread", "sva_test_eur",
+               "mot_eur", "registration_eur", "customs_clearance_eur",
+               "number_plates_eur", "car_service_eur", "insurance_eur",
+               "resale_costs_eur")
 
 
 class ModelSpecError(ValueError):
@@ -140,6 +162,15 @@ def load_model_specs(path: Path = MODEL_SPECS_PATH) -> list[ModelSpec]:
             width_cm=_decimal(row.get("width_cm"), path, line, "width_cm"),
             height_cm=_decimal(row.get("height_cm"), path, line, "height_cm"),
             co2_gkm=_int(row.get("co2_gkm"), path, line, "co2_gkm", blank=None),
+            # Blank is allowed on all three and means three different things.
+            # An empty co2_gkm blanks the whole landed cost, said out loud on
+            # every card that matches the row; an empty euro_standard costs no
+            # surcharge and is flagged; an empty fuel takes the dearer column.
+            # None of them is a load error, because a hole in one row must not
+            # cost the other three rows their prices — the same reason
+            # `ModelSpecs` degrades a bad file to a reason string.
+            euro_standard=row.get("euro_standard", "").strip() or None,
+            fuel=row.get("fuel", "").strip() or None,
             body_model_code=row.get("body_model_code", "").strip() or None,
             line=line,
         )
@@ -280,6 +311,31 @@ def load_cost_book(path: Path = COSTS_PATH) -> CostBook:
             fee_jpy=_price({"t": row}, "t.fee_jpy", path),
         ))
 
+    bands = _at(payload, "taxes.road_tax_band", path)
+    if not isinstance(bands, list) or not bands:
+        raise CostBookError(f"{path.name}: taxes.road_tax_band has no bands")
+    road_tax_bands = []
+    for index, row in enumerate(bands, start=1):
+        if not isinstance(row, dict):
+            raise CostBookError(f"{path.name}: taxes.road_tax_band #{index} is not a table")
+        # `up_to_gkm` is the one optional cell in the book, and only on the last
+        # band, which runs open-ended to the cap. `CostBook.problems` is what
+        # refuses it anywhere else — the ordering rules live next to the
+        # arithmetic that depends on them, not in the parser.
+        edge = row.get("up_to_gkm")
+        if edge is not None and (isinstance(edge, bool) or not isinstance(edge, int)):
+            raise CostBookError(
+                f"{path.name}: taxes.road_tax_band #{index} up_to_gkm is not a "
+                f"whole number of grams ({edge!r})")
+        road_tax_bands.append(RoadTaxBand(
+            up_to_gkm=edge,
+            eur_per_gram=_price({"t": row}, "t.eur_per_gram", path),
+        ))
+
+    surcharge = RegistrationSurcharge(**{
+        field: _price(payload, f"taxes.first_registration_surcharge.{field}", path)
+        for field in SURCHARGE_FIELDS})
+
     updated = payload.get("updated")
     if updated is not None and not isinstance(updated, date):
         raise CostBookError(f"{path.name}: updated is not a date ({updated!r})")
@@ -292,6 +348,9 @@ def load_cost_book(path: Path = COSTS_PATH) -> CostBook:
         freight_insurance_usd=_price(payload, "freight.insurance_usd", path),
         vat_rate=_price(payload, "taxes.vat_rate", path),
         duty_rate=_price(payload, "taxes.duty_rate", path),
+        road_tax_bands=tuple(road_tax_bands),
+        road_tax_cap_eur=_price(payload, "taxes.road_tax_cap_eur", path),
+        registration_surcharge=surcharge,
         bank_fx_rate=_price(payload, "bank.fx_rate", path),
         international_transfer_eur=_price(payload, "bank.international_transfer_eur", path),
         eur_jpy_spread=_price(payload, "bank.eur_jpy_spread", path),
@@ -302,7 +361,6 @@ def load_cost_book(path: Path = COSTS_PATH) -> CostBook:
         number_plates_eur=_price(payload, "cyprus.number_plates_eur", path),
         car_service_eur=_price(payload, "cyprus.car_service_eur", path),
         insurance_eur=_price(payload, "cyprus.insurance_eur", path),
-        road_tax_eur=_price(payload, "cyprus.road_tax_eur", path),
         resale_costs_eur=_price(payload, "resale.costs_eur", path),
         updated=updated,
         source=str(payload.get("source", "")),
@@ -326,15 +384,20 @@ def write_costs(run_dir: Path, costs: CostBook) -> Path:
     payload = {
         "service_fee_tiers": [{"up_to_jpy": str(t.up_to_jpy), "fee_jpy": str(t.fee_jpy)}
                               for t in costs.service_fee_tiers],
+        # The scale, not the answer. Stamping a road tax *figure* would be the
+        # one price on the book that is a property of a car, and a run holds
+        # many cars; the run has to be able to re-price any of them at the scale
+        # that was in force, which means carrying the scale.
+        "road_tax_bands": [{"up_to_gkm": band.up_to_gkm,
+                            "eur_per_gram": str(band.eur_per_gram)}
+                           for band in costs.road_tax_bands],
+        "registration_surcharge": {
+            field: str(getattr(costs.registration_surcharge, field))
+            for field in SURCHARGE_FIELDS},
         "updated": costs.updated.isoformat() if costs.updated else None,
         "source": costs.source,
     }
-    for field in ("exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
-                  "roro_per_m3_usd", "freight_insurance_usd", "vat_rate",
-                  "duty_rate", "bank_fx_rate", "international_transfer_eur",
-                  "eur_jpy_spread", "sva_test_eur", "mot_eur", "registration_eur",
-                  "customs_clearance_eur", "number_plates_eur", "car_service_eur",
-                  "insurance_eur", "road_tax_eur", "resale_costs_eur"):
+    for field in COST_FIELDS:
         payload[field] = str(getattr(costs, field))
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
@@ -357,15 +420,16 @@ def read_costs(run_dir: Path) -> CostBook | None:
                 ServiceFeeTier(up_to_jpy=Decimal(row["up_to_jpy"]),
                                fee_jpy=Decimal(row["fee_jpy"]))
                 for row in payload["service_fee_tiers"]),
+            road_tax_bands=tuple(
+                RoadTaxBand(up_to_gkm=row["up_to_gkm"],
+                            eur_per_gram=Decimal(row["eur_per_gram"]))
+                for row in payload["road_tax_bands"]),
+            registration_surcharge=RegistrationSurcharge(**{
+                field: Decimal(payload["registration_surcharge"][field])
+                for field in SURCHARGE_FIELDS}),
             updated=date.fromisoformat(updated) if updated else None,
             source=payload.get("source", ""),
-            **{field: Decimal(payload[field]) for field in (
-                "exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
-                "roro_per_m3_usd", "freight_insurance_usd", "vat_rate",
-                "duty_rate", "bank_fx_rate", "international_transfer_eur",
-                "eur_jpy_spread", "sva_test_eur", "mot_eur", "registration_eur",
-                "customs_clearance_eur", "number_plates_eur", "car_service_eur",
-                "insurance_eur", "road_tax_eur", "resale_costs_eur")},
+            **{field: Decimal(payload[field]) for field in COST_FIELDS},
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError,
             InvalidOperation, OSError):
@@ -647,6 +711,7 @@ def margin_for(
     costs: CostBook,
     specs: ModelSpecs,
     market: CyprusMarket | None,
+    registered_on: date | None = None,
 ) -> Margin | str:
     """One car's landed cost against the Cyprus market, or a reason there is none.
 
@@ -656,10 +721,22 @@ def margin_for(
     and it is the one recorded on the answer.
 
     Returns a ``str`` only when the *landed cost itself* cannot be computed — a
-    missing model spec, an unusable auction price. A missing **Cyprus** estimate
-    still returns a :class:`Margin`, carrying the landed cost and the reason the
-    comparison is blank: knowing a car lands at €17,946 is useful on a row that
-    cannot say what it sells for, and the two halves fail independently.
+    missing model spec, a spec carrying no CO₂ figure, an unusable auction
+    price. A missing **Cyprus** estimate still returns a :class:`Margin`,
+    carrying the landed cost and the reason the comparison is blank: knowing a
+    car lands at €17,946 is useful on a row that cannot say what it sells for,
+    and the two halves fail independently.
+
+    Road tax is the reason the CO₂ case joined that list. It is charged on the
+    CO₂ scale and is worth €45 to €1,500 a year, so a spec with an empty
+    ``co2_gkm`` cannot be priced within a hundred euro — and a landed cost that
+    quietly omitted it would be a number you would bid against. The card gets
+    the sentence instead, which is a blank you can act on.
+
+    ``registered_on`` is passed through to :func:`landed_cost`, which defaults it
+    to the date the run's rates were quoted at. Callers do not normally set it:
+    a run's own morning is the answer, and it is what keeps a re-render from
+    moving the money.
 
     ``market=None`` asks for the landed half alone, and is not the same as a
     market that came back empty: nothing is looked up, so ``bazaraki.db`` is
@@ -674,7 +751,7 @@ def margin_for(
         return f"no model spec for {make or '?'} {model or '?'} {year or '?'}"
 
     try:
-        landed = landed_cost(auction_price_jpy, spec, rates, costs)
+        landed = landed_cost(auction_price_jpy, spec, rates, costs, registered_on)
     except ValueError as exc:
         return str(exc)
 

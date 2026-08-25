@@ -165,12 +165,31 @@ def render(rows, rates: Rates, costs: CostBook, specs: ModelSpecs,
             notes.append(result.warning)
         if result.landed.above_fee_table:
             notes.append("auction price is off the end of the exporter fee table")
+
+        # Road tax is the one line that is a property of the car, so its
+        # assumptions belong beside the car rather than in the header. The day
+        # count is printed unconditionally: a part-year figure that looks like an
+        # annual one is the misreading worth pre-empting.
+        road_tax = result.landed.road_tax
+        note = (f"road tax €{road_tax.total_eur:,.2f} at registration — "
+                f"{road_tax.co2_gkm} g/km is €{road_tax.annual_eur:,.2f}/yr, "
+                f"{road_tax.days}/{road_tax.days_in_year} days to 31 Dec")
+        if road_tax.surcharge_eur:
+            note += f", plus €{road_tax.surcharge_eur:,.0f} one-off"
+        notes.append(note)
+        if road_tax.capped:
+            notes.append("road tax is at the annual cap and no longer moves with CO₂")
+        if road_tax.euro_standard_assumed:
+            notes.append("no euro_standard in model_specs.csv — "
+                         "no registration surcharge charged")
         for note in notes:
             lines.append(f"{' ' * width}  → {note}")
 
     lines += [
         "",
         "landed = hammer price to Cyprus plates, your margin excluded.",
+        "Road tax is the part year to 31 December plus the one-off; it recurs in full "
+        "every January after.",
         "Cyprus = resale estimate at the top of the band; margin is net of resale costs.",
         "Model spec dimensions are seeded and unverified — check them before trusting a margin.",
     ]

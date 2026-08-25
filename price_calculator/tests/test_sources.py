@@ -38,7 +38,7 @@ from price_calculator.sources import (
 COSTS = load_cost_book()
 
 HEADER = ("make,model,year_from,year_to,length_cm,width_cm,height_cm,"
-          "co2_gkm,body_model_code\n")
+          "co2_gkm,euro_standard,fuel,body_model_code\n")
 
 RATES = Rates(usd_jpy=Decimal("158.9"), eur_jpy_market=Decimal("185.6"),
               fetched_at=datetime(2026, 8, 22, tzinfo=timezone.utc))
@@ -89,19 +89,33 @@ def test_the_preamble_above_the_header_is_ignored():
 
 
 def test_a_row_loads_with_its_optional_columns_blank(tmp_path):
-    path = write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n")
+    """All four optional cells are blank-able; only one of them blanks a price.
+
+    An empty ``co2_gkm`` costs the row its landed cost entirely — see
+    ``test_a_spec_with_no_co2_prices_nothing_and_says_why`` — but it is still a
+    row that *loads*, because one hole must not cost the other rows their prices.
+    """
+    path = write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,,,\n")
     spec, = load_model_specs(path)
     assert spec.co2_gkm is None
+    assert spec.euro_standard is None
+    assert spec.fuel is None
     assert spec.body_model_code is None
     assert round(spec.volume_m3, 2) == Decimal("14.27")
+
+
+def test_the_new_columns_are_read_off_the_row(tmp_path):
+    path = write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n")
+    spec, = load_model_specs(path)
+    assert (spec.co2_gkm, spec.euro_standard, spec.fuel) == (158, "6", "petrol")
 
 
 def test_the_header_is_matched_folded(tmp_path):
     """A re-export that recases a column must not read every row as blank."""
     path = tmp_path / "model_specs.csv"
     path.write_text(
-        "Make,Model,Year From,Year To,Length CM,Width CM,Height CM,CO2 g/km,Body Model Code\n"
-        "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,KFEP\n", encoding="utf-8")
+        "Make,Model,Year From,Year To,Length CM,Width CM,Height CM,CO2 g/km,Euro Standard,Fuel,Body Model Code\n"
+        "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n", encoding="utf-8")
     spec, = load_model_specs(path)
     assert spec.make == "MAZDA"
 
@@ -109,30 +123,30 @@ def test_the_header_is_matched_folded(tmp_path):
 def test_overlapping_year_spans_are_rejected_at_load(tmp_path):
     """Two rows that could both describe one car, caught before a car falls in."""
     path = write(tmp_path,
-                 "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,KFEP\n"
-                 "MAZDA,CX-5,2024,2028,460.0,187.0,168.0,150,KF5P\n")
+                 "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n"
+                 "MAZDA,CX-5,2024,2028,460.0,187.0,168.0,150,6,petrol,KF5P\n")
     with pytest.raises(ModelSpecError, match="year spans overlap"):
         load_model_specs(path)
 
 
 def test_adjacent_year_spans_are_fine(tmp_path):
     path = write(tmp_path,
-                 "MAZDA,CX-5,2017,2023,457.5,184.5,169.0,158,KFEP\n"
-                 "MAZDA,CX-5,2024,2028,460.0,187.0,168.0,150,KF5P\n")
+                 "MAZDA,CX-5,2017,2023,457.5,184.5,169.0,158,6,petrol,KFEP\n"
+                 "MAZDA,CX-5,2024,2028,460.0,187.0,168.0,150,6,petrol,KF5P\n")
     assert len(load_model_specs(path)) == 2
 
 
 def test_a_backwards_year_span_is_rejected(tmp_path):
-    path = write(tmp_path, "MAZDA,CX-5,2026,2017,457.5,184.5,169.0,,\n")
+    path = write(tmp_path, "MAZDA,CX-5,2026,2017,457.5,184.5,169.0,,,,\n")
     with pytest.raises(ModelSpecError, match="before"):
         load_model_specs(path)
 
 
 @pytest.mark.parametrize("body,match", [
-    (",CX-5,2017,2026,457.5,184.5,169.0,,\n", "make and model are required"),
-    ("MAZDA,CX-5,2017,2026,,184.5,169.0,,\n", "length_cm is empty"),
-    ("MAZDA,CX-5,2017,2026,wide,184.5,169.0,,\n", "not a number"),
-    ("MAZDA,CX-5,2017,2026,457.5,184.5,169.0,lots,\n", "not a whole number"),
+    (",CX-5,2017,2026,457.5,184.5,169.0,,,,\n", "make and model are required"),
+    ("MAZDA,CX-5,2017,2026,,184.5,169.0,,,,\n", "length_cm is empty"),
+    ("MAZDA,CX-5,2017,2026,wide,184.5,169.0,,,,\n", "not a number"),
+    ("MAZDA,CX-5,2017,2026,457.5,184.5,169.0,lots,,,\n", "not a whole number"),
 ])
 def test_a_bad_cell_names_the_column(tmp_path, body, match):
     with pytest.raises(ModelSpecError, match=match):
@@ -148,7 +162,7 @@ def test_a_missing_file_costs_the_column_not_the_page(tmp_path):
 
 
 def test_a_malformed_file_attaches_the_parsers_complaint(tmp_path):
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2026,2017,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2026,2017,457.5,184.5,169.0,,,,\n"))
     assert not specs.available
     assert "year_to 2017 is before" in specs.reason
 
@@ -158,20 +172,20 @@ def test_a_malformed_file_attaches_the_parsers_complaint(tmp_path):
 
 def test_lookup_folds_case_and_punctuation(tmp_path):
     """banzai24 writes MAZDA / CX-30, bazaraki writes Mazda / cx30."""
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-30,2019,2026,439.5,179.5,154.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-30,2019,2026,439.5,179.5,154.0,,,,\n"))
     assert specs.for_car("mazda", "cx30", 2023) is not None
     assert specs.for_car("Mazda", "CX 30", 2020) is not None
 
 
 def test_a_year_outside_every_span_is_none_not_the_nearest_row(tmp_path):
     """Freight is 17% of CNF — a borrowed row is wrong by more than any fee here."""
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,,,\n"))
     assert specs.for_car("MAZDA", "CX-5", 2010) is None
     assert specs.for_car("MAZDA", "CX-9", 2023) is None
 
 
 def test_missing_identifiers_do_not_match_anything(tmp_path):
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,,,\n"))
     assert specs.for_car(None, "CX-5", 2023) is None
     assert specs.for_car("MAZDA", "CX-5", None) is None
 
@@ -218,6 +232,24 @@ insurance_usd = 50
 [taxes]
 vat_rate = "0.19"
 duty_rate = "0"
+road_tax_cap_eur = 1_500
+[[taxes.road_tax_band]]
+up_to_gkm = 120
+eur_per_gram = "0.50"
+[[taxes.road_tax_band]]
+up_to_gkm = 150
+eur_per_gram = "3.00"
+[[taxes.road_tax_band]]
+eur_per_gram = "10.00"
+[taxes.first_registration_surcharge]
+euro6_petrol_eur = 0
+euro6_diesel_eur = 0
+euro5b_petrol_eur = 0
+euro5b_diesel_eur = 50
+euro5a_petrol_eur = 100
+euro5a_diesel_eur = 250
+euro4_petrol_eur = 300
+euro4_diesel_eur = 600
 [bank]
 fx_rate = "0.01"
 international_transfer_eur = 60
@@ -230,7 +262,6 @@ customs_clearance_eur = 513
 number_plates_eur = 30
 car_service_eur = 120
 insurance_eur = 50
-road_tax_eur = 11
 [resale]
 costs_eur = 0
 """
@@ -287,6 +318,41 @@ def test_a_percent_written_as_a_percent_is_refused(tmp_path):
         load_cost_book(book(tmp_path, text))
 
 
+def test_road_tax_bands_out_of_order_are_refused(tmp_path):
+    """A marginal scale read out of order compounds every band below it."""
+    text = MINIMAL.replace("up_to_gkm = 120", "up_to_gkm = 400")
+    with pytest.raises(CostBookError, match="ascending"):
+        load_cost_book(book(tmp_path, text))
+
+
+def test_a_road_tax_band_with_a_fractional_gram_is_refused(tmp_path):
+    """The scale is written in whole grams; 120.5 is a typo, not a bracket."""
+    text = MINIMAL.replace("up_to_gkm = 120", "up_to_gkm = 120.5")
+    with pytest.raises(CostBookError, match="whole number of grams"):
+        load_cost_book(book(tmp_path, text))
+
+
+def test_a_missing_surcharge_row_names_the_row(tmp_path):
+    """Eight rows or none — a book missing one would silently charge €0 for it."""
+    text = MINIMAL.replace("euro4_diesel_eur = 600\n", "")
+    with pytest.raises(CostBookError) as exc:
+        load_cost_book(book(tmp_path, text))
+    assert "taxes.first_registration_surcharge.euro4_diesel_eur" in str(exc.value)
+
+
+def test_the_shipped_book_prices_the_law_at_its_published_checkpoints():
+    """Against the *shipped* file, because the scale is law and not a supplier's price.
+
+    Unlike the exporter's fees, these do not move when somebody sends a new
+    price list — they move when Cyprus amends Schedule I, which is exactly when
+    this test should go red. Checkpoints from Law 47(I)/2019.
+    """
+    shipped = load_cost_book(COSTS_PATH)
+    for co2, annual in [(90, 45), (120, 60), (150, 150), (180, 300), (200, 500)]:
+        assert shipped.annual_road_tax_eur(co2)[0] == Decimal(annual), f"{co2} g/km"
+    assert shipped.annual_road_tax_eur(1_000) == (shipped.road_tax_cap_eur, True)
+
+
 def test_a_missing_cost_book_raises_rather_than_pricing_at_nothing(tmp_path):
     """No fallback copy in code: without a book there is nothing to price with."""
     with pytest.raises(CostBookError, match="no cost book"):
@@ -320,16 +386,32 @@ def _market_with(records):
 
 
 def test_margin_for_returns_a_reason_when_the_spec_is_missing(tmp_path):
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n"))
     result = margin_for("HONDA", "Fit", 2023, 40_000, 1_500_000,
                         RATES, COSTS, specs, _market_with([]))
     assert isinstance(result, str)
     assert "no model spec for HONDA Fit 2023" in result
 
 
+def test_a_spec_with_no_co2_prices_nothing_and_says_why(tmp_path):
+    """The blank that costs a card its landed cost, and the sentence it costs it for.
+
+    Road tax runs €45–€1,500 a year across the CO₂ scale, so there is no honest
+    number to print for a row that has no figure — the report prints the reason
+    where the money would go, exactly as it does for a missing spec. The row
+    still *loads*; it is only unpriceable.
+    """
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,,,\n"))
+    result = margin_for("MAZDA", "CX-5", 2023, 40_000, 2_055_000,
+                        RATES, COSTS, specs, _market_with([]))
+    assert isinstance(result, str)
+    assert "no CO₂ figure for MAZDA CX-5" in result
+    assert "model_specs.csv" in result
+
+
 def test_margin_for_prices_the_car_even_with_no_cyprus_data(tmp_path):
     """The landed cost is the half that does not need bazaraki.db."""
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n"))
     result = margin_for("MAZDA", "CX-5", 2023, 40_000, 2_055_000,
                         RATES, COSTS, specs, _market_with([]))
     assert not isinstance(result, str)
@@ -346,7 +428,7 @@ def test_margin_for_skips_the_market_when_asked_for_the_landed_half_only(tmp_pat
     bazaraki.db is never opened. A market object here would be a full listings
     query per report for four lines nobody renders.
     """
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n"))
     result = margin_for("MAZDA", "CX-5", 2023, 40_000, 2_055_000,
                         RATES, COSTS, specs, None)
 
@@ -356,6 +438,13 @@ def test_margin_for_skips_the_market_when_asked_for_the_landed_half_only(tmp_pat
     assert result.reason == "Cyprus estimate not requested"
     assert result.warning is None
     assert result.adjustment_factor is None
+
+    # The CX-5's 158 g/km is €190 a year; the rates were quoted on 22 August, so
+    # the car registers that day and buys 132 of 365 days of it.
+    assert result.landed.road_tax.annual_eur == Decimal(190)
+    assert result.landed.road_tax.registered_on == RATES.fetched_at.date()
+    assert result.landed.road_tax.days == 132
+    assert round(result.landed.road_tax_eur, 2) == Decimal("68.71")
 
 
 def test_margin_for_compares_against_a_hand_built_market(tmp_path):
@@ -368,7 +457,7 @@ def test_margin_for_compares_against_a_hand_built_market(tmp_path):
                   seller_type="dealer", is_active=True)
         for i in range(30)
     ]
-    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,,\n"))
+    specs = ModelSpecs(write(tmp_path, "MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP\n"))
     result = margin_for("MAZDA", "CX-5", 2023, 40_000, 2_055_000,
                         RATES, COSTS, specs, _market_with(records))
 

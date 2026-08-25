@@ -1,10 +1,15 @@
 Model specs — manufacturer figures per model generation. SEEDED, UNVERIFIED.
 Dimensions drive shipping volume and freight was 17% of CNF on the reference car:
 check these against a catalogue before trusting a margin. A wrong length of 20 cm
-is roughly EUR 150. co2_gkm is recorded but unread (road tax is flat EUR 11 today).
-body_model_code lists the codes a row covers; it is read by humans, matched by nothing.
-make,model,year_from,year_to,length_cm,width_cm,height_cm,co2_gkm,body_model_code
-MAZDA,CX-30,2019,2026,439.5,179.5,154.0,133,DMEJ3P DMEJ3R DMFP
-MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,KFEP KF5P
-MAZDA,3,2019,2026,446.0,179.5,144.0,128,BP5P BP5R
-TOYOTA,RAV4,2019,2026,460.0,185.5,169.0,126,AXAH54 AXAP54 MXAA52 MXAA54
+is roughly EUR 150. co2_gkm is now READ — it sets road tax off the Cyprus CO2 scale,
+so a blank here means no landed cost at all on every card matching the row, and a
+figure 20 g/km out is roughly EUR 30 a year. These are NEDC combined figures for the
+generation, not per body code; a hybrid and a petrol of one generation really differ.
+euro_standard and fuel feed only the one-off registration surcharge, which is EUR 0
+for every Euro 6 car and so EUR 0 for every row below. body_model_code lists the codes
+a row covers; it is read by humans, matched by nothing.
+make,model,year_from,year_to,length_cm,width_cm,height_cm,co2_gkm,euro_standard,fuel,body_model_code
+MAZDA,CX-30,2019,2026,439.5,179.5,154.0,133,6,petrol,DMEJ3P DMEJ3R DMFP
+MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP KF5P
+MAZDA,3,2019,2026,446.0,179.5,144.0,128,6,petrol,BP5P BP5R
+TOYOTA,RAV4,2019,2026,460.0,185.5,169.0,126,6,petrol,AXAH54 AXAP54 MXAA52 MXAA54

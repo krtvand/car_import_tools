@@ -33,11 +33,17 @@ sheets `Calculator` and `Exporter service fees`. Cell references below (`B4`,
 Dimensions are the only car params that affect the price beyond the auction
 price: they drive the freight cost via shipping volume.
 
-Everything else the calculation needs — every fee, rate, tax and bill, including
-`road_tax_eur` — arrives as one `CostBook`, loaded from `costs.toml`. The sheet
-treats road tax as a per-car input because it is a function of CO₂ (§5); the
-code carries it on the book because it is flat today, and `dataclasses.replace`
-is how one car is priced with a different figure.
+Dimensions are no longer the *only* per-car input, though: `co2_gkm`,
+`euro_standard` and `fuel` come off the same `ModelSpec` row and decide road tax
+(§5). `co2_gkm` is required — a row without one cannot be priced at all.
+
+`registered_on` is the only other per-car input, and it is a date rather than a
+price: the day the car goes onto Cyprus plates, which decides how much of the
+year's road tax is paid. It defaults to the date the run's rates were quoted at.
+
+Everything else the calculation needs — every fee, rate, tax and bill — arrives
+as one `CostBook`, loaded from `costs.toml`. Road tax is on the book as the
+*scale* it is computed from, never as a figure.
 
 ---
 
@@ -100,12 +106,14 @@ raises.
 | Delivery order and other customs clearance expenses | `B25` | `cyprus.customs_clearance_eur` |
 | Number plates | `B26` | `cyprus.number_plates_eur` |
 | Car service (oil, filters) | `B27` | `cyprus.car_service_eur` |
-| Road tax | `B28` | `cyprus.road_tax_eur` *(a function of CO₂ — see §5)* |
+| Road tax | `B28` | computed per car from `[[taxes.road_tax_band]]` — see §5 |
 | Insurance | `B29` | `cyprus.insurance_eur` |
 | **Total** | `B21` | `CostBook.fixed_expenses_base_eur` + road tax |
 
 `fixed_expenses_base_eur` is the sum of the seven that never vary; road tax is
-added separately because it is the one line that depends on the car.
+added separately because it is the one line that depends on the car — and it is
+not in the `[cyprus]` section of the book at all, only the CO₂ scale it comes
+from, under `[taxes]`.
 
 ### Bank transfer fees (`Calculator!B10`)
 
@@ -173,7 +181,8 @@ bank_transfer_fees = cnf_price_eur * bank.fx_rate                    # B10
                    + bank.international_transfer_eur
 duty               = cnf_price_eur * taxes.duty_rate                 # B11
 vat                = (cnf_price_eur + duty) * taxes.vat_rate         # B12
-fixed_expenses     = fixed_expenses_base_eur + cyprus.road_tax_eur   # B13 -> B21
+road_tax           = §5, from spec.co2_gkm and registered_on         # B28
+fixed_expenses     = fixed_expenses_base_eur + road_tax               # B13 -> B21
 
 to_pay_in_cyprus = bank_transfer_fees + duty + vat + fixed_expenses
 ```
@@ -202,6 +211,7 @@ to_pay_in_cyprus_eur
   duty_eur
   vat_eur
   fixed_expenses_eur (itemised)
+  road_tax (annual, part-year, surcharge, day count — see §5)
 cnf_price_jpy
   auction_price_jpy
   exporter_fees_jpy
@@ -218,16 +228,97 @@ statement about a moment, and re-rendering it must not reprice it.
 
 ## 5. Road tax
 
-Road tax is the one fixed expense that varies per car; it is a function of CO₂
-emissions (g/km). From the sheet comment on `Calculator!A28`:
+Road tax (τέλη κυκλοφορίας) is the one fixed expense that varies per car. It is
+a function of CO₂ emissions and of the date of registration, and it is the one
+line of the sheet this port deliberately does **not** reproduce: `Calculator!B28`
+held a flat figure for its reference car, and this computes the real one.
+
+Legal basis: Motor Vehicles and Road Traffic Law 86/1972, Schedule I
+(ΠΑΡΑΡΤΗΜΑ Ι), as amended by **Law 47(I)/2019** (in force 29/03/2019) — the
+reform that abolished the consumption tax and moved circulation fees onto CO₂.
+An imported car registered today falls under it whatever the car's age or origin:
+the trigger is the date of first registration **in Cyprus**.
+
+### 5.1 The annual fee — a marginal CO₂ scale (NEDC combined, g/km)
+
+The law says "για μέρος μάζας …" — for the *portion* — so the scale is marginal,
+like income-tax brackets, and **not** a flat rate per band.
+
+| Portion of CO₂ (g/km) | €/gram | Cost book |
+|---|---|---|
+| ≤ 120 | 0.50 | `[[taxes.road_tax_band]]` |
+| > 120 and ≤ 150 | 3.00 | ascending by `up_to_gkm` |
+| > 150 and ≤ 180 | 5.00 | last band omits `up_to_gkm` |
+| > 180 | 10.00 | |
+
+Capped at `taxes.road_tax_cap_eur` (€1,500/year), reached at 300 g/km. Above it
+the answer stops depending on the input, and `RoadTax.capped` says so.
+
+Checkpoints, asserted against the shipped book in `test_sources.py`:
+90 → €45 · 120 → €60 · 133 → €99 · 150 → €150 · 180 → €300 · 200 → €500.
+
+Read as flat bands instead, 133 g/km would pay €399 rather than €99.
+
+### 5.2 What is actually paid at registration
+
+```
+annual        = marginal scale on spec.co2_gkm, capped
+days          = registered_on .. 31 December, inclusive
+part_year     = annual * days / days_in_year
+surcharge     = taxes.first_registration_surcharge[euro_standard][fuel]
+
+road_tax_eur  = part_year + surcharge          # B28, the landed-cost line
+```
+
+**A part year, not a year.** Cyprus circulation tax runs to 31 December whatever
+month you register in, so a car registered on 25 August 2026 buys 129 days of
+365 and buys the whole of 2027 again in January. The landed cost is what it
+takes to put the car on plates *once*, so it carries the part year; `annual_eur`
+rides along on the answer as the recurring figure and is added to nothing.
+
+Pro-rated **by day**, inclusive of the day of registration. `registered_on`
+defaults to the date the run's rates were quoted at — never to the clock — which
+is what keeps §7's purity promise and stops a December re-render repricing an
+August car.
+
+### 5.3 The one-off surcharge (Schedule I §8(c))
+
+Paid **once** at first registration, on top of the part-year fee, and never
+pro-rated. Depends on Euro standard × fuel; `[taxes.first_registration_surcharge]`.
+
+| Euro standard | Petrol | Diesel |
+|---|---|---|
+| Euro 6 / 6c / 6d | €0 | €0 |
+| Euro 5b | €0 | €50 * |
+| Euro 5a | €100 | €250 |
+| Euro 4 and older | €300 | €600 |
+
+\* least-corroborated row; the rest are confirmed in the text of Law 47(I)/2019.
+
+Every row in `model_specs.csv` is Euro 6, so this is €0 for every car the project
+prices today. Three readings the code makes and the table does not state: Euro 7
+and later read as Euro 6 (a later standard is a cleaner car); a bare `5` reads as
+Euro **5a**, the dearer of the two; and an unrecorded **fuel** takes the diesel
+column, the dearer on every row. An unrecorded **Euro standard** is the one that
+does not guess — it charges nothing and sets `RoadTax.euro_standard_assumed`,
+because the dearest row would be a €600 fiction on a card whose real answer is
+almost certainly €0.
+
+### 5.4 A spec with no CO₂ has no landed cost
+
+`ModelSpec.co2_gkm` is required, not defaulted. Across the scale road tax runs
+from €45 to €1,500 a year, so a blank cell cannot be filled with a zero or with
+a neighbouring model's figure without being wrong by more than the freight this
+port is careful about. `landed_cost` raises, `margin_for` turns that into a
+reason string, and the card prints it where the total would go.
+
+Sources: Law 47(I)/2019 (cylaw.org/nomoi/arith/2019_1_047.pdf), consolidated
+Schedule I of Law 86/1972 on cylaw.org, hba.com.cy, alphanews.live. The sheet's
+own pointers, from the comment on `Calculator!A28`:
 
 - Calculator: <https://cyprusgloballogistics.com/cyprus-road-tax-caclulator/>
-- CO₂ figures for a given model can be looked up in the drom.ru catalog,
-  e.g. <https://www.drom.ru/catalog/mazda/cx-60/431143/>
-
-Until CO₂ per model is available, `cyprus.road_tax_eur` in the cost book holds a
-flat figure (the sheet's value for its reference car). `ModelSpec.co2_gkm` is
-recorded and unread against the day this becomes a band lookup.
+- CO₂ figures per model, drom.ru catalog:
+  <https://www.drom.ru/catalog/mazda/cx-60/431143/>
 
 ---
 
@@ -250,6 +341,12 @@ at USD/JPY ≈ 158.9 and EUR/JPY effective ≈ 183.6.
 | VAT (19%) | €1 679 |
 | Fixed expenses | €1 099 |
 | **Total** | **€11 760** |
+
+The port comes out at €11,763 on every line but one. The exception is road tax:
+the sheet's €11 flat becomes the Note e-Power's own €45 (90 g/km, registered 1
+January, a full year), so fixed expenses are €1,133 and the total €11,797. That
+€34 is §5 being right where the sheet was standing in, and it is the only
+deliberate departure in the port.
 
 ---
 

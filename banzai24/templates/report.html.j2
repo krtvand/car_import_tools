@@ -414,8 +414,15 @@
            than `bid_reduced`: the area price is paid in Japan for the car and
            belongs in the customs value. The rates are the ones stamped into the
            run the morning it was fetched, so this number never moves under a
-           re-render. A string here is a reason the car could not be priced —
-           usually a missing model spec — and prints where the money would go.
+           re-render.
+
+           A string here is a reason the car could not be priced, and prints
+           where the money would go. Two reach this page: no model spec at all,
+           and a spec carrying no CO₂ figure. The second is not a technicality —
+           road tax comes off the Cyprus CO₂ scale and is worth €45 to €1,500 a
+           year, so a car with no figure cannot be landed within a hundred euro
+           and gets the sentence instead of a total. Both are fixed in
+           `price_calculator/inputs/model_specs.csv`, and the reason names it.
 
            Only the landed cost prints. `Margin.lines()` also carries the resale
            estimate and the gap to it, and those were crowding out the half of

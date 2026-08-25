@@ -11,8 +11,8 @@
 # later shows the prices it was priced with. Raising a number here changes what
 # you bid tomorrow, not what you decided last week.
 
-updated = 2026-08-22
-source = "exporter price list, Aug 2026"
+updated = 2026-08-25
+source = "exporter price list, Aug 2026; road tax from Law 47(I)/2019"
 
 # --- the exporter, JPY -------------------------------------------------------
 
@@ -63,6 +63,65 @@ vat_rate = "0.19"           # B34, Cyprus. Charged on customs value plus duty.
 # is ever short, this is the line that changes.
 duty_rate = "0"
 
+# --- road tax (τέλη κυκλοφορίας) ---------------------------------------------
+#
+# Motor Vehicles and Road Traffic Law 86/1972, Schedule I, as amended by Law
+# 47(I)/2019 — the reform that abolished the consumption tax and put circulation
+# fees on CO2. A car imported and registered today falls under it whatever its
+# age, because the trigger is the date of first registration *in Cyprus*.
+#
+# The scale is **marginal**, like income-tax brackets: the law says "για μέρος
+# μάζας …", for the *portion* of the value. 133 g/km is not 133 x 3.00; it is
+# 120 x 0.50 + 13 x 3.00 = EUR 99.00. Checkpoints to reconcile against:
+# 90 -> 60 -> 45 · 120 -> 60 · 150 -> 150 · 180 -> 300 · 200 -> 500.
+#
+# Ascending by `up_to_gkm`, and only the **last** band may omit it — that band
+# runs to the cap. The loader refuses anything else, for the reason the exporter
+# fee table gives: a table read out of order silently charges the wrong price.
+#
+# The cap is declared first because TOML says so: every bare key after the first
+# [[taxes.road_tax_band]] below belongs to that band, not to [taxes].
+road_tax_cap_eur = 1_500    # on the CO2-derived annual fee; reached at 300 g/km
+
+[[taxes.road_tax_band]]
+up_to_gkm = 120
+eur_per_gram = "0.50"
+
+[[taxes.road_tax_band]]
+up_to_gkm = 150
+eur_per_gram = "3.00"
+
+[[taxes.road_tax_band]]
+up_to_gkm = 180
+eur_per_gram = "5.00"
+
+[[taxes.road_tax_band]]
+eur_per_gram = "10.00"      # everything above 180, to the cap
+
+# Schedule I §8(c) — a one-off paid **at first registration**, not annually, on
+# top of the part-year fee above. Euro standard x fuel.
+#
+# Zero for everything Euro 6, which is every model in model_specs.csv today, so
+# this table costs nothing until a pre-2015 car is priced. It is here rather
+# than assumed away because the day it stops being zero it is EUR 600, and that
+# is not a rounding error to discover on a card.
+#
+# The Euro 5b/diesel row is the least corroborated of the eight; the rest are
+# confirmed in the text of Law 47(I)/2019.
+#
+# A car whose fuel is not recorded is priced from the **diesel** column, which
+# is the dearer of the two on every row — unlike the private/rental assumption
+# in banzai24.bidding, this one has a cautious side and takes it.
+[taxes.first_registration_surcharge]
+euro6_petrol_eur = 0
+euro6_diesel_eur = 0
+euro5b_petrol_eur = 0
+euro5b_diesel_eur = 50
+euro5a_petrol_eur = 100
+euro5a_diesel_eur = 250
+euro4_petrol_eur = 300
+euro4_diesel_eur = 600
+
 # --- money moving, EUR -------------------------------------------------------
 
 [bank]
@@ -79,6 +138,9 @@ eur_jpy_spread = 2
 # Itemised rather than totalled so a diff shows which one moved. Every line is
 # a bill that arrives before a buyer can take the keys; there is no flag to
 # exclude the ownership-flavoured ones, and calculator.py says why.
+# B28 (road tax) is deliberately absent: it is the one bill that is a function
+# of the car, and it now comes off the CO2 band table under [taxes] rather than
+# standing at a flat figure here. See spec §5.
 [cyprus]
 sva_test_eur = 140              # B22
 mot_eur = 35                    # B23
@@ -87,11 +149,6 @@ customs_clearance_eur = 513     # B25 = 339 + 10 + 10 + 10 + 15 + 10 + 119
 number_plates_eur = 30          # B26
 car_service_eur = 120           # B27, oil and filters
 insurance_eur = 50              # B29
-
-# B28. Road tax is a function of CO2 emissions (spec §5); this is the sheet's
-# figure for its reference car and stands in until the Cyprus band table is
-# ported.
-road_tax_eur = 50
 
 # --- turning the car back into cash, EUR -------------------------------------
 
