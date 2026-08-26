@@ -18,9 +18,6 @@ no_damage_codes = ["W", "X", "欠"]
 enabled = true
 expected_profit_eur = 5000
 
-# What a Cyprus advert must be, beyond being a CX-30, to count as competition.
-# Matched case-insensitively against what the scraper stored, and applied in
-# memory rather than at the crawl — which is why fuel_type can be a list.
 [competitors]
 fuel_type = ["petrol", "hybrid petrol"]
 engine_size_start = 2.5
