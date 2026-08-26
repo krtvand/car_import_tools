@@ -67,12 +67,12 @@ DAMAGE_CODES = {
 # sheet may print 自家用 on its own or inside a longer phrase. Order matters —
 # レンタカー is checked before the レンタ abbreviation it contains.
 HISTORY_TERMS = {
-    "自家用": "private use — one owner's own car, not a rental, lease or fleet car",
+    "自家用": "private use",
     "レンタカー": "ex-rental",
     "レンタ": "ex-rental",
     "教習車": "ex-driving-school car",
     "リース": "ex-lease",
-    "事業用": "business use — commercially operated",
+    "事業用": "business use",
     "社用車": "ex-company car",
     "デモカー": "ex-demonstrator",
     "官公庁": "ex-government fleet",

@@ -361,12 +361,14 @@
            what that assumption was made from. #}
         {% if view.history_note %}
         <dt>Vehicle history 車歴</dt>
+        {# Whitespace-controlled: `dd.ja` is pre-wrap, so the template's own
+           indentation would print as a blank first line and a leading indent. #}
         <dd class="ja {{ 'warn' if view.history_note.rental }}">
-          {% if view.history_note.unset %}
+          {%- if view.history_note.unset -%}
           <span class="unset">unset — the sheet says neither</span>
-          {% else %}
-          {{ view.history_note.ja }}{% if view.history_note.en %}<span class="note translation">{{ view.history_note.en }}</span>{% endif %}
-          {% endif %}
+          {%- else -%}
+          {{ view.history_note.ja }}{% if view.history_note.en %} <span class="note">{{ view.history_note.en }}</span>{% endif %}
+          {%- endif -%}
         </dd>
         {% endif %}
 
