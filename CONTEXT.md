@@ -171,3 +171,20 @@ one, or one with more kilometres on it, still takes the sale. Not a **Cyprus
 comparable**, which is a median over similar cars and describes a market — a
 competitor is one advert, with a link, that undercuts you specifically.
 _Avoid_: Rival, listing, comp
+
+**Auction statistics**:
+The five cheapest concluded lots that would have met every requirement in a
+search — per band, each one a car with a link, not a summary of a market. Named
+for the site feature it reads rather than for what it is: it counts nothing and
+averages nothing, and the day it grows a distribution this line should be split
+rather than stretched. The Japan-side counterpart to a **competitor**, and just
+as deliberately individual.
+_Avoid_: Stats, price history, sold comparables — and not a **Cyprus
+comparable**, which is a median
+
+**Hidden price**:
+The hammer price of a lot banzai24 sells through its own channel, masked in the
+list and shown one click at a time. Hidden from display only: the site still
+*orders* by it, so a masked lot's position among the others is its true rank.
+A hidden price read back as zero is a failed read, never a free car.
+_Avoid_: Missing price, null price, unavailable price
