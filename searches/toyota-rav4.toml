@@ -19,8 +19,8 @@ no_damage_codes = ["W", "X", "欠"]
 # adds only what differs. `source` and `status` are not written here: an archive
 # search is over completed sales by definition.
 [auction_statistics]
-model_grade = ["HYBRID G"]        # Модификация; matched as a substring by the site
-engine_capacity_start = 2.5
+#model_grade = ["HYBRID G"]        # Модификация; matched as a substring by the site
+#engine_capacity_start = 2.5
 
 [dashboard]
 enabled = true
@@ -35,7 +35,7 @@ engine_size_end = 2.5
 year = 2023
 mileage_start = 0
 mileage_end = 50000
-max_bid_jpy = { private = 2_505_000 }
+max_bid_jpy = { private = 2_705_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
