@@ -207,3 +207,19 @@ def test_the_sheet_is_inlined_so_the_page_stays_one_file(definition):
     html = _page(definition, rows=(_row(uri="data:image/jpeg;base64,AAAA"),), stored=6)
     assert "data:image/jpeg;base64,AAAA" in html
     assert "../stats/" not in html
+
+
+def test_the_sheet_opens_full_size_on_click(definition):
+    """A bare <img> is not clickable, and a sheet you cannot enlarge is a smudge:
+    you open it to read damage codes off it."""
+    html = _page(definition, rows=(_row(uri="data:image/jpeg;base64,AAAA"),), stored=6)
+    assert 'id="sheet-1-1-1"' in html
+    assert 'href="#sheet-1-1-1"' in html          # the thumbnail opens it
+    assert 'class="shut" href="#"' in html        # and clicking away closes it
+
+
+def test_the_enlarged_sheet_is_not_a_second_copy_of_the_bytes(definition):
+    """`:target` restyles the one img. A page carrying each sheet twice would
+    pay ~130 KB a row for a feature it already had the bytes for."""
+    html = _page(definition, rows=(_row(uri="data:image/jpeg;base64,AAAA"),), stored=6)
+    assert html.count("data:image/jpeg;base64,AAAA") == 1

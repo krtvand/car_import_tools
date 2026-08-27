@@ -22,7 +22,6 @@ reason.
 from __future__ import annotations
 
 import base64
-import io
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -137,35 +136,31 @@ class Statistics:
 # --- turning stored lots back into a band's five -----------------------------
 
 
-# What the inlined sheet is scaled to before it goes in the page. banzai24
-# serves sheets at 800x800 and this page shows them at a thumb's width, so
-# inlining the original spends ~200 KB a row to render 72 px of it — five rows
-# made a 980 KB page. Wide enough to stay sharp on a retina screen at that size,
-# and nothing beyond that: the sheet is unreadable at any thumbnail size, so its
-# job here is to say *this car was looked at*, and the full one is a click away
-# on the lot.
-THUMBNAIL_WIDTH = 288
-THUMBNAIL_QUALITY = 75
+# banzai24's image service serves by token, so a saved sheet's suffix is
+# whatever `fetch` decided by sniffing the bytes. Naming the wrong media type
+# renders a blank box rather than a wrong-looking image, so it is read off the
+# suffix rather than assumed — the same table `banzai24.report` keeps.
+_MEDIA_TYPES = {".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
 
 
 def _data_uri(path: Path | None) -> str | None:
-    """A sheet, scaled down, as ``data:image/jpeg;base64,…``.
+    """A sheet as ``data:image/jpeg;base64,…``, at its original resolution.
 
     Inlined rather than linked so the page stays one file: these pages get
     copied about, and a thumbnail resolving through ``../stats/`` would survive
     exactly as far as the directory it points into.
+
+    **Full size, though it renders as a thumbnail.** The page shows it at a
+    thumb's width and expands it to full size on click, and both come from this
+    one copy of the bytes — so scaling it down here would cost the reading of
+    the sheet, which is the only thing anybody opens it for, and save nothing
+    that a second inlined copy would not immediately spend again.
     """
     if path is None or not path.exists():
         return None
-    from PIL import Image
-
-    buffer = io.BytesIO()
-    with Image.open(path) as image:
-        image = image.convert("RGB")
-        image.thumbnail((THUMBNAIL_WIDTH, THUMBNAIL_WIDTH))
-        image.save(buffer, format="JPEG", quality=THUMBNAIL_QUALITY)
-    return ("data:image/jpeg;base64,"
-            + base64.standard_b64encode(buffer.getvalue()).decode("ascii"))
+    media = _MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg")
+    return (f"data:{media};base64,"
+            + base64.standard_b64encode(path.read_bytes()).decode("ascii"))
 
 
 def _sheet_path(lot: AuctionLot) -> Path | None:
