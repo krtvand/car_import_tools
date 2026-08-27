@@ -325,7 +325,7 @@ def main() -> None:
             # Not fatal: [site] and [api] alone describe a perfectly good archive
             # search. Said out loud because an unnarrowed measurement of a RAV4
             # mixes trim lines, and the operator asked for HYBRID G specifically.
-            print(f"{args.search} has no [auction_statistics] section — "
+            print(f"{args.search} declares no [auction_statistics] narrowing — "
                   f"measuring against [site] and [api] alone.")
 
         if args.dry_run:

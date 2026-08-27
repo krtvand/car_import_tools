@@ -293,13 +293,20 @@ def _items(prices):
 @pytest.fixture
 def offline_walk(monkeypatch):
     """Every step of the walk except the counting one, stubbed out."""
-    calls = {"paid": 0}
+    calls = {"paid": 0, "pages": [], "turned": 0}
 
     async def _first(page, headless):
         return {"items": ["something"]}
 
     async def _sorted(page):
-        return {"items": _items(range(3_000_000, 3_000_000 + 20 * 1000, 1000))}
+        pages = calls["pages"] or [_items(range(3_000_000, 3_020_000, 1000))]
+        calls["pages"] = pages
+        return {"items": pages[0],
+                "pagination": {"totalPages": len(pages)}}
+
+    async def _goto(page, number):
+        calls["turned"] += 1
+        return {"items": calls["pages"][number - 1]}
 
     async def _download(client, item, directory):
         return None
@@ -331,6 +338,9 @@ def offline_walk(monkeypatch):
     monkeypatch.setattr(stats, "_download_sheet", _download)
     monkeypatch.setattr(stats, "_store", _store)
     monkeypatch.setattr(stats, "_judge", _judge)
+    monkeypatch.setattr(stats, "_goto_page", _goto)
+    # Politeness to banzai24 is not politeness to the test suite.
+    monkeypatch.setattr("banzai24.fetch.PAGE_DELAY_S", 0)
     monkeypatch.setattr("banzai24.session.snapshot", _snapshot)
     return calls
 
@@ -361,3 +371,80 @@ def test_the_walk_stops_at_the_keepers_it_wanted(tmp_path, offline_walk, temp_db
     assert offline_walk["paid"] == 2
     assert len(result.keepers) == 2
     assert result.stopped_by == "keepers"
+
+
+# --- paging, because one page says nothing about an archive ------------------
+
+
+def _walk(definition, offline_walk, **kw):
+    import asyncio
+
+    return asyncio.run(stats.walk_band(
+        _FakePage(), definition, definition.bands[0],
+        client=None, headless=True, **kw))
+
+
+def _wrong_car(prices):
+    """Lots the `[api]` chassis filter rejects — the cheap petrol RAV4s."""
+    items = _items(prices)
+    for item in items:
+        item["bodyModelCode"] = "MXAA52"
+    return items
+
+
+def test_a_page_of_the_wrong_car_is_not_an_empty_archive(tmp_path, offline_walk, temp_db):
+    """The bug this was written for: `[api]` rejected all twenty cheapest lots,
+    the walk stopped, and it reported "archive exhausted" over 29 unread pages.
+    Rejecting a page costs nothing, so it says nothing about what is behind it."""
+    definition = search.load("toyota-rav4", _write(tmp_path))
+    offline_walk["pages"] = [
+        _wrong_car(range(2_000_000, 2_020_000, 1000)),
+        _items(range(3_000_000, 3_020_000, 1000)),
+    ]
+    result = _walk(definition, offline_walk, wanted=2, cap=99)
+
+    assert offline_walk["turned"] == 1
+    assert result.api_rejected == 20
+    assert len(result.keepers) == 2
+    assert result.pages == 2
+
+
+def test_the_reason_nothing_was_inspected_is_on_the_line(tmp_path, offline_walk, temp_db):
+    """"0 keepers · 0 inspected" with no reason reads as "there is nothing here"
+    when it means "none of the cheapest lots is even the right car"."""
+    definition = search.load("toyota-rav4", _write(tmp_path))
+    offline_walk["pages"] = [_wrong_car(range(2_000_000, 2_020_000, 1000))]
+    result = _walk(definition, offline_walk, wanted=5, cap=99)
+
+    assert "20 dropped by [api]" in result.summary()
+    assert "1 of 1 page read" in result.summary()
+    assert result.stopped_by == "exhausted"
+
+
+def test_paging_stops_at_the_page_limit_and_says_so(tmp_path, offline_walk, temp_db,
+                                                    monkeypatch):
+    """`[api]` can reject page after page without spending a penny, so the
+    inspection cap cannot bound this. Something has to."""
+    monkeypatch.setattr(stats, "PAGE_LIMIT", 3)
+    definition = search.load("toyota-rav4", _write(tmp_path))
+    offline_walk["pages"] = [_wrong_car(range(2_000_000 + n, 2_020_000 + n, 1000))
+                             for n in range(0, 50_000, 20_000)][:5]
+    offline_walk["pages"] += [_wrong_car(range(3_000_000, 3_020_000, 1000))]
+    result = _walk(definition, offline_walk, wanted=5, cap=99)
+
+    assert result.stopped_by == "pages"
+    assert result.pages == 3
+    assert "stopped at the 3-page limit" in result.summary()
+
+
+def test_a_page_turn_that_loses_the_sort_is_caught(tmp_path, offline_walk, temp_db):
+    """Pagination is the SPA's, so the sort travels with it — but that is an
+    assumption about someone else's client state. Page two on its own would look
+    perfectly ordered while being a different list entirely."""
+    definition = search.load("toyota-rav4", _write(tmp_path))
+    offline_walk["pages"] = [
+        _wrong_car(range(3_000_000, 3_020_000, 1000)),
+        _items(range(2_000_000, 2_020_000, 1000)),    # cheaper again: sort reset
+    ]
+    with pytest.raises(stats.OrderingBroken):
+        _walk(definition, offline_walk, wanted=2, cap=99)

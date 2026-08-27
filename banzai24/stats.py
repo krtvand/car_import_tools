@@ -49,6 +49,13 @@ from .search import SearchDefinition
 KEEPERS = 5
 INSPECTION_CAP = 20
 
+# How deep the walk will page looking for its keepers. The inspection cap bounds
+# the money; this bounds the time, and it has to exist because `[api]` can reject
+# a whole page without spending a penny — a hybrid-only search over an archive of
+# mostly petrol cars pages a long way before it finds anything to read.
+# Hitting it is reported, never silent.
+PAGE_LIMIT = 25
+
 # Sheets and their extractions live outside `runs/`: a statistics walk is not a
 # morning run, and a directory under `runs/` would show up on the runs index as
 # one — dimmed and unopenable, because it has no lots.csv and never will.
@@ -105,7 +112,9 @@ class BandStats:
     unconfirmed: int = 0    # read, and a requirement had nothing to judge
     unreadable: int = 0     # no sheet, or the model could not read it
     cap: int = INSPECTION_CAP       # the cap this walk actually ran under
-    stopped_by: str = "exhausted"   # keepers | cap | exhausted
+    pages: int = 0          # pages of the sorted archive actually read
+    total_pages: int = 0    # pages the archive says it has
+    stopped_by: str = "exhausted"   # keepers | cap | pages | exhausted
     problem: str | None = None
 
     def summary(self) -> str:
@@ -118,14 +127,24 @@ class BandStats:
             high = max(k.price_jpy for k in self.keepers)
             bits.append(f"{low:,}–{high:,} ¥")
         bits.append(f"{self.inspected} inspected")
+        # Printed whenever it happened, because "0 inspected" with no reason
+        # given reads as "there is nothing here" when it may mean "none of the
+        # cheapest lots is even the right car".
+        if self.api_rejected:
+            bits.append(f"{self.api_rejected} dropped by [api]")
         if self.failed:
             bits.append(f"{self.failed} failed a requirement")
         if self.unconfirmed:
             bits.append(f"{self.unconfirmed} unconfirmed")
         # Said out loud, because "3 keepers" and "5 keepers" mean different
         # things depending on which of them stopped the walk.
+        if self.pages:
+            bits.append(f"{self.pages} of {self.total_pages} page"
+                        f"{'' if self.total_pages == 1 else 's'} read")
         if self.stopped_by == "cap":
             bits.append(f"stopped at the {self.cap}-inspection cap")
+        elif self.stopped_by == "pages":
+            bits.append(f"stopped at the {PAGE_LIMIT}-page limit")
         elif self.stopped_by == "exhausted" and found < KEEPERS:
             bits.append("archive exhausted")
         return f"{self.band.label}: " + " · ".join(bits)
@@ -205,15 +224,22 @@ def is_fresh(name: str, max_age_days: int, today: date | None = None) -> bool:
     return ((today or date.today()) - stamped).days < max_age_days
 
 
-def _check_ordering(prices: list[int | None]) -> None:
+def _check_ordering(prices: list[int | None], floor: int | None = None) -> None:
     """Every price we can see must ascend. Anything else and the sort has moved.
 
     Free to check: the visible prices come with the payload, so this runs over
     the whole page before a single sheet is downloaded. It is the cheap half of
     the guard; the expensive half is that a revealed price must not fall below
     the one before it either.
+
+    ``floor`` is the last price seen on the *previous* page, which is what
+    catches the failure this cannot otherwise see: turning a page resets the
+    sort back to newest-first, and page two on its own would look perfectly
+    ordered while being a different list entirely.
     """
     known = [p for p in prices if p]
+    if floor is not None:
+        known = [floor] + known
     if known != sorted(known):
         raise OrderingBroken(
             "banzai24 returned prices out of order under sortPriceEnd=asc "
@@ -304,6 +330,18 @@ async def _reveal(page, index: int) -> int | None:
     except Exception:
         return None
     return _price_or_none(payload)
+
+
+async def _goto_page(page, number: int) -> dict:
+    """Turn to page ``number`` of the sorted archive, and return its payload.
+
+    Pagination is the SPA's, so the sort travels with it — but that is an
+    assumption about someone else's client state, not a guarantee. It is checked
+    rather than trusted: the caller carries the previous page's last price as a
+    floor, so a page turn that quietly reset the sort to newest-first is caught
+    by the ordering guard instead of silently becoming a different list.
+    """
+    return await fetch._goto_page(page, number)
 
 
 async def _download_sheet(client: httpx.AsyncClient, item: dict, directory: Path) -> None:
@@ -400,12 +438,20 @@ async def walk_band(
         result.problem = "the sorted archive came back empty"
         return result
 
-    _check_ordering([normalize.parse_price(i.get("endPrice")) for i in items])
+    pagination = payload.get("pagination") or {}
+    result.total_pages = int(pagination.get("totalPages") or 1)
 
     directory = sheets_dir(definition.name)
-    last_price: int | None = None
+    last_price: int | None = None       # the last price kept, across pages
+    page_floor: int | None = None       # the last price *seen*, across pages
+    number = 1
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as http:
+      while True:
+        visible = [normalize.parse_price(i.get("endPrice")) for i in items]
+        _check_ordering(visible, floor=page_floor)
+        result.pages = number
+
         for index, item in enumerate(items):
             if len(result.keepers) >= wanted:
                 result.stopped_by = "keepers"
@@ -470,6 +516,27 @@ async def walk_band(
             ))
             print(f"    {lot_number}  {price:,} ¥"
                   f"{'  (revealed)' if revealed else ''}")
+        else:
+            # The page ran out rather than the walk stopping. `[api]` can reject
+            # every lot on a page without spending anything, so running out of
+            # one page says nothing at all about the archive — the whole reason
+            # this loop exists.
+            page_floor = max((p for p in visible if p), default=page_floor)
+            if number >= result.total_pages:
+                result.stopped_by = "exhausted"
+                break
+            if number >= PAGE_LIMIT:
+                result.stopped_by = "pages"
+                break
+            await asyncio.sleep(fetch.PAGE_DELAY_S)
+            number += 1
+            payload = await _goto_page(page, number)
+            items = payload.get("items") or []
+            if not items:
+                result.stopped_by = "exhausted"
+                break
+            continue
+        break
 
     return result
 

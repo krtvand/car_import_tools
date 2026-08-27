@@ -78,7 +78,14 @@ Per band, in order:
 4. Stop at five keepers, or at **20 inspections**, whichever comes first.
 
 Never reveal a lot that failed. Never reveal a lot below the fifth keeper. A
-second page is only fetched if the cap has not been hit by the end of the first.
+second page is only fetched if the walk has not stopped by the end of the
+first — and it often is, because `[api]` can reject a whole page without
+spending anything. Broadening the RAV4 search to every trim line puts 565 lots
+in the archive whose twenty cheapest are all petrol, so a hybrid-only `[api]`
+walks six pages before its fifth keeper. Bounded at **25 pages**, reported when
+hit, and the previous page's last price is carried forward as a floor so a page
+turn that lost the sort is caught rather than silently becoming a different
+list.
 
 ### The inspection cap
 
