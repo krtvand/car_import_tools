@@ -38,10 +38,11 @@ SUFFIX = ".toml"
 # Sections this module reads. `site`, `api` and `sheet` are passed through
 # untouched — their keys belong to banzai24's dataclasses, which this module
 # deliberately cannot see.
-_SECTIONS = ("site", "api", "sheet", "dashboard", "competitors", "band")
+_SECTIONS = ("site", "api", "sheet", "auction_statistics",
+             "dashboard", "competitors", "band")
 
 # Passed through to banzai24 rather than parsed here.
-_OPAQUE = ("site", "api", "sheet")
+_OPAQUE = ("site", "api", "sheet", "auction_statistics")
 
 # What a `[[band]].max_bid_jpy` table may be keyed by. The distinction only
 # exists on the auction sheet; see `PRIVATE` below for why one of them is

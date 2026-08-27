@@ -1,9 +1,10 @@
-"""``python -m dashboard`` — write the two pages, and open them in the right browser.
+"""``python -m dashboard`` — write the pages, and open them in the right browser.
 
-``build`` writes ``runs/index.html`` and ``runs/competitors.html`` side by side.
-Side by side because the links between them are relative, so the pair survives
-``runs/`` being copied somewhere else — the same property the index has always
-had for its links into run directories.
+``build`` writes ``runs/index.html``, ``runs/competitors.html`` and
+``runs/auction_statistics.html`` side by side. Side by side because the links
+between them are relative, so the set survives ``runs/`` being copied somewhere
+else — the same property the index has always had for its links into run
+directories.
 
 ``open`` builds and then opens the index in **the parser's own Chrome**, not
 your everyday browser. banzai24 caps how many authenticated clients you may have
@@ -26,10 +27,11 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup, escape
 
-from . import competitors, index
+from . import competitors, index, statistics
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 COMPETITORS_FILENAME = "competitors.html"
+STATISTICS_FILENAME = "auction_statistics.html"
 
 
 def _backticks(text: str) -> Markup:
@@ -66,6 +68,37 @@ def render(dashboard: competitors.Dashboard,
     )
 
 
+def render_statistics(stats: statistics.Statistics,
+                      generated_at: datetime | None = None) -> str:
+    """The statistics page as one string. No file written, so this is testable."""
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        autoescape=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    env.filters["backticks"] = _backticks
+    return env.get_template("auction_statistics.html.j2").render(
+        statistics=stats,
+        generated_at=(generated_at or datetime.now()).strftime("%Y-%m-%d %H:%M"),
+    )
+
+
+def _statistics_summary(stats: statistics.Statistics) -> str:
+    """The line the index carries under its link to the statistics page.
+
+    Counts the searches nobody has measured separately from the sales found,
+    because "0 benchmarks" and "2 searches never measured" mean opposite things
+    and one number would blur them — the same reasoning as :func:`_summary`.
+    """
+    count = stats.benchmark_count
+    bits = [f"{count} cheapest acceptable sale{'' if count == 1 else 's'}"]
+    if stats.unmeasured:
+        bits.append(f"{stats.unmeasured} search"
+                    f"{'' if stats.unmeasured == 1 else 'es'} not measured yet")
+    return " · ".join(bits)
+
+
 def _summary(dashboard: competitors.Dashboard) -> str:
     """The line the index carries under its link to this page.
 
@@ -85,33 +118,45 @@ def _summary(dashboard: competitors.Dashboard) -> str:
     return " · ".join(bits)
 
 
-def build(runs_dir: Path | None = None) -> tuple[Path, Path, competitors.Dashboard]:
-    """Write both pages. Always a full rewrite; staleness is the only failure mode."""
+def build(runs_dir: Path | None = None) -> tuple[
+        Path, Path, competitors.Dashboard, statistics.Statistics]:
+    """Write all three pages. Always a full rewrite; staleness is the only failure mode."""
     runs_dir = runs_dir or index.RUNS_DIR
     dashboard = competitors.build(runs_dir)
+    stats = statistics.build()
 
     runs_dir.mkdir(parents=True, exist_ok=True)
     panel_path = runs_dir / COMPETITORS_FILENAME
     panel_path.write_text(render(dashboard), encoding="utf-8")
 
-    listing = index.write(runs_dir, competitors_summary=_summary(dashboard))
-    return listing, panel_path, dashboard
+    stats_path = runs_dir / STATISTICS_FILENAME
+    stats_path.write_text(render_statistics(stats), encoding="utf-8")
+
+    listing = index.write(
+        runs_dir,
+        competitors_summary=_summary(dashboard),
+        statistics_summary=_statistics_summary(stats),
+    )
+    return listing, panel_path, dashboard, stats
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m dashboard",
-        description="Build the workflow's pages: the runs index and the "
-                    "competitors panel.")
+        description="Build the workflow's pages: the runs index, the "
+                    "competitors panel and the auction statistics.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build", help="Write runs/index.html and runs/competitors.html")
+    sub.add_parser("build", help="Write runs/index.html, runs/competitors.html "
+                                 "and runs/auction_statistics.html")
     sub.add_parser("open", help="Build, then open the index in the parser's Chrome")
 
     args = parser.parse_args(argv)
-    listing, panel_path, dashboard = build()
+    listing, panel_path, dashboard, stats = build()
 
     print(f"Wrote {listing}")
     print(f"Wrote {panel_path} — {_summary(dashboard)}")
+    print(f"Wrote {panel_path.parent / STATISTICS_FILENAME} — "
+          f"{_statistics_summary(stats)}")
     if dashboard.money_problem:
         # Said in the terminal as well as on the page: it is the difference
         # between today's numbers and a stale run's, and you want to hear about

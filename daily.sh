@@ -7,6 +7,7 @@
 #   ./daily.sh --max-lots 40    # deeper, every car
 #   ./daily.sh --dry-run        # print the search URLs only
 #   ./daily.sh --no-cyprus      # skip the bazaraki crawl (the panel goes stale)
+#   ./daily.sh --no-stats       # skip the weekly archive walk
 #
 # What it does:
 #
@@ -16,6 +17,8 @@
 #   extract    read this morning's sheets with Claude
 #   report     a report.html per run, each lot in one of three groups
 #   scrape     the same cars on bazaraki, over each search's competitor bounds
+#   stats      once a week per car, the cheapest concluded sales that pass
+#              [sheet] — the evidence behind a max bid
 #   dashboard  runs/index.html and runs/competitors.html, rebuilt
 #
 # **It reads the sheets, and that costs money.** It did not always: the reports
@@ -58,11 +61,13 @@ SEARCHES=("toyota-rav4")
 # --dry-run prints URLs and fetches nothing, so a session check would be a
 # pointless SMS risk on a command whose whole point is to touch nothing.
 dry_run=false
+no_stats=false
 no_cyprus=false
 passthrough=()
 for arg in "$@"; do
     case "$arg" in
         --dry-run) dry_run=true; passthrough+=("$arg") ;;
+        --no-stats) no_stats=true ;;
         # Ours, not banzai24's — swallowed rather than passed on, because `fetch`
         # would reject a flag it has never heard of and kill the morning.
         --no-cyprus) no_cyprus=true ;;
@@ -113,6 +118,18 @@ if [[ "$no_cyprus" == false ]]; then
         # scope, the only range whose "still on sale" flags can be trusted.
         # A search with no [band.competitors] declared says so and is skipped.
         bazaraki scrape --search "${name}" || true
+    done
+fi
+
+if [[ "$no_stats" == false ]]; then
+    for name in "${SEARCHES[@]}"; do
+        # Weekly, not daily: what a car sold for last month does not change
+        # overnight, and each walk pays to read sheets. The guard is inside the
+        # command rather than out here, so "have seven days passed" is one
+        # tested rule and not bash date arithmetic that differs on macOS.
+        # Never fatal — a search with no sales to measure must not take the
+        # dashboard down with it.
+        banzai24 stats --search "${name}" --max-age-days 7 || true
     done
 fi
 

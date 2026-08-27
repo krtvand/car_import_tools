@@ -150,6 +150,26 @@ def upsert_extraction(row: dict) -> bool:
     return inserted
 
 
+def set_end_price(lot_number: str, price_jpy: int) -> bool:
+    """Record a revealed hammer price on a lot already stored. ``True`` if it landed.
+
+    An update, never an insert. The price arrives separately from the lot — it
+    is behind a click, and only worth clicking once the sheet has passed — so
+    the obvious spelling is a partial upsert. But a partial upsert on a lot that
+    is somehow *not* there inserts a row with nothing in it but a number, which
+    would then fail its NOT NULL columns or, worse, not fail them. A price with
+    no car under it is not a fact about anything.
+    """
+    with Session(_engine) as session:
+        lot = session.get(AuctionLot, lot_number)
+        if lot is None:
+            return False
+        lot.end_price_jpy = price_jpy
+        session.add(lot)
+        session.commit()
+        return True
+
+
 def mark_sheet_status(lot_number: str, status: str) -> None:
     """Record that a sheet could not be read, so a re-run can find it again."""
     with Session(_engine) as session:
@@ -192,6 +212,24 @@ def extractions_by_numbers(lot_numbers: list[str]) -> dict[str, SheetExtraction]
         return {row.lot_number: row for row in rows}
 
 
+def stats_lots() -> list[AuctionLot]:
+    """Every lot a statistics walk stored, cheapest first.
+
+    The mirror image of :func:`_buy_side`, and the only reader that wants these.
+    Ordered by price here rather than in the caller because "cheapest first" is
+    what the whole table of them is for; a lot with no price yet sorts last,
+    where SQLite puts NULLs.
+    """
+    with Session(_engine) as session:
+        return list(
+            session.exec(
+                select(AuctionLot)
+                .where(AuctionLot.discovered_by == STATS)
+                .order_by(AuctionLot.end_price_jpy, AuctionLot.lot_number)
+            )
+        )
+
+
 def all_lots() -> list[AuctionLot]:
     with Session(_engine) as session:
         return list(session.exec(select(AuctionLot).order_by(AuctionLot.lot_number)))
@@ -202,14 +240,35 @@ def count_lots() -> int:
         return len(session.exec(select(AuctionLot.lot_number)).all())
 
 
+# Rows a statistics walk wrote. Every buy-side reader excludes them: they are
+# concluded sales kept as evidence for a price, not lots anyone can bid on, and
+# they share this table only so that "never read the same sheet twice" keeps
+# working across both. `is_(None)` is part of the test because every row written
+# before the column existed came from a morning fetch.
+STATS = "stats"
+
+
+def _buy_side(statement):
+    """Narrow a query to lots the morning workflow owns."""
+    return statement.where(
+        (AuctionLot.discovered_by != STATS) | (AuctionLot.discovered_by.is_(None))
+    )
+
+
 def lots_on(trade_date) -> list[AuctionLot]:
-    """Every stored lot trading on one day, earliest slot first."""
+    """Every stored lot trading on one day, earliest slot first.
+
+    Statistics lots are excluded even though a concluded sale can share today's
+    date: the archive is read on the day it happens too, and a lot that has
+    already been through the ring is not on the list of things to look at this
+    morning.
+    """
     with Session(_engine) as session:
         return list(
             session.exec(
-                select(AuctionLot)
-                .where(AuctionLot.trade_date == trade_date)
-                .order_by(AuctionLot.trade_time, AuctionLot.lot_number)
+                _buy_side(
+                    select(AuctionLot).where(AuctionLot.trade_date == trade_date)
+                ).order_by(AuctionLot.trade_time, AuctionLot.lot_number)
             )
         )
 
@@ -226,9 +285,10 @@ def pending_sheets(include_failed: bool = False) -> list[AuctionLot]:
     with Session(_engine) as session:
         return list(
             session.exec(
-                select(AuctionLot)
-                .where(AuctionLot.sheet_status.in_(wanted))
-                .where(AuctionLot.sheet_path != None)  # noqa: E711 — SQL, not Python
-                .order_by(AuctionLot.lot_number)
+                _buy_side(
+                    select(AuctionLot)
+                    .where(AuctionLot.sheet_status.in_(wanted))
+                    .where(AuctionLot.sheet_path != None)  # noqa: E711 — SQL, not Python
+                ).order_by(AuctionLot.lot_number)
             )
         )

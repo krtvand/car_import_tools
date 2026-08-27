@@ -24,7 +24,7 @@ only when the named file has since been deleted or renamed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 import searches
@@ -53,6 +53,15 @@ _NOT_FROM_FILE = {"make", "model",
                   "year_start", "year_end", "mileage_start", "mileage_end"}
 
 _SITE_KEYS = {f.name for f in fields(AuctionFilters)} - _NOT_FROM_FILE
+
+# `[auction_statistics]` overrides `[site]`, so it takes the same keys — minus
+# the two the archive search names for itself. `source` and `status` are what a
+# statistics search *is* rather than facts about a car: an archive of anything
+# but completed sales has no hammer price on it, and a file able to say
+# `source = "auctions"` here could ask for statistics over lots that have not
+# been sold yet.
+_STATS_FIXED = {"source", "status"}
+_STATS_KEYS = _SITE_KEYS - _STATS_FIXED
 _API_KEYS = {f.name for f in fields(LotFilters)}
 _SHEET_KEYS = {f.name for f in fields(SheetRequirements)}
 
@@ -95,8 +104,44 @@ class SearchDefinition:
     lot_filters: LotFilters = field(default_factory=LotFilters)
     requirements: SheetRequirements = field(default_factory=SheetRequirements)
     bands: tuple[Band, ...] = ()
+    stats_overrides: dict = field(default_factory=dict)   # `[auction_statistics]`
     spec: searches.SearchDefinition | None = None   # the shared file behind this
     source: Path | None = None       # None when read back from run provenance
+
+    def stats_filters(self, band: Band) -> AuctionFilters:
+        """The archive search for one band — `[site]`, overridden, then pinned.
+
+        Three layers, narrowest last. `[site]` is the base, because a statistics
+        search that did not share the buy-side filters would be measuring a
+        different car from the one being bought. `[auction_statistics]` overrides
+        it, which is how the trim line (`model_grade`) narrows the measurement
+        without narrowing tomorrow's fetch. Then the band pins year and mileage,
+        the same way it does everywhere else, and the archive pins itself.
+
+        Year is an exact match rather than the search-wide span: a band is the
+        thing that has a price on it, so the sales it is measured against are
+        the ones in its own year and its own mileage range.
+        """
+        return replace(
+            self.filters,
+            **self.stats_overrides,
+            year_start=band.year,
+            year_end=band.year,
+            mileage_start=band.mileage_start,
+            mileage_end=band.mileage_end,
+            source="archive",
+            status="SOLD",
+        )
+
+    @property
+    def stats_declared(self) -> bool:
+        """Did the file say anything about statistics at all?
+
+        An absent section is not an error — a search may simply not want the
+        page — but it is different from an empty one, and the caller says so
+        rather than rendering a panel that looks like "no sales found".
+        """
+        return bool(self.stats_overrides)
 
     def describe(self) -> str:
         bits = [f"[site] {', '.join(_describe_site(self.filters))}"]
@@ -104,6 +149,9 @@ class SearchDefinition:
             bits.append(f"[api] {self.lot_filters.describe()}")
         if self.requirements.active:
             bits.append(f"[sheet] {self.requirements.describe()}")
+        if self.stats_overrides:
+            shown = ", ".join(f"{k}={v}" for k, v in sorted(self.stats_overrides.items()))
+            bits.append(f"[auction_statistics] {shown}")
         if self.bands:
             bits.append(f"{len(self.bands)} band{'' if len(self.bands) == 1 else 's'}")
         return " · ".join(bits)
@@ -134,8 +182,9 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
     site = {_SITE_ALIASES.get(key, key): value
             for key, value in (spec.sections.get("site") or {}).items()}
     _known("site", site, _SITE_KEYS, where)
-    if "grade_origin" in site:
-        site["grade_origin"] = _tuple_of_str(site["grade_origin"], f"{where}: [site] grade")
+    for key in ("grade_origin", "model_grade"):
+        if key in site:
+            site[key] = _tuple_of_str(site[key], f"{where}: [site] {key}")
 
     make, model = banzai_cars.slugs(spec.car)
     site.update(
@@ -149,6 +198,13 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
     for key in ("body_model_code", "exclude_colours"):
         if key in api:
             api[key] = _tuple_of_str(api[key], f"{where}: [api] {key}")
+
+    stats = {_SITE_ALIASES.get(key, key): value
+             for key, value in (spec.sections.get("auction_statistics") or {}).items()}
+    _known("auction_statistics", stats, _STATS_KEYS, where)
+    for key in ("grade_origin", "model_grade"):
+        if key in stats:
+            stats[key] = _tuple_of_str(stats[key], f"{where}: [auction_statistics] {key}")
 
     sheet = dict(spec.sections.get("sheet") or {})
     _known("sheet", sheet, _SHEET_KEYS, where)
@@ -165,6 +221,7 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
             lot_filters=LotFilters(**api),
             requirements=SheetRequirements(**sheet),
             bands=spec.bands,
+            stats_overrides=stats,
             spec=spec,
             source=spec.source,
         )

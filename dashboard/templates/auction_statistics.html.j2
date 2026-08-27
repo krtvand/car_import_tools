@@ -1,0 +1,159 @@
+{# Auction statistics: per band, the cheapest sales that passed [sheet].
+   Same palette as index.html.j2, competitors.html.j2 and report.html.j2 so
+   moving between them does not feel like leaving the tool. Self-contained —
+   inline CSS, sheets inlined as data URIs, no JavaScript — and the link back to
+   the index is relative, so the set survives `runs/` being copied elsewhere.
+
+   There is deliberately no bid on this page. A sale price is a hammer price and
+   a max bid is an all-in maximum; side by side they would compare different
+   quantities and flatter the bid by an area price that differs per auction
+   house. This page says what sold, and you go and edit the file. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>auction statistics</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #6b6b6b; --line: #e0ddd7; --paper: #faf9f7;
+    --card: #ffffff; --warn: #9a6700; --bad: #a11; --good: #1a7f4b; --link: #1a4f8a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.5rem 4rem; background: var(--paper); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  a { color: var(--link); }
+
+  header h1 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 600; }
+  header .meta { margin: 0; color: var(--muted); font-size: .875rem; }
+  header .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .back { display: inline-block; margin-bottom: 1rem; font-size: .875rem; }
+
+  .car { margin: 1.75rem 0 0; }
+  .car > h2 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: 600; }
+  .car > h2 .file { font-weight: 400; color: var(--muted); font-size: .8125rem;
+                    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .car > h2 .when { font-weight: 400; color: var(--muted); font-size: .8125rem; }
+
+  .note { margin: .5rem 0; padding: .5rem .75rem; border-radius: 6px;
+          background: #fdf6e3; color: var(--warn); font-size: .875rem; }
+  .note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .band { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+          margin: .75rem 0; padding: .875rem 1rem; }
+  .band > h3 { margin: 0 0 .5rem; font-size: .9375rem; font-weight: 600; }
+  .band > h3 .range { font-weight: 400; color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  th { text-align: left; font-weight: 600; color: var(--muted);
+       font-size: .8125rem; padding: .25rem .5rem .375rem 0;
+       border-bottom: 1px solid var(--line); }
+  td { padding: .5rem .5rem .5rem 0; border-bottom: 1px solid var(--line);
+       vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.price { font-weight: 600; white-space: nowrap; }
+  td.trim { color: var(--muted); }
+  .sheet img { display: block; width: 72px; height: 54px; object-fit: cover;
+               border: 1px solid var(--line); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="index.html">← Auction runs</a>
+
+<header>
+  <h1>Auction statistics</h1>
+  <p class="meta">
+    The cheapest concluded sales whose auction sheet passes each search's
+    <code>[sheet]</code> requirements — what you could have paid for a car you
+    would have accepted.
+  </p>
+  <p class="meta">Built {{ generated_at }}.</p>
+</header>
+
+{% for panel in statistics.panels %}
+<section class="car">
+  <h2>
+    {{ panel.car if panel.car else panel.name }}
+    <span class="file">{{ panel.name }}.toml</span>
+    {% if panel.measured_on %}
+    <span class="when">· measured {{ panel.measured_on }}</span>
+    {% endif %}
+  </h2>
+
+  {% if panel.problem %}
+  <p class="note">This search will not load: {{ panel.problem|backticks }}</p>
+  {% else %}
+    {% if panel.note %}
+    <p class="note">{{ panel.note|backticks }}</p>
+    {% endif %}
+
+    {% for band in panel.bands %}
+    <div class="band">
+      <h3>
+        {{ band.band.label }}
+        {% if band.rows %}
+        <span class="range">
+          · {{ band.rows|length }} cheapest acceptable
+          {{ 'sale' if band.rows|length == 1 else 'sales' }},
+          {{ '{:,}'.format(band.low) }}–{{ '{:,}'.format(band.high) }} ¥
+        </span>
+        {% endif %}
+      </h3>
+
+      {% if band.rows %}
+      <table>
+        <thead>
+          <tr>
+            <th></th><th>sold for</th><th>mileage</th><th>grade</th>
+            <th>Модификация</th><th>date</th><th>auction</th><th>lot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in band.rows %}
+          <tr>
+            <td class="sheet">
+              {% if row.sheet_uri %}
+              <img src="{{ row.sheet_uri }}" alt="auction sheet for lot {{ row.lot_short }}">
+              {% endif %}
+            </td>
+            <td class="price">{{ '{:,}'.format(row.price_jpy) }} ¥</td>
+            <td>{{ '{:,}'.format(row.mileage_km) if row.mileage_km else '—' }} km</td>
+            <td>{{ row.grade or '—' }}</td>
+            <td class="trim">{{ row.modification or '—' }}</td>
+            <td>{{ row.trade_date or '—' }}</td>
+            <td>{{ row.auction_name or '—' }}</td>
+            <td>
+              {% if row.url %}
+              <a href="{{ row.url }}">{{ row.lot_short }}</a>
+              {% else %}
+              {{ row.lot_short }}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      {# Never silence. A short list and an empty one both only mean something
+         next to how many sales were looked at to produce them. #}
+      {% if band.note %}
+      <p class="note">{{ band.note|backticks }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% else %}
+<p class="note">No searches are enabled.</p>
+{% endfor %}
+
+</div>
+</body>
+</html>

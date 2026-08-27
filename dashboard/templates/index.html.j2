@@ -83,6 +83,11 @@
   <span class="sub">{{ competitors_summary }}</span>
 </a>
 
+<a class="panel-link" href="auction_statistics.html">
+  <span class="title">Auction statistics →</span>
+  <span class="sub">{{ statistics_summary }}</span>
+</a>
+
 {% if not entries %}
   <p class="empty">No runs yet — <code>uv run python -m banzai24 fetch</code>.</p>
 {% else %}

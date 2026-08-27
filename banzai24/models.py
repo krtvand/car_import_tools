@@ -70,6 +70,14 @@ class AuctionLot(SQLModel, table=True):
     currency: str | None = None
     source: str | None = None            # auctions | archive
 
+    # Which workflow put this row here. NULL means the morning fetch, because
+    # every row predating auction statistics came from one. A statistics walk
+    # writes "stats", and the morning queue and the day's report both filter it
+    # out: a concluded lot from four months ago is not something to bid on, and
+    # `extract` paying to re-read its sheet would be paying twice for a sheet
+    # the walk has already read.
+    discovered_by: str | None = None     # None | "fetch" | "stats"
+
     sheet_url: str | None = None         # auctImage
     sheet_path: str | None = None
     sheet_sha256: str | None = None

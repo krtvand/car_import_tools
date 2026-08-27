@@ -50,8 +50,16 @@ class AuctionFilters:
 
     grade_origin: tuple[str, ...] = ()
 
+    # Модификация — the trim line, e.g. "HYBRID G". Multi-select like
+    # `grade_origin`, and matched by the site as a **substring**: "HYBRID G"
+    # returns lots spelled "5D 4WD HYBRID G" and "HYBRID G 4WD" alike.
+    model_grade: tuple[str, ...] = ()
+
     # "auctions" = lots still to be sold; "archive" = completed sales.
     source: str = "auctions"
+    # Which of those completed sales to keep. Only an archive search sets it;
+    # "SOLD" is the one that carries a hammer price.
+    status: str | None = None
     country_iso: str = "JP"
 
 
@@ -74,6 +82,7 @@ _QUERY_PARAMS: dict[str, str] = {
     "engine_capacity_start": "engineCapacityStart",
     "engine_capacity_end": "engineCapacityEnd",
     "source": "source",
+    "status": "status",
     "country_iso": "countryISO",
 }
 
@@ -101,6 +110,8 @@ def build_search_url(filters: AuctionFilters) -> str:
             params.append((param, str(value)))
     for grade in filters.grade_origin:
         params.append(("gradeOrigin", str(grade)))
+    for model_grade in filters.model_grade:
+        params.append(("modelGrade", str(model_grade)))
 
     query = urlencode(params)
     return f"{BASE_URL}{base_path(filters)}" + (f"?{query}" if query else "")

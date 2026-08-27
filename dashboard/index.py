@@ -148,6 +148,7 @@ def render(
     generated_at: datetime | None = None,
     total: int | None = None,
     competitors_summary: str = "",
+    statistics_summary: str = "",
 ) -> str:
     """The whole page as one string. No file written, so this is testable."""
     # Same autoescape reasoning as report.py: the loader keys on ".j2", so
@@ -163,6 +164,7 @@ def render(
         total=len(entries) if total is None else total,
         generated_at=(generated_at or datetime.now()).strftime("%Y-%m-%d %H:%M"),
         competitors_summary=competitors_summary,
+        statistics_summary=statistics_summary,
     )
 
 
@@ -171,6 +173,7 @@ def write(
     limit: int = DEFAULT_LIMIT,
     output: Path | None = None,
     competitors_summary: str = "",
+    statistics_summary: str = "",
 ) -> Path:
     """(Re)write ``runs/index.html`` and return where it went.
 
@@ -184,6 +187,7 @@ def write(
     output = output or root / "index.html"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        render(entries, total=len(dirs), competitors_summary=competitors_summary),
+        render(entries, total=len(dirs), competitors_summary=competitors_summary,
+               statistics_summary=statistics_summary),
         encoding="utf-8")
     return output

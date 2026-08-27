@@ -49,6 +49,7 @@ from datetime import date
 from pathlib import Path
 
 from . import bidding, config, db, fetch, normalize, search, session
+from . import stats as stats_mod
 
 _ROOT = Path(__file__).parent.parent   # only to print the default paths readably
 
@@ -195,6 +196,33 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="Hide the browser. Only works when already signed in — "
                             "the default shows a window so you can sign in inline.")
 
+    st = sub.add_parser(
+        "stats",
+        help="The cheapest concluded sales that pass this search's [sheet] "
+             "requirements — evidence for a max bid")
+    st.add_argument("--search", required=True, metavar="NAME",
+                    help="Which saved search to measure. Its [auction_statistics] "
+                         "section narrows the archive; everything else is inherited "
+                         "from [site] and [api], so the sales measured are the car "
+                         "being bought.")
+    st.add_argument("--keepers", type=int, default=stats_mod.KEEPERS, metavar="N",
+                    help=f"How many passing lots to find per band. "
+                         f"Default {stats_mod.KEEPERS}.")
+    st.add_argument("--cap", type=int, default=stats_mod.INSPECTION_CAP, metavar="N",
+                    help=f"Most paid sheet readings per band. A lot read in an "
+                         f"earlier week is free and does not count. "
+                         f"Default {stats_mod.INSPECTION_CAP}.")
+    st.add_argument("--max-age-days", type=int, metavar="N", dest="max_age_days",
+                    help="Do nothing if this search was measured within the last "
+                         "N days. What makes `daily.sh` able to call this every "
+                         "morning: statistics move at the speed of the auction "
+                         "calendar, not the morning.")
+    st.add_argument("--dry-run", action="store_true", dest="dry_run",
+                    help="Print each band's archive URL and exit — no browser, "
+                         "no model call, nothing spent.")
+    st.add_argument("--headless", action="store_true",
+                    help="Hide the browser. Only works when already signed in.")
+
     return parser
 
 
@@ -284,6 +312,49 @@ def main() -> None:
         print(result.summary())
         for mismatch in result.mismatches:
             print(f"  cross-check: {mismatch}")
+        return
+
+    if args.command == "stats":
+        definition = _load_search(args.search)
+        if args.max_age_days and stats_mod.is_fresh(args.search, args.max_age_days):
+            stamped = stats_mod.last_run(args.search)
+            print(f"{args.search}: measured {stamped} — inside "
+                  f"{args.max_age_days} days, nothing to do.")
+            return
+        if not definition.stats_declared:
+            # Not fatal: [site] and [api] alone describe a perfectly good archive
+            # search. Said out loud because an unnarrowed measurement of a RAV4
+            # mixes trim lines, and the operator asked for HYBRID G specifically.
+            print(f"{args.search} has no [auction_statistics] section — "
+                  f"measuring against [site] and [api] alone.")
+
+        if args.dry_run:
+            for band in definition.bands:
+                print(f"{band.label}\n  "
+                      f"{config.build_search_url(definition.stats_filters(band))}")
+            print("Dry run — nothing opened, nothing spent.")
+            return
+
+        # Say the price before spending it, the same way `extract` does. The cap
+        # is per band, so the worst case is what a first run on a cold cache
+        # costs; a later week pays only for lots that newly entered the cheap end.
+        worst = args.cap * len(definition.bands)
+        print(f"Up to {worst} sheet(s) to read with {stats_mod.sheets.MODEL} "
+              f"across {len(definition.bands)} band(s) — at most "
+              f"roughly ${0.03 * worst:.2f}")
+        try:
+            result = asyncio.run(stats_mod.run_stats(
+                definition,
+                wanted=args.keepers,
+                cap=args.cap,
+                headless=args.headless,
+            ))
+        except stats_mod.OrderingBroken as exc:
+            raise SystemExit(f"Stopped: {exc}")
+        except (session.SessionExpired, session.ServiceUnavailable,
+                session.ProfileBusy) as exc:
+            raise SystemExit(str(exc))
+        print(result.summary())
         return
 
     if args.command == "report":

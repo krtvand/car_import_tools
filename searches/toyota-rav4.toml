@@ -14,6 +14,14 @@ exclude_colours = ["black", "blue"]
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
 
+# What the archive is narrowed to when measuring what these actually sell for.
+# Inherits [site] and [api] — the sales measured are the car being bought — and
+# adds only what differs. `source` and `status` are not written here: an archive
+# search is over completed sales by definition.
+[auction_statistics]
+model_grade = ["HYBRID G"]        # Модификация; matched as a substring by the site
+engine_capacity_start = 2.5
+
 [dashboard]
 enabled = true
 expected_profit_eur = 5000

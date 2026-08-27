@@ -24,6 +24,8 @@ storage/
 
 # banzai24: per-run artifacts and the persisted Chrome profile (login session)
 runs/
+# banzai24: auction-statistics sheets and the weekly freshness stamps
+stats/
 banzai24/.chrome-profile/
 banzai24/.session.json
 # macOS
