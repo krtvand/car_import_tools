@@ -67,7 +67,19 @@
   td.under { color: var(--bad); }
   tr:last-child td { border-bottom: 0; }
 
-  .sold { margin: .5rem 0 0; color: var(--muted); font-size: .8125rem; }
+  /* The mark colours the age cell alone. The number in that cell is the reason
+     for the colour, so the three readings survive greyscale, print and a
+     red-green colour vision deficiency without labels on the rows. */
+  td.age { font-variant-numeric: tabular-nums; }
+  td.age.fair { color: var(--good); font-weight: 600; }
+  td.age.overpriced { color: var(--bad); font-weight: 600; }
+  td.age.unproven { color: var(--muted); }
+
+  .legend { margin: .5rem 0 0; color: var(--muted); font-size: .8125rem; }
+  .legend b { font-weight: 600; }
+  .legend b.fair { color: var(--good); }
+  .legend b.overpriced { color: var(--bad); }
+  .stuck { margin: .5rem 0 0; color: var(--warn); font-size: .8125rem; }
   footer { margin: 2.5rem 0 0; color: var(--muted); font-size: .8125rem; }
 </style>
 </head>
@@ -171,7 +183,7 @@
             <th>fuel</th>
             <th>gearbox</th>
             <th>seller</th>
-            <th class="num">days up</th>
+            <th class="num">age</th>
             <th>advert</th>
           </tr>
         </thead>
@@ -185,12 +197,21 @@
             <td>{{ row.fuel_type or '—' }}</td>
             <td>{{ row.gearbox or '—' }}</td>
             <td>{{ row.seller_type or '—' }}</td>
-            <td class="num">{{ row.days_on_market if row.days_on_market is not none else '—' }}</td>
+            <td class="num age {{ row.mark }}">{{
+              (row.age|string) + 'd' if row.age is not none else '—'
+            }}{{ ' · gone' if row.gone else '' }}</td>
             <td><a href="{{ row.url }}">{{ row.title }}</a></td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
+      <p class="legend">
+        Age runs from the day the advert was published — or the day we first saw
+        it, whichever is earlier, so a re-published advert never comes out
+        younger. <b class="fair">Green</b>: gone within 30 days, the price
+        worked. <b class="overpriced">Red</b>: 30 days or more, gone or still
+        up — the market has refused it. <b>Grey</b>: still up, too soon to say.
+      </p>
       {% else %}
       <p class="verdict good">
         Nothing under €{{ '{:,.0f}'.format(band.sell_price_eur) }} — of
@@ -199,8 +220,12 @@
       </p>
       {% endif %}
 
-      {% if band.sold %}
-      <p class="sold">{{ band.sold.describe() }}.</p>
+      {% if band.stuck_above %}
+      <p class="stuck">
+        {{ band.stuck_above }} advert{{ '' if band.stuck_above == 1 else 's' }}
+        above your price {{ 'has' if band.stuck_above == 1 else 'have' }} been
+        listed over 30 days — the market just above you is not moving.
+      </p>
       {% endif %}
     {% endif %}
   </div>
@@ -211,8 +236,12 @@
 <footer>
   Built {{ generated_at }} by <code>dashboard build</code>.
   A cyprus sell price is the landed cost plus resale costs plus the profit the
-  search asks for; a competitor is a live advert under it, inside the band's own
-  competitor bounds. Delisting is a sold-proxy, not a sale record.
+  search asks for; a competitor is an advert under it, inside the band's own
+  competitor bounds, live or gone within the last 90 days. Buyers work the
+  market cheapest-first, so a competitor is one car ahead of you in the queue
+  and its age is a fact about your own wait. Delisting is a sold-proxy, not a
+  sale record — and a seller who re-lists the same car cheaper still reads as
+  gone.
 </footer>
 
 </div>

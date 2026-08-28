@@ -21,7 +21,7 @@ def _row(**overrides) -> competitors.CompetitorRow:
     base = dict(ad_id=1, url="https://bazaraki.com/adv/1", title="Mazda CX-30",
                 price=16_000.0, under_by=1_859.0, year=2021, mileage_km=80_000,
                 fuel_type="Petrol", gearbox="Automatic", seller_type="private",
-                days_on_market=40)
+                age=40, mark=competitors.OVERPRICED, gone=False)
     return competitors.CompetitorRow(**{**base, **overrides})
 
 
@@ -38,12 +38,38 @@ def test_a_priced_band_shows_all_three_numbers_and_the_advert():
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
             profit_eur=2_000.0, sell_price_eur=17_859.0,
             cyprus_estimate_eur=20_705.0, competitors=(_row(),), considered=119,
-            sold=competitors.Sold(count=3, median_price=21_000.0)),))))
+            stuck_above=3),))))
 
     assert "€17,859" in html and "€20,705" in html and "€15,859" in html
     assert "https://bazaraki.com/adv/1" in html
     assert "−€1,859" in html
-    assert "3 delisted in the last 30 days" in html
+    # Jinja keeps the source line breaks; the sentence is what matters.
+    assert "3 advert" in html and "above your price" in html
+    assert "not moving" in html
+
+
+def test_the_mark_colours_the_age_cell_and_the_legend_explains_it():
+    """The colour is the only label the operator wanted, so the number it sits on
+    has to carry the same distinction for anyone reading in greyscale."""
+    html = cli.render(_dashboard(competitors.SearchPanel(
+        name="mazda-cx30", car="Mazda CX-30",
+        bands=(competitors.BandPanel(
+            band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
+            profit_eur=2_000.0, sell_price_eur=17_859.0,
+            cyprus_estimate_eur=20_705.0, considered=119,
+            competitors=(
+                _row(ad_id=1, price=15_000.0, age=9,
+                     mark=competitors.FAIR, gone=True),
+                _row(ad_id=2, price=16_000.0, age=44,
+                     mark=competitors.OVERPRICED, gone=False),
+                _row(ad_id=3, price=17_000.0, age=4,
+                     mark=competitors.UNPROVEN, gone=False),
+            )),))))
+
+    assert 'class="num age fair">9d · gone' in html
+    assert 'class="num age overpriced">44d' in html
+    assert 'class="num age unproven">4d' in html
+    assert "whichever is earlier" in html      # the legend explains the clamp
 
 
 def test_an_empty_list_says_what_it_looked_at():

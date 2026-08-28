@@ -20,6 +20,8 @@ from searches.definition import Band, CompetitorBounds, CompetitorFilters
 
 from dashboard import competitors
 
+NOW = datetime(2026, 8, 28, 12, 0)
+
 BAND = Band(year=2023, mileage_start=0, mileage_end=50_000,
             max_bid_jpy={"private": 1_805_000},
             competitors=CompetitorBounds(year_start=2019, mileage_end=120_000))
@@ -31,7 +33,9 @@ def _advert(**overrides):
         price=16_000.0, year=2021, mileage_km=80_000,
         fuel_type="Petrol", gearbox="Automatic", seller_type="private",
         colour="White", engine_size="2,0L", availability=None,
-        is_active=True, delisted_at=None, days_on_market=40,
+        is_active=True, delisted_at=None,
+        posted_raw=None, first_seen_at=NOW - timedelta(days=3),
+        last_seen_at=NOW,
     )
     return SimpleNamespace(**{**base, **overrides})
 
@@ -123,26 +127,115 @@ def test_an_advert_with_no_price_is_not_a_competitor():
     assert rows == () and considered == 1
 
 
-# --- what has already gone ---------------------------------------------------
+# --- how old the advert is ---------------------------------------------------
 
 
-def test_recently_delisted_adverts_are_counted_as_evidence_it_moves():
-    """Delisting is the only sold-proxy this system has."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    sold = competitors._sold(BAND, [
-        _advert(ad_id=1, price=20_000.0, delisted_at=now - timedelta(days=5)),
-        _advert(ad_id=2, price=22_000.0, delisted_at=now - timedelta(days=20)),
-        _advert(ad_id=3, price=99_000.0, delisted_at=now - timedelta(days=400)),
-        _advert(ad_id=4, price=21_000.0, delisted_at=None),
-    ], CompetitorFilters())
+@pytest.mark.parametrize("raw, expected", [
+    ("24.07.2026 17:13", datetime(2026, 7, 24)),
+    ("Today", NOW),
+    ("Today 15:07", NOW),
+    ("Yesterday", NOW - timedelta(days=1)),
+    ("3 days ago", NOW - timedelta(days=3)),
+    ("1 week ago", NOW - timedelta(weeks=1)),
+    ("2 months ago", NOW - timedelta(days=60)),
+    ("56 minutes ago", NOW - timedelta(minutes=56)),
+    ("", None),
+    ("who knows", None),
+    ("32.13.2026 10:00", None),      # unparseable date, not a crash
+])
+def test_every_shape_bazaraki_writes_a_publish_date_in(raw, expected):
+    """Relative forms anchor to the last sighting: an upsert overwrites
+    ``posted_raw`` every crawl, so the string is whatever the site said then."""
+    assert competitors._published(_advert(posted_raw=raw, last_seen_at=NOW)) == expected
 
-    assert sold.count == 2
-    assert sold.median_price == 21_000.0
-    assert "2 delisted" in sold.describe()
+
+def test_a_republished_advert_never_comes_out_younger():
+    """The bug this clamp exists to prevent. ``posted_raw`` is a *bump* date —
+    90 of 216 RAV4 adverts claimed to be published after the day we first saw
+    them. Trusting it would paint the sellers who cannot sell as the freshest."""
+    bumped = _advert(posted_raw="Today", last_seen_at=NOW,
+                     first_seen_at=NOW - timedelta(days=60))
+    assert competitors._first_listed(bumped) == NOW - timedelta(days=60)
+    assert competitors._age_days(bumped, NOW) == 60
 
 
-def test_no_recent_delistings_says_so_rather_than_showing_nothing():
-    assert "none delisted" in competitors._sold(BAND, [], CompetitorFilters()).describe()
+def test_a_publish_date_older_than_the_crawl_deepens_the_history():
+    """The other half of the clamp, and the reason to read the field at all: it
+    reaches back before bazaraki was first crawled for this car."""
+    old = _advert(posted_raw="27.05.2026 09:00", last_seen_at=NOW,
+                  first_seen_at=datetime(2026, 8, 9))
+    assert competitors._first_listed(old) == datetime(2026, 5, 27)
+    assert competitors._age_days(old, NOW) == 93
+
+
+def test_age_stops_at_delisting_not_at_today():
+    gone = _advert(first_seen_at=datetime(2026, 7, 24),
+                   delisted_at=datetime(2026, 8, 9), is_active=False)
+    assert competitors._age_days(gone, NOW) == 16
+
+
+# --- what the age means ------------------------------------------------------
+
+
+@pytest.mark.parametrize("age, active, expected", [
+    (16, False, competitors.FAIR),         # gone in a fortnight: the price worked
+    (30, False, competitors.FAIR),         # the threshold itself is still fair
+    (31, False, competitors.OVERPRICED),   # took too long to go
+    (3, True, competitors.UNPROVEN),       # still up, too soon to say
+    (31, True, competitors.OVERPRICED),    # still up and nobody has bought it
+    (None, True, competitors.UNPROVEN),    # no age is not a verdict
+    (None, False, competitors.FAIR),
+])
+def test_the_three_readings(age, active, expected):
+    assert competitors._mark(_advert(is_active=active), age) == expected
+
+
+def test_a_departed_competitor_is_a_row_not_a_footnote():
+    """The whole point: an advert that sold is the most useful thing on the page,
+    because how long it took is the only direct evidence the price works."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=15_000.0, is_active=False,
+                 first_seen_at=NOW - timedelta(days=9),
+                 delisted_at=NOW - timedelta(days=1))],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    assert [(row.ad_id, row.mark, row.gone) for row in rows] == [(1, competitors.FAIR, True)]
+
+
+def test_a_competitor_that_left_months_ago_is_dropped_entirely():
+    """It says nothing about who is ahead of you now; showing it grey would only
+    invite it to be read against today's price."""
+    rows, considered = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=15_000.0, is_active=False,
+                 delisted_at=NOW - timedelta(days=91))],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+    assert rows == () and considered == 0
+
+
+def test_a_car_that_sold_above_your_price_is_not_a_competitor():
+    """You hold the better offer, so it was never ahead of you in the queue —
+    however fast it went. The cost of this is the stuck-above count."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=19_000.0, is_active=False,
+                 delisted_at=NOW - timedelta(days=1))],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+    assert rows == ()
+
+
+def test_frozen_stock_above_your_price_is_counted_even_though_it_cannot_be_a_row():
+    """Without this the table reads as an easy sale while the market a few
+    hundred euro above you has not moved in a month."""
+    live = [
+        _advert(ad_id=1, price=19_000.0, first_seen_at=NOW - timedelta(days=45)),
+        _advert(ad_id=2, price=20_000.0, first_seen_at=NOW - timedelta(days=60)),
+        _advert(ad_id=3, price=19_500.0, first_seen_at=NOW - timedelta(days=5)),
+        _advert(ad_id=4, price=15_000.0, first_seen_at=NOW - timedelta(days=90)),
+    ]
+    assert competitors._stuck_above(
+        BAND, live, CompetitorFilters(), sell_price=17_859.0, now=NOW) == 2
 
 
 # --- never an empty list without a reason ------------------------------------

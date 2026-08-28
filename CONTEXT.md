@@ -165,12 +165,34 @@ point: when the required price is above the estimate, the car does not work at
 any profit, and no competitor has to do anything for that to be true.
 
 **Competitor**:
-One live Cyprus advert, inside a band's declared competitor bounds, asking less
-than that band's *cyprus sell price*. Deliberately not the same car: an older
-one, or one with more kilometres on it, still takes the sale. Not a **Cyprus
-comparable**, which is a median over similar cars and describes a market — a
-competitor is one advert, with a link, that undercuts you specifically.
+One Cyprus advert, inside a band's declared competitor bounds, asking less than
+that band's *cyprus sell price* — live, or gone from the market within the last
+three months. Deliberately not the same car: an older one, or one with more
+kilometres on it, still takes the sale. A car that sold for *more* than your
+sell price is not a competitor at all, because you hold the better offer. Not a
+**Cyprus comparable**, which is a median over similar cars and describes a
+market — a competitor is one advert, with a link, that undercuts you
+specifically.
 _Avoid_: Rival, listing, comp
+
+**Advert age**:
+How long one Cyprus advert has been on sale — from the day it was published to
+the day it left the market, or to today if it is still up. The axis every
+judgement about a competitor hangs on: gone quickly means the price worked, and
+still sitting means it did not. Measured from the *earliest* date the advert can
+be shown to have existed, because sellers re-publish a stale advert to lift it
+up the results page, and a bumped advert must never come out younger.
+_Avoid_: Days listed, time on market, freshness
+
+**The queue**:
+The order buyers work through a market: the cheapest acceptable car first, then
+the next. A *competitor* is one car ahead of you in it. What a competitor's
+**advert age** tells you is therefore about your own wait, not only about them —
+cars ahead of you leaving quickly means the queue is moving and your turn comes
+later rather than never, while cars ahead of you sitting still means it is not
+moving at all. The reason the same fact — an advert gone from the market — is
+read as good news here and as a mere *sold-proxy* elsewhere.
+_Avoid_: Pipeline, funnel, market position
 
 **Auction statistics**:
 The five cheapest concluded lots that would have met every requirement in a
