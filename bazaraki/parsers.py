@@ -243,6 +243,13 @@ def parse_detail(soup: BeautifulSoup) -> dict:
     if location:
         data["location"] = location
 
+    # The seller's own words. Kept because they are the only place a Cyprus
+    # advert names the car's trim — "(G package)", "Hybrid X 2wd", "Adventure
+    # OFF ROAD PACKAGE II" — which the site's own structured fields never carry.
+    description = (advert.get("description") or "").strip()
+    if description:
+        data["description"] = description
+
     published = (advert.get("counters") or {}).get("published")
     if published:
         data["posted_raw"] = published  # e.g. "Yesterday", "19.06.2026 09:56"

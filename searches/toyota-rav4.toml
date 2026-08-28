@@ -8,8 +8,20 @@ grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
-body_model_code = ["AXAH52", "AXAH54"]
+# AXAH54 only, i.e. E-Four. HYBRID G and HYBRID Adventure are E-Four cars and
+# nothing else, so the 2WD AXAH52 is a HYBRID X by construction — see the
+# official 主要装備一覧表 (2022年10月), where the G column reads "E-Four" and only
+# the X column reads "E-Four/2WD".
+
 exclude_colours = ["black", "blue"]
+# The X within E-Four, dropped on the listing's own trim line (Модификация).
+# Written as an exclusion of one word rather than a list of wanted grades
+# because the auction houses spell the line four different ways — "5D 4WD
+# HYBRID X", "HYBRID X 4WD", "X 4WD", "X" — and about one hybrid RAV4 in nine
+# states no grade at all. A lot that says nothing is kept and reaches the
+# report, where the 17-inch wheels, the fabric seats and the 8-inch screen give
+# an X away; see docs/reference/rav4-grades.md.
+exclude_model_grades = ["X"]
 
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
@@ -31,8 +43,27 @@ fuel_type = ["petrol", "hybrid petrol"]
 engine_size_start = 2.5
 engine_size_end = 2.5
 
+
 [[band]]
 year = 2023
+body_model_code = ["AXAH54"]
+mileage_start = 0
+mileage_end = 50000
+max_bid_jpy = { private = 3_150_000 }
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  ## Cyprus adverts that say, in the seller's own words, that they are the X — the
+  ## grade below the one being imported, and the one that undercuts it: a 2023 X at
+  ## 39,000 km was asking €27,800 while a 2023 G at 47,000 km asked €34,500. There
+  ## is no grade field on bazaraki, so this reads the title and description, and
+  ## only about half the RAV4 adverts name a grade at all. The rest stay in the
+  ## panel: an advert that has not said it is an X still takes the sale.
+  exclude_phrases = ["hybrid x", "x package", "2.5x hybrid"]
+
+[[band]]
+year = 2023
+body_model_code = ["AXAH52"]
 mileage_start = 0
 mileage_end = 50000
 max_bid_jpy = { private = 2_705_000 }

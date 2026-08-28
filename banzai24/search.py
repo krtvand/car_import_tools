@@ -195,7 +195,7 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
 
     api = dict(spec.sections.get("api") or {})
     _known("api", api, _API_KEYS, where)
-    for key in ("body_model_code", "exclude_colours"):
+    for key in ("body_model_code", "exclude_colours", "exclude_model_grades"):
         if key in api:
             api[key] = _tuple_of_str(api[key], f"{where}: [api] {key}")
 

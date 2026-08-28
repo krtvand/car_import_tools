@@ -25,6 +25,7 @@ _ADDED_COLUMNS = {
     "seller_type": "ALTER TABLE carlisting ADD COLUMN seller_type VARCHAR",
     "is_active": "ALTER TABLE carlisting ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
     "delisted_at": "ALTER TABLE carlisting ADD COLUMN delisted_at DATETIME",
+    "description": "ALTER TABLE carlisting ADD COLUMN description VARCHAR",
 }
 
 

@@ -32,7 +32,7 @@ def _advert(**overrides):
         ad_id=1, url="https://bazaraki.com/adv/1", title="Mazda CX-30",
         price=16_000.0, year=2021, mileage_km=80_000,
         fuel_type="Petrol", gearbox="Automatic", seller_type="private",
-        colour="White", engine_size="2,0L", availability=None,
+        colour="White", engine_size="2,0L", availability=None, description=None,
         is_active=True, delisted_at=None,
         posted_raw=None, first_seen_at=NOW - timedelta(days=3),
         last_seen_at=NOW,
@@ -88,6 +88,47 @@ def test_a_field_the_scraper_never_captured_fails_rather_than_passes():
         _advert(fuel_type=None), CompetitorFilters(fuel_type=("petrol",))) is False
     assert competitors._passes(
         _advert(engine_size=None), CompetitorFilters(engine_size_start=1.8)) is False
+
+
+def test_an_advert_naming_a_trim_you_are_not_selling_against_is_excluded():
+    """The only filter that reads free text, because bazaraki has no grade field
+    and a Cyprus advert names its trim — when it names it — in the seller's own
+    words."""
+    filters = CompetitorFilters(exclude_phrases=("hybrid x",))
+    assert competitors._passes(
+        _advert(description="Toyota RAV4 Hybrid X 2wd (Japanese Import)"),
+        filters) is False
+
+
+def test_the_phrase_is_matched_in_the_title_as_well_as_the_description():
+    filters = CompetitorFilters(exclude_phrases=("hybrid x",))
+    assert competitors._passes(
+        _advert(title="Toyota RAV4 Hybrid X 2,5L 2023"), filters) is False
+
+
+def test_the_seller_may_write_it_in_any_case_or_spacing():
+    """`TOYOTA RAV 4  2.5L (G package)` is the spacing of a real advert."""
+    filters = CompetitorFilters(exclude_phrases=("g package",))
+    assert competitors._passes(
+        _advert(description="TOYOTA RAV 4  2.5L (G   package) AWD hybrid"),
+        filters) is False
+
+
+def test_an_advert_that_names_another_trim_is_still_competition():
+    filters = CompetitorFilters(exclude_phrases=("hybrid x",))
+    assert competitors._passes(
+        _advert(description="TOYOTA RAV 4 2.5L (G package) AWD hybrid"),
+        filters) is True
+
+
+def test_an_advert_that_names_no_trim_at_all_is_kept():
+    """The one exclusion that keeps what it cannot read: an advert that has not
+    said it is the cheaper grade still takes the sale, and about half the RAV4
+    adverts up today say nothing about a grade."""
+    filters = CompetitorFilters(exclude_phrases=("hybrid x",))
+    assert competitors._passes(_advert(description=None), filters) is True
+    assert competitors._passes(
+        _advert(description="Japan import, full extra, 2 keys"), filters) is True
 
 
 def test_no_filters_declared_keeps_everything():

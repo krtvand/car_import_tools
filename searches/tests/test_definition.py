@@ -208,6 +208,13 @@ def test_competitor_filters_are_folded_for_matching():
     assert filters.gearbox == "automatic"
 
 
+def test_excluded_phrases_are_folded_the_same_way():
+    """Written as the seller would type them, matched however they typed them."""
+    filters = _parse(competitors={"exclude_phrases": ["Hybrid X", "X package"]}).competitors
+    assert filters.exclude_phrases == ("hybrid x", "x package")
+    assert filters.declared
+
+
 # --- the shipped files -------------------------------------------------------
 
 

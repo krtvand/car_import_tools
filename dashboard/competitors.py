@@ -65,6 +65,19 @@ def _fold(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())
 
 
+def _says(listing, phrase: str) -> bool:
+    """Does the advert's own text contain ``phrase``?
+
+    Title and description together, lower-cased with runs of whitespace
+    collapsed — sellers write "TOYOTA RAV 4  2.5L (G package)" with the spacing
+    of a shop window. Punctuation is *kept*, so a phrase is matched as the
+    seller would have typed it, which is why a phrase has to be long enough to
+    mean the trim: "hybrid x" and not "x".
+    """
+    text = " ".join(f"{listing.title or ''} {listing.description or ''}".lower().split())
+    return phrase in text
+
+
 def _litres(engine_size: str | None) -> float | None:
     """``"2,0L"`` → ``2.0``. bazaraki writes a comma decimal and an ``L``.
 
@@ -106,6 +119,12 @@ def _passes(listing, filters: CompetitorFilters) -> bool:
         return False
     if filters.exclude_colours and _fold(listing.colour) in {
             _fold(value) for value in filters.exclude_colours}:
+        return False
+    # The one exclusion that reads free text, and so the one place a *missing*
+    # value keeps the advert rather than dropping it: an advert that never names
+    # its trim has not been shown to be the trim you are not selling against,
+    # and it still undercuts you.
+    if any(_says(listing, phrase) for phrase in filters.exclude_phrases):
         return False
     if filters.engine_size_start is not None or filters.engine_size_end is not None:
         litres = _litres(listing.engine_size)

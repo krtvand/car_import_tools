@@ -144,6 +144,13 @@ def test_parse_detail_ignores_unmapped_features(detail_soup):
     assert all(v != "should be skipped" for v in data.values())
 
 
+def test_parse_detail_keeps_the_sellers_own_words(detail_soup):
+    """The only field that ever names a trim — "(G package)", "Hybrid X 2wd" —
+    which is what a [competitors] exclusion reads."""
+    data = parsers.parse_detail(detail_soup)
+    assert data["description"].startswith("Lamborghini Huracan EVO RWD")
+
+
 def test_parse_detail_returns_nothing_without_a_payload():
     soup = BeautifulSoup("<html><body>no payload here</body></html>", "html.parser")
     assert parsers.parse_detail(soup) == {}

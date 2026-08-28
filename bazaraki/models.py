@@ -47,6 +47,9 @@ class CarListing(SQLModel, table=True):
     mot_till: str | None = None
     availability: str | None = None
     extras: str | None = None
+    # The seller's free text. The only field that ever names a trim ("G
+    # package", "Hybrid X 2wd"), so it is what a [competitors] exclusion reads.
+    description: str | None = None
     seller_type: str | None = None  # "private" / "dealer"; from the advert's business-account flag
 
     first_seen_at: datetime | None = None

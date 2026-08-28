@@ -243,11 +243,18 @@ class CompetitorFilters:
     exclude_colours: tuple[str, ...] = ()
     engine_size_start: float | None = None   # litres
     engine_size_end: float | None = None
+    # Phrases that, said by the seller, disqualify the advert — the trim you are
+    # not selling against ("hybrid x", "x package"). Matched as substrings of
+    # the advert's title and description, which is the only place a Cyprus
+    # advert ever names a trim: bazaraki has no grade field, and about half the
+    # RAV4 adverts up today say nothing about it at all. An advert that says
+    # nothing is therefore *kept* — it undercuts you until it is shown not to.
+    exclude_phrases: tuple[str, ...] = ()
 
     @property
     def declared(self) -> bool:
         return any((self.fuel_type, self.gearbox, self.seller_type,
-                    self.exclude_colours,
+                    self.exclude_colours, self.exclude_phrases,
                     self.engine_size_start is not None,
                     self.engine_size_end is not None))
 
@@ -261,6 +268,8 @@ class CompetitorFilters:
             bits.append(f"seller {self.seller_type}")
         if self.exclude_colours:
             bits.append(f"not {', '.join(self.exclude_colours)}")
+        if self.exclude_phrases:
+            bits.append(f"not saying {', '.join(self.exclude_phrases)}")
         if self.engine_size_start is not None or self.engine_size_end is not None:
             low = self.engine_size_start if self.engine_size_start is not None else "any"
             high = self.engine_size_end if self.engine_size_end is not None else "any"
@@ -524,7 +533,7 @@ def _parse_competitors(payload, where: str) -> CompetitorFilters:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: [competitors] must be a table")
     allowed = ("fuel_type", "gearbox", "seller_type", "exclude_colours",
-               "engine_size_start", "engine_size_end")
+               "exclude_phrases", "engine_size_start", "engine_size_end")
     _known(where, "[competitors]", payload, allowed)
 
     filters = CompetitorFilters(
@@ -537,6 +546,9 @@ def _parse_competitors(payload, where: str) -> CompetitorFilters:
         exclude_colours=(_folded_tuple(payload["exclude_colours"], where,
                                        "[competitors] exclude_colours")
                          if "exclude_colours" in payload else ()),
+        exclude_phrases=(_folded_tuple(payload["exclude_phrases"], where,
+                                       "[competitors] exclude_phrases")
+                         if "exclude_phrases" in payload else ()),
         engine_size_start=(_number(payload["engine_size_start"], where,
                                    "[competitors] engine_size_start")
                            if "engine_size_start" in payload else None),

@@ -5,11 +5,13 @@ from banzai24 import lot_filters
 from banzai24.lot_filters import LotFilters
 
 
-def _lot(code=None, short=None, body_number=None, colour=None) -> dict:
+def _lot(code=None, short=None, body_number=None, colour=None,
+         modification=None) -> dict:
     return {
         "bodyModelCode": code,
         "car": {"shortCodeModel": short},
-        "characteristics": {"bodyNumber": body_number, "color": colour},
+        "characteristics": {"bodyNumber": body_number, "color": colour,
+                            "modification": modification},
     }
 
 
@@ -169,3 +171,69 @@ def test_both_criteria_apply_to_the_same_lot():
     assert wanted.matches(_lot(code="5AA-DMEJ3P", colour="WHITE"))
     assert not wanted.matches(_lot(code="5AA-DMEJ3P", colour="BLACK"))
     assert not wanted.matches(_lot(code="DMEJ3R", colour="WHITE"))
+
+
+# --- excluded model grades ---------------------------------------------------
+#
+# The trim line is written in whatever order the auction house felt like, which
+# is why this is an exclusion over words rather than a list of wanted spellings.
+
+def test_the_trim_line_is_read_off_the_lot_as_upper_case_words():
+    assert lot_filters.model_grade_of(
+        _lot(modification="5d 4wd hybrid g")) == ["5D", "4WD", "HYBRID", "G"]
+    assert lot_filters.model_grade_of(_lot()) == []
+    assert lot_filters.model_grade_of({}) == []
+
+
+def test_an_excluded_grade_is_dropped_however_the_line_is_ordered():
+    """All four spellings of an X in one run of RAV4 data."""
+    unwanted = LotFilters(exclude_model_grades=("X",))
+    assert not unwanted.matches(_lot(modification="5D 4WD HYBRID X"))
+    assert not unwanted.matches(_lot(modification="HYBRID X 4WD"))
+    assert not unwanted.matches(_lot(modification="X 4WD"))
+    assert not unwanted.matches(_lot(modification="X"))
+
+
+def test_another_grade_is_kept():
+    unwanted = LotFilters(exclude_model_grades=("X",))
+    assert unwanted.matches(_lot(modification="5D 4WD HYBRID G"))
+    assert unwanted.matches(_lot(modification="G 4WD"))
+    assert unwanted.matches(_lot(modification="5D 4WD ADVENTURE OFFROAD PACKAGE"))
+
+
+def test_a_grade_is_a_whole_word_not_a_letter_inside_one():
+    """Banning `X` must not ban the X sitting inside a longer word."""
+    assert LotFilters(exclude_model_grades=("X",)).matches(
+        _lot(modification="4WD XLE PACKAGE"))
+
+
+def test_a_multi_word_grade_matches_only_when_its_words_are_consecutive():
+    unwanted = LotFilters(exclude_model_grades=("HYBRID X",))
+    assert not unwanted.matches(_lot(modification="5D 4WD HYBRID X"))
+    assert unwanted.matches(_lot(modification="X 4WD"))          # not spelled out
+    assert unwanted.matches(_lot(modification="HYBRID G 4WD"))
+
+
+def test_the_exclusion_is_written_in_either_case_here_too():
+    assert not LotFilters(exclude_model_grades=("x",)).matches(
+        _lot(modification="HYBRID X 4WD"))
+
+
+def test_a_lot_with_no_trim_line_is_kept_not_dropped():
+    """About one hybrid RAV4 in six is listed as no more than `4WD`."""
+    unwanted = LotFilters(exclude_model_grades=("X",))
+    assert unwanted.matches(_lot(modification="4WD"))
+    assert unwanted.matches(_lot(modification=""))
+    assert unwanted.matches(_lot())
+
+
+def test_excluding_a_grade_is_an_active_filter():
+    assert LotFilters(exclude_model_grades=("X",)).active
+    assert "X" in LotFilters(exclude_model_grades=("X",)).describe()
+
+
+def test_the_grade_exclusion_applies_alongside_the_others():
+    wanted = LotFilters(body_model_code=("AXAH54",), exclude_model_grades=("X",))
+    assert wanted.matches(_lot(code="6AA-AXAH54", modification="5D 4WD HYBRID G"))
+    assert not wanted.matches(_lot(code="6AA-AXAH54", modification="5D 4WD HYBRID X"))
+    assert not wanted.matches(_lot(code="6AA-AXAH52", modification="5D 4WD HYBRID G"))

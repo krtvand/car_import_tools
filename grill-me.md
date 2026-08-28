@@ -1,13 +1,34 @@
-To decide about max_bid_jpy price in toml search description like  @searches/toyota-rav4.toml I need to check auction statistics
+I can see adv with id 6631913 with price 26500 in carlisting table, but in  "Competitors in Cyprus" page I don't see it despite it meet filters
 
-action stat is available at - https://banzai24.com/TOYOTA/RAV4?yearStart=2023&yearEnd=2023&mileageEnd=50000&engineCapacityStart=2.5&modelGrade=HYBRID+G&gradeOrigin=4&gradeOrigin=4.5&gradeOrigin=5&status=SOLD&source=archive&countryISO=JP
+Toyota RAV4 toyota-rav4.toml
+2023 · 0–50,000 km · max bid ¥2,705,000
+landed
+€22,383
++ profit
+€5,000
+cyprus sell price
+€27,383
+cyprus estimate
+€31,480
+under it
+0
+curve prices mileage upward (+0.0048/10k km) — the Toyota RAV4 fit is unreliable
 
-Above the filters in [site] block we need to filter stat by "body_model_code" and Модификация (modelGrade) like "HYBRID G". I will declare these extra filters in a new auction_statistics block
+Nothing under €27,383 — of 99 adverts inside this band's competitor bounds.
 
-the result I want to see in dashboard like competitors page is made. Stats need for each enabled search.
+Competitors list is live-only now. But I want to see delisted adverts too in Competitors. Also I want to mark ads:
+- delisted within 30 days. It means the price is fair. and it is possible to sell the car with this price. 
+- active and they are active more than 30 days. It means the price is too high. It is a warning for me.
+- all other active ads
 
-We need to check if there is api exists for an auction statistics in banzai24 to decide what kind of output we are able to make.
-- It will be nice to have prices for all sales  in last three month and make histogramm to see count of sales. In this case we apply api filters only, without auction sheet ai inspection
-We need 5 lots that meets requirements from [sheet] block with the cheapest sale price. It means we need ai inspection for some lots.
+Q7 - b
+Q8 - now. I want to see three marks as described before
+Q9 - ok
+Q10 - ok, but use another name than LINGER_DAYS. I need to understand that after these amount of days we consider price for this car is too high
 
-I need to update stat every week, and we don't need to inspect known lots with ai twice.
+❯ Q11 - yes. The main goal of competitors table - is to assess how it is difficult to sell the car with this sell price. I don't need detailed sell statistics. If
+  a car was sold quickly for bigger price - it is not my competitor, because I have better offer. Competitor - is the adv with better offer than mine. But if
+  competitors gone from market promptly - it means the price is fair but I will need bit more time to find my buyer. Do you agree?
+  Q12 - do nothing with them,
+  Q13 - do nothing. keep as is,
+  Q14 - ok
