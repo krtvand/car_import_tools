@@ -32,7 +32,6 @@ no_damage_codes = ["W", "X", "欠"]
 # search is over completed sales by definition.
 [auction_statistics]
 #model_grade = ["HYBRID G"]        # Модификация; matched as a substring by the site
-#engine_capacity_start = 2.5
 
 [dashboard]
 enabled = true
@@ -53,20 +52,4 @@ max_bid_jpy = { private = 3_150_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  ## Cyprus adverts that say, in the seller's own words, that they are the X — the
-  ## grade below the one being imported, and the one that undercuts it: a 2023 X at
-  ## 39,000 km was asking €27,800 while a 2023 G at 47,000 km asked €34,500. There
-  ## is no grade field on bazaraki, so this reads the title and description, and
-  ## only about half the RAV4 adverts name a grade at all. The rest stay in the
-  ## panel: an advert that has not said it is an X still takes the sale.
   exclude_phrases = ["hybrid x", "x package", "2.5x hybrid", "COMING SOON"]
-
-[[band]]
-year = 2023
-body_model_code = ["AXAH52"]
-mileage_start = 0
-mileage_end = 50000
-max_bid_jpy = { private = 2_705_000 }
-  [band.competitors]
-  year_start = 2022
-  mileage_end = 70000
