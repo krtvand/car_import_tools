@@ -59,7 +59,7 @@ max_bid_jpy = { private = 3_150_000 }
   ## is no grade field on bazaraki, so this reads the title and description, and
   ## only about half the RAV4 adverts name a grade at all. The rest stay in the
   ## panel: an advert that has not said it is an X still takes the sale.
-  exclude_phrases = ["hybrid x", "x package", "2.5x hybrid"]
+  exclude_phrases = ["hybrid x", "x package", "2.5x hybrid", "COMING SOON"]
 
 [[band]]
 year = 2023
