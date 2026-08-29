@@ -29,7 +29,6 @@ from pathlib import Path
 import searches
 from banzai24 import db as banzai_db
 from banzai24 import requirements, search as banzai_search, stats as stats_mod
-from banzai24.lot_filters import normalize_model_code
 from banzai24.models import AuctionLot
 from searches.definition import Band
 
@@ -181,24 +180,29 @@ def _matches_car(lot: AuctionLot, definition) -> bool:
             and (lot.model or "").upper() == (definition.filters.model or "").upper())
 
 
-def _matches_stats_filters(lot: AuctionLot, band: Band, filters) -> bool:
-    """The two narrowings the sheet cannot re-judge, re-applied to a stored row.
+def _matches_stats_filters(lot: AuctionLot, filters, lot_filters) -> bool:
+    """The narrowings the sheet cannot re-judge, re-applied to a stored row.
 
     ``requirements.judge`` re-checks year, mileage, grade and the sheet — but not
-    the trim line or the chassis code, because neither is on the sheet. They were
-    applied when the lot was fetched; they are applied again here so that
-    tightening ``model_grade`` drops yesterday's wider sales from the page
+    the trim line, the colour or the chassis code, because none of them is on the
+    sheet. They were applied when the lot was fetched; they are applied again
+    here so that tightening ``model_grade``, or splitting a car's file in two and
+    banning a trim line in one half, drops yesterday's wider sales from the page
     instead of leaving them to sit there looking measured.
 
-    The code comes from the **band**, which is the one narrowing that differs
-    panel to panel: a 2WD sale is not a benchmark for the E-Four's max bid, and
-    the search-wide union would let it be one.
+    Two layers, because the file writes the trim line two ways.
+    ``[auction_statistics] model_grade`` is the positive one, matched as a
+    substring the way banzai24 matches it. ``[api]`` is the exclusion, and it
+    arrives already narrowed to this **band's** chassis codes — the one narrowing
+    that differs panel to panel: a 2WD sale is not a benchmark for the E-Four's
+    max bid, and the search-wide union would let it be one.
     """
     if filters.model_grade:
         modification = (lot.modification or "").casefold()
         if not any(wanted.casefold() in modification for wanted in filters.model_grade):
             return False
-    return band.prices_code(normalize_model_code(lot.body_model_code))
+    return lot_filters.keeps(code=lot.body_model_code, colour=lot.colour,
+                             modification=lot.modification)
 
 
 def _in_band(lot: AuctionLot, band: Band) -> bool:
@@ -218,10 +222,11 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
                 extractions: dict) -> BandPanel:
     """One band's five cheapest passing sales, re-judged from today's file."""
     filters = definition.stats_filters(band)
+    lot_filters = definition.lot_filters_for(band)
 
     inside = [
         lot for lot in lots
-        if _in_band(lot, band) and _matches_stats_filters(lot, band, filters)
+        if _in_band(lot, band) and _matches_stats_filters(lot, filters, lot_filters)
     ]
 
     rows: list[BenchmarkRow] = []

@@ -142,26 +142,43 @@ class LotFilters:
         return any(getattr(self, f.name) for f in fields(self))
 
     def matches(self, lot: dict) -> bool:
-        """A missing value means opposite things to the two criteria.
+        """Does this lot, as the list API describes it, pass?"""
+        return self.keeps(
+            code=model_code_of(lot),
+            colour=colour_of(lot),
+            modification=(lot.get("characteristics") or {}).get("modification"),
+        )
 
-        A lot with no model code anywhere is **rejected**: nothing has shown it
-        is the car asked for. A lot with no colour, or no trim line, is
-        **kept**: an exclusion only ever drops what it can positively recognise,
-        and dropping the unlabelled ones would quietly narrow the search to lots
-        that happened to have the field filled in.
+    def keeps(self, code: str | None, colour: str | None,
+              modification: str | None) -> bool:
+        """The three criteria, against values however the caller got hold of them.
+
+        :meth:`matches` digs them out of an API lot; the dashboard reads them off
+        a row stored weeks ago. Both judge here, because a search that gains an
+        exclusion today must drop the lots it fetched yesterday — a stored lot
+        re-judged by a looser rule than the one that fetched it would go on
+        looking measured while naming a car the file has since said it is not
+        about.
+
+        A missing value means opposite things to the two kinds of criterion. A
+        lot with no model code anywhere is **rejected**: nothing has shown it is
+        the car asked for. A lot with no colour, or no trim line, is **kept**: an
+        exclusion only ever drops what it can positively recognise, and dropping
+        the unlabelled ones would quietly narrow the search to lots that happened
+        to have the field filled in.
         """
         if self.body_model_code:
-            code = model_code_of(lot)
+            code = normalize_model_code(code)
             wanted = (normalize_model_code(w) for w in self.body_model_code)
             if not code or not any(w and w in code for w in wanted):
                 return False
         if self.exclude_colours:
-            colour = colour_of(lot)
+            colour = normalize_colour(colour)
             unwanted = {normalize_colour(c) for c in self.exclude_colours}
             if colour and colour in unwanted:
                 return False
         if self.exclude_model_grades:
-            line = model_grade_of(lot)
+            line = normalize_model_grade(modification)
             unwanted = (normalize_model_grade(g) for g in self.exclude_model_grades)
             if line and any(_names_grade(line, grade) for grade in unwanted):
                 return False

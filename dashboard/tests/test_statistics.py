@@ -87,11 +87,13 @@ def test_the_trim_line_is_matched_the_way_the_site_matches_it(definition):
     """banzai24 treats `modelGrade` as a substring — "HYBRID G" returns lots
     spelled "5D 4WD HYBRID G". The page has to agree, or it drops the very lots
     the walk was told to collect."""
-    filters = definition.stats_filters(definition.bands[0])
+    band = definition.bands[0]
+    filters = definition.stats_filters(band)
+    lot_filters = definition.lot_filters_for(band)
     assert statistics._matches_stats_filters(
-        _lot(modification="5D 4WD HYBRID G"), definition.bands[0], filters) is True
+        _lot(modification="5D 4WD HYBRID G"), filters, lot_filters) is True
     assert statistics._matches_stats_filters(
-        _lot(modification="ADVENTURE"), definition.bands[0], filters) is False
+        _lot(modification="ADVENTURE"), filters, lot_filters) is False
 
 
 def test_a_sale_is_measured_only_against_the_variant_its_band_prices(definition):
@@ -100,10 +102,34 @@ def test_a_sale_is_measured_only_against_the_variant_its_band_prices(definition)
     for the E-Four's band whatever else it has in common with it."""
     band = definition.bands[0]
     filters = definition.stats_filters(band)
+    lot_filters = definition.lot_filters_for(band)
     assert statistics._matches_stats_filters(
-        _lot(code="6AA-AXAH54"), band, filters) is True
+        _lot(code="6AA-AXAH54"), filters, lot_filters) is True
     assert statistics._matches_stats_filters(
-        _lot(code="AXAH52"), band, filters) is False
+        _lot(code="AXAH52"), filters, lot_filters) is False
+
+
+def test_an_exclusion_added_today_drops_a_sale_stored_before_it(tmp_path):
+    """The failure that made this test exist: a RAV4 file split into a G half
+    and an X half kept showing `HYBRID X 4WD` under the G search, because the
+    walk had stored those sales back when nothing banned them. `[api]` is the
+    file's own exclusion and the page must re-apply it, not trust the fetch."""
+    (tmp_path / "toyota-rav4-g.toml").write_text(
+        RAV4.replace("[sheet]", '[api]\nexclude_model_grades = ["X"]\n\n[sheet]')
+            .replace('model_grade = ["HYBRID G"]', ""), encoding="utf-8")
+    definition = search.load("toyota-rav4-g", tmp_path)
+    band = definition.bands[0]
+    filters = definition.stats_filters(band)
+    lot_filters = definition.lot_filters_for(band)
+
+    assert statistics._matches_stats_filters(
+        _lot(modification="HYBRID X 4WD"), filters, lot_filters) is False
+    assert statistics._matches_stats_filters(
+        _lot(modification="HYBRID G 4WD"), filters, lot_filters) is True
+    # A sale nobody wrote a trim line for is still a sale: an exclusion drops
+    # only what it can positively recognise.
+    assert statistics._matches_stats_filters(
+        _lot(modification="4WD"), filters, lot_filters) is True
 
 
 # --- which of them become the five -------------------------------------------
