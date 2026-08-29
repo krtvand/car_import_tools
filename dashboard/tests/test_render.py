@@ -29,6 +29,42 @@ def _dashboard(*panels) -> competitors.Dashboard:
     return competitors.Dashboard(panels=panels, rates="¥185/€", costs="Aug 2026")
 
 
+def test_a_dismissed_advert_is_shown_struck_through_with_its_reason():
+    """It stays on the page because bazaraki still shows it under these filters;
+    it is struck through because it is not competition."""
+    html = cli.render(_dashboard(competitors.SearchPanel(
+        name="mazda-cx30", car="Mazda CX-30",
+        bands=(competitors.BandPanel(
+            band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
+            profit_eur=2_000.0, sell_price_eur=17_859.0,
+            cyprus_estimate_eur=20_705.0, considered=118,
+            rows=(_row(ad_id=6631913, mark="",
+                       exclusion_reason="order only — dealer confirmed"),)),))))
+
+    assert '<tr class="excluded">' in html
+    assert "order only" in html
+    # The id, because that is what you type into the UPDATE.
+    assert "6631913" in html
+    # Neither cell may claim a place in the queue it does not hold.
+    assert "−€1,859" not in html
+    assert "40d" not in html
+
+
+def test_a_band_whose_only_undercuts_were_dismissed_says_so_and_still_shows_them():
+    """The two used to be an if/else. Both are true here: nobody is undercutting
+    you, *and* here is the row you already dealt with."""
+    html = cli.render(_dashboard(competitors.SearchPanel(
+        name="mazda-cx30", car="Mazda CX-30",
+        bands=(competitors.BandPanel(
+            band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
+            profit_eur=2_000.0, sell_price_eur=17_859.0,
+            cyprus_estimate_eur=20_705.0, considered=118,
+            rows=(_row(mark="", exclusion_reason="only by order"),)),))))
+
+    assert "Nothing under €17,859" in html
+    assert "only by order" in html
+
+
 def test_a_priced_band_shows_all_three_numbers_and_the_advert():
     """The sell price, the estimate, and the link. The comparison between the
     first two is why the estimate is on the page at all."""
@@ -37,7 +73,7 @@ def test_a_priced_band_shows_all_three_numbers_and_the_advert():
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
             profit_eur=2_000.0, sell_price_eur=17_859.0,
-            cyprus_estimate_eur=20_705.0, competitors=(_row(),), considered=119,
+            cyprus_estimate_eur=20_705.0, rows=(_row(),), considered=119,
             stuck_above=3),))))
 
     assert "€17,859" in html and "€20,705" in html and "€15,859" in html
@@ -57,7 +93,7 @@ def test_the_mark_colours_the_age_cell_and_the_legend_explains_it():
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
             profit_eur=2_000.0, sell_price_eur=17_859.0,
             cyprus_estimate_eur=20_705.0, considered=119,
-            competitors=(
+            rows=(
                 _row(ad_id=1, price=15_000.0, age=9,
                      mark=competitors.FAIR, gone=True),
                 _row(ad_id=2, price=16_000.0, age=44,
@@ -111,7 +147,7 @@ def test_an_underwater_band_is_called_out_above_its_list():
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=20_000.0,
             profit_eur=2_000.0, sell_price_eur=22_000.0,
-            cyprus_estimate_eur=20_705.0, competitors=(_row(),)),))))
+            cyprus_estimate_eur=20_705.0, rows=(_row(),)),))))
 
     assert "not work at €2,000 profit" in html
     assert 'class="band underwater"' in html
@@ -130,7 +166,7 @@ def test_a_command_in_a_note_is_rendered_as_code_and_still_escaped():
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1, landed_eur=1.0, profit_eur=1.0,
             sell_price_eur=3.0, cyprus_estimate_eur=9.0,
-            competitors=(_row(title="<script>alert(1)</script>"),)),))))
+            rows=(_row(title="<script>alert(1)</script>"),)),))))
     assert "<script>alert(1)</script>" not in escaped
     assert "&lt;script&gt;" in escaped
 
@@ -140,7 +176,7 @@ def test_the_index_summary_separates_adverts_found_from_searches_unpriced():
     summary = cli._summary(_dashboard(
         competitors.SearchPanel(name="a", bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1, sell_price_eur=3.0,
-            competitors=(_row(),)),)),
+            rows=(_row(),)),)),
         competitors.SearchPanel(name="b", bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1),)),
     ))

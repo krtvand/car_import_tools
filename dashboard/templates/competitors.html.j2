@@ -75,6 +75,13 @@
   td.age.overpriced { color: var(--bad); font-weight: 600; }
   td.age.unproven { color: var(--muted); }
 
+  /* A manually excluded advert: still at its price, so you recognise it on
+     bazaraki's own results page, but visibly withdrawn from the queue. */
+  tr.excluded td { color: var(--muted); }
+  tr.excluded td.price { text-decoration: line-through; }
+  td .adid { color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+  td .reason { color: var(--muted); font-style: italic; }
+
   .legend { margin: .5rem 0 0; color: var(--muted); font-size: .8125rem; }
   .legend b { font-weight: 600; }
   .legend b.fair { color: var(--good); }
@@ -172,7 +179,17 @@
       <p class="note">{{ band.warning }}</p>
       {% endif %}
 
-      {% if band.competitors %}
+      {# Both can be true at once: a band whose only under-price adverts have all
+         been dismissed by hand prints the good news *and* shows those rows. #}
+      {% if not band.competitors %}
+      <p class="verdict good">
+        Nothing under €{{ '{:,.0f}'.format(band.sell_price_eur) }} — of
+        {{ band.considered }} advert{{ '' if band.considered == 1 else 's' }} inside
+        this band's competitor bounds.
+      </p>
+      {% endif %}
+
+      {% if band.rows %}
       <table>
         <thead>
           <tr>
@@ -188,19 +205,28 @@
           </tr>
         </thead>
         <tbody>
-        {% for row in band.competitors %}
-          <tr>
-            <td class="num">€{{ '{:,.0f}'.format(row.price) }}</td>
-            <td class="num under">−€{{ '{:,.0f}'.format(row.under_by) }}</td>
+        {% for row in band.rows %}
+          <tr{% if row.excluded %} class="excluded"{% endif %}>
+            <td class="num price">€{{ '{:,.0f}'.format(row.price) }}</td>
+            {# An excluded advert is not undercutting you and holds no place in
+               the queue, so the two cells that would claim it does say nothing. #}
+            <td class="num under">{{ '—' if row.excluded else
+              '−€' + '{:,.0f}'.format(row.under_by) }}</td>
             <td class="num">{{ row.year or '—' }}</td>
             <td class="num">{{ '{:,}'.format(row.mileage_km) if row.mileage_km is not none else '—' }}</td>
             <td>{{ row.fuel_type or '—' }}</td>
             <td>{{ row.gearbox or '—' }}</td>
             <td>{{ row.seller_type or '—' }}</td>
-            <td class="num age {{ row.mark }}">{{
+            <td class="num age {{ row.mark }}">{% if row.excluded %}—{% else %}{{
               (row.age|string) + 'd' if row.age is not none else '—'
-            }}{{ ' · gone' if row.gone else '' }}</td>
-            <td><a href="{{ row.url }}">{{ row.title }}</a></td>
+            }}{{ ' · gone' if row.gone else '' }}{% endif %}</td>
+            <td>
+              <a href="{{ row.url }}">{{ row.title }}</a>
+              {# The id is here because marks are written straight into the
+                 database by hand, and this is the only place to read one. #}
+              <span class="adid">{{ row.ad_id }}</span>
+              {% if row.excluded %}<span class="reason">— {{ row.exclusion_reason }}</span>{% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody>
@@ -211,12 +237,8 @@
         younger. <b class="fair">Green</b>: gone within 30 days, the price
         worked. <b class="overpriced">Red</b>: 30 days or more, gone or still
         up — the market has refused it. <b>Grey</b>: still up, too soon to say.
-      </p>
-      {% else %}
-      <p class="verdict good">
-        Nothing under €{{ '{:,.0f}'.format(band.sell_price_eur) }} — of
-        {{ band.considered }} advert{{ '' if band.considered == 1 else 's' }} inside
-        this band's competitor bounds.
+        A <b>struck-through</b> row is one you excluded by hand — it is still on
+        bazaraki under these filters, but it counts for nothing here.
       </p>
       {% endif %}
 

@@ -85,3 +85,39 @@ posted the same car cheaper — €23,000 returning as €22,999. Each earns the
 mark asserting the price was fair, while being proof of the opposite. See
 `.scratch/relisting-detection/spec.md`. This is the largest known defect in the
 reading above, and it is shipped knowingly.
+
+## Withdrawn from the queue
+
+An advert can pass every filter, undercut the sell price, and still not be
+competition: it is available only by order, the seller is a broker, the advert
+is a duplicate. The operator marks those by hand, one advert at a time, with a
+reason. They are **manually excluded**, and they stay on the page.
+
+That is the inversion worth recording. Every other exclusion in this repo
+deletes — `exclude_phrases`, `exclude_colours` and the rest drop an advert
+before it is ever rendered. This one preserves. The reason is that a filter is a
+*rule*, true of adverts nobody has read yet, while this is a *judgement* about
+one advert already read: bazaraki still shows it under the same search filters,
+so it will look like a true competitor again tomorrow, and a row that has
+vanished is a row that gets re-investigated next week. The same instinct as the
+runs index dimming a run it cannot open — hiding it is how it gets forgotten.
+
+So the row is dimmed, its price struck through, and both `under by` and its age
+mark rendered blank: it has withdrawn from the queue rather than taken a
+position in it, and green and red are equally lies about a car nobody can buy.
+It is not carried as a fourth mark for that reason — the three marks are
+verdicts a price has earned.
+
+**Nothing counts it.** Not the competitor count, not `considered`, not
+`stuck_above`. A band whose only under-price adverts are all marked prints
+"Nothing under EUR X" *and* shows the marked rows beneath it.
+
+**The mark stops at the panel.** The operator chose a deliberately broad
+meaning — any reason at all — and the price of that breadth is that it can never
+reach `CyprusMarket` or `bazaraki.analysis`. "Order only" and "wrong trim" imply
+opposite things about what this car is worth, so one flag mixing them is not
+evidence about a market fitted over two hundred adverts. Feeding it in would
+re-price every band on the page as a side effect of a colour change, which is
+the same thing this ADR already refuses above for `days_on_market`.
+
+See `.scratch/manual-exclusion/spec.md`.

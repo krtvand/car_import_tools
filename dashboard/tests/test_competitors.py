@@ -33,7 +33,7 @@ def _advert(**overrides):
         price=16_000.0, year=2021, mileage_km=80_000,
         fuel_type="Petrol", gearbox="Automatic", seller_type="private",
         colour="White", engine_size="2,0L", availability=None, description=None,
-        is_active=True, delisted_at=None,
+        is_active=True, delisted_at=None, manual_exclusion_reason=None,
         posted_raw=None, first_seen_at=NOW - timedelta(days=3),
         last_seen_at=NOW,
     )
@@ -308,6 +308,84 @@ def test_frozen_stock_above_your_price_is_counted_even_though_it_cannot_be_a_row
     ]
     assert competitors._stuck_above(
         BAND, live, CompetitorFilters(), sell_price=17_859.0, now=NOW) == 2
+
+
+# --- adverts dismissed by hand -----------------------------------------------
+
+
+def test_a_manually_excluded_advert_is_still_a_row():
+    """The point of the mark: bazaraki shows the advert under the same filters,
+    so hiding it is how you end up investigating the same car twice."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=16_000.0, manual_exclusion_reason="order only")],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    assert [row.ad_id for row in rows] == [1]
+    assert rows[0].excluded and rows[0].exclusion_reason == "order only"
+
+
+def test_a_manually_excluded_advert_keeps_its_place_in_the_price_order():
+    """Recognition is the whole job: you meet it on bazaraki at its price."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=16_900.0),
+         _advert(ad_id=2, price=15_200.0, manual_exclusion_reason="broker"),
+         _advert(ad_id=3, price=16_100.0)],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    assert [row.ad_id for row in rows] == [2, 3, 1]
+
+
+def test_a_manually_excluded_advert_has_no_mark():
+    """The three marks are verdicts about a price. A car nobody can buy has
+    withdrawn from that judgement rather than earned a fourth reading."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(price=16_000.0, first_seen_at=NOW - timedelta(days=90),
+                 manual_exclusion_reason="duplicate advert")],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    assert rows[0].mark == ""
+
+
+def test_nothing_counts_a_manually_excluded_advert():
+    """``considered`` is what "nothing under €17,859 — of N adverts" counts, and
+    a dismissed advert must not hold that figure up either."""
+    rows, considered = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=16_000.0, manual_exclusion_reason="order only"),
+         _advert(ad_id=2, price=19_000.0)],
+        CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    panel = competitors.BandPanel(band=BAND, max_bid_jpy=1_805_000, rows=rows)
+    assert panel.competitors == () and panel.excluded == rows
+    assert considered == 1
+
+
+def test_a_manually_excluded_advert_is_not_frozen_stock_above_you():
+    """Same panel, same judgement: a car available only by order is not the
+    market refusing your price."""
+    live = [
+        _advert(ad_id=1, price=19_000.0, first_seen_at=NOW - timedelta(days=45)),
+        _advert(ad_id=2, price=20_000.0, first_seen_at=NOW - timedelta(days=60),
+                manual_exclusion_reason="order only"),
+    ]
+    assert competitors._stuck_above(
+        BAND, live, CompetitorFilters(), sell_price=17_859.0, now=NOW) == 1
+
+
+def test_a_manually_excluded_advert_drops_off_once_it_is_delisted():
+    """A departed competitor stays for 90 days because how fast it went is
+    evidence. A dismissed advert offers none, and once it is off bazaraki there
+    is nothing left to recognise."""
+    gone = _advert(price=16_000.0, is_active=False,
+                   delisted_at=NOW - timedelta(days=2),
+                   manual_exclusion_reason="order only")
+    rows, considered = competitors._rows_for(
+        BAND, [gone], CompetitorFilters(), sell_price=17_859.0, now=NOW)
+
+    assert rows == () and considered == 0
 
 
 # --- never an empty list without a reason ------------------------------------

@@ -285,6 +285,20 @@ competitor bounds, or no completed bazaraki crawl covering its range gets a
 section saying which of those it is — "0 competitors" and "nobody has looked" are
 opposite findings.
 
+An advert that passes every filter and still is not competition — available only
+by order, a broker, a duplicate — is **manually excluded**, by writing the reason
+into its row by hand:
+
+```sql
+UPDATE carlisting SET manual_exclusion_reason = 'order only' WHERE ad_id = 6631913;
+```
+
+Unlike a `[competitors]` filter, which is a rule and deletes the advert from the
+page, this leaves the row where its price puts it, struck through and counted
+nowhere — because bazaraki still shows it under the same filters, and a row that
+vanishes is a row you investigate twice. Each row prints its `ad_id` for exactly
+this purpose. The mark never reaches the pricing model.
+
 Priced at **today's** money — a live FX fetch and today's cost book, with the
 newest run's stamped pair as an offline fallback, and the rate's timestamp on the
 page. This page is not a record of a past decision; it is the live question of

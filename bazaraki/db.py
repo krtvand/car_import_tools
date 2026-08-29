@@ -26,6 +26,8 @@ _ADDED_COLUMNS = {
     "is_active": "ALTER TABLE carlisting ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
     "delisted_at": "ALTER TABLE carlisting ADD COLUMN delisted_at DATETIME",
     "description": "ALTER TABLE carlisting ADD COLUMN description VARCHAR",
+    "manual_exclusion_reason":
+        "ALTER TABLE carlisting ADD COLUMN manual_exclusion_reason VARCHAR",
 }
 
 

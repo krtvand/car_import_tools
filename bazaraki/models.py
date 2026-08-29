@@ -52,6 +52,14 @@ class CarListing(SQLModel, table=True):
     description: str | None = None
     seller_type: str | None = None  # "private" / "dealer"; from the advert's business-account flag
 
+    # Set by hand, never by the scraper: an advert the operator has read and
+    # judged is not competition, and the reason why. NULL is the normal case.
+    # Unlike a ``[competitors]`` filter — which is a *rule* and deletes an advert
+    # from the dashboard — this is a *judgement* about one advert, and it leaves
+    # the row on the page, dimmed and counted nowhere. See
+    # ``docs/adr/0007-competitors-are-a-queue.md``.
+    manual_exclusion_reason: str | None = None
+
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
 

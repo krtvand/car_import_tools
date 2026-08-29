@@ -194,6 +194,18 @@ moving at all. The reason the same fact — an advert gone from the market — i
 read as good news here and as a mere *sold-proxy* elsewhere.
 _Avoid_: Pipeline, funnel, market position
 
+**Manually excluded**:
+One advert the operator has read and judged is not competition — available only
+by order, a broker, a duplicate — for a reason recorded with the mark. It is
+still shown, dimmed, in the place its price gives it, and it counts for nothing.
+The opposite of what a search definition's exclusions do: those are *rules*, true
+of adverts nobody has read yet, and an advert failing one never reaches the page
+at all. This is a *judgement* about one advert, and it stays visible precisely
+because it is still on bazaraki under the same filters and will look like a
+competitor again tomorrow. Says nothing about the market — a dismissed advert is
+never evidence about what a car is worth.
+_Avoid_: Filtered, hidden, ignored, dismissed
+
 **Auction statistics**:
 The five cheapest concluded lots that would have met every requirement in a
 search — per band, each one a car with a link, not a summary of a market. Named

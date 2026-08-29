@@ -29,6 +29,16 @@ your own wait. Gone quickly means the queue is moving; still listed after
 ``OVERPRICED_AFTER_DAYS`` means it is not. That is why a *disappeared* advert is
 the friendly mark here while ``bazaraki.analysis`` treats the same event as a
 mere sold-proxy — see ``docs/adr/0007-competitors-are-a-queue.md``.
+
+One advert can be dismissed by hand — **manually excluded**, with the reason
+written into ``carlisting.manual_exclusion_reason``. That is the inverse of a
+``[competitors]`` filter: a filter is a *rule* and deletes the advert from the
+page, while this is a *judgement* about one advert already read, so the row
+stays, dimmed and counted nowhere. It stays because bazaraki still shows it
+under the same filters — a row that vanishes is a row you re-investigate next
+week. The mark never leaves this panel: it is deliberately broad ("only by
+order", "wrong trim", "duplicate"), and one flag mixing those is not evidence
+about a market, so ``CyprusMarket`` and ``bazaraki.analysis`` never see it.
 """
 from __future__ import annotations
 
@@ -244,6 +254,11 @@ class CompetitorRow:
     Live, or gone within :data:`COMPETITOR_HISTORY_DAYS`. ``mark`` is what its
     ``age`` earned it; ``gone`` says which side of the market it is on, because
     the same age reads differently for a car that left and one still sitting.
+
+    A row carrying an ``exclusion_reason`` is *not* one of these: the operator
+    has read it and judged it out. It is still rendered, at its price, because
+    bazaraki shows it under the same filters and it will look like a competitor
+    again tomorrow — but nothing counts it and it has no ``mark`` worth reading.
     """
 
     ad_id: int
@@ -259,6 +274,12 @@ class CompetitorRow:
     age: int | None
     mark: str
     gone: bool
+    # Non-``None`` means manually excluded, and is the operator's own words.
+    exclusion_reason: str | None = None
+
+    @property
+    def excluded(self) -> bool:
+        return self.exclusion_reason is not None
 
 
 @dataclass(frozen=True)
@@ -272,7 +293,10 @@ class BandPanel:
     cyprus_estimate_eur: float | None = None
     cyprus_confidence: str | None = None
     profit_eur: float | None = None
-    competitors: tuple[CompetitorRow, ...] = ()
+    # Every advert rendered under the sell price, cheapest first — including the
+    # manually excluded ones, which are shown and counted nowhere. ``competitors``
+    # is the half of this that the word actually covers.
+    rows: tuple[CompetitorRow, ...] = ()
     considered: int = 0            # adverts inside the bounds, priced or not
     # Live adverts *above* the sell price that have not moved in
     # OVERPRICED_AFTER_DAYS. Never rows — they hold the better offer, so they are
@@ -282,6 +306,19 @@ class BandPanel:
     stuck_above: int = 0
     problem: str | None = None     # why there is no sell price on this section
     warning: str | None = None     # there is one, but do not lean on it
+
+    @property
+    def competitors(self) -> tuple[CompetitorRow, ...]:
+        """The rows that are genuinely ahead of you in the queue.
+
+        Everything that *counts* asks for this rather than :attr:`rows`, so a
+        manually excluded advert can never hold a competitor count above zero.
+        """
+        return tuple(row for row in self.rows if not row.excluded)
+
+    @property
+    def excluded(self) -> tuple[CompetitorRow, ...]:
+        return tuple(row for row in self.rows if row.excluded)
 
     @property
     def underwater(self) -> bool:
@@ -388,6 +425,13 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
 
     A car that sold for *more* than the sell price is not here, however fast it
     went: you hold the better offer, so it was never ahead of you.
+
+    **Manually excluded** adverts are in this list but are not competitors. They
+    keep their place in the price order — that is what makes them recognisable
+    against bazaraki's own results page — while ``considered`` and every count
+    downstream skip them. Once such an advert is delisted it is dropped
+    altogether: the mark exists so you recognise a row you have already dealt
+    with, and an advert that has left the site is one you will never meet again.
     """
     now = _naive(now) or datetime.now(timezone.utc).replace(tzinfo=None)
     considered = 0
@@ -397,7 +441,11 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
             continue
         if not _still_relevant(listing, now):
             continue
-        considered += 1
+        excluded = listing.manual_exclusion_reason
+        if excluded is not None and not listing.is_active:
+            continue
+        if excluded is None:
+            considered += 1
         if listing.price is None or listing.price >= sell_price:
             continue
         age = _age_days(listing, now)
@@ -413,8 +461,12 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
             gearbox=listing.gearbox,
             seller_type=listing.seller_type,
             age=age,
-            mark=_mark(listing, age),
+            # No mark on an excluded row: the three marks are verdicts about a
+            # price, and an advert nobody can buy has withdrawn from that
+            # judgement rather than earned a new verdict.
+            mark="" if excluded is not None else _mark(listing, age),
             gone=not listing.is_active,
+            exclusion_reason=excluded,
         ))
     rows.sort(key=lambda row: row.price)
     return tuple(rows), considered
@@ -428,11 +480,16 @@ def _stuck_above(band: Band, live, filters: CompetitorFilters,
     clearing is good news; cars behind you frozen is the market saying it will
     not pay that much, and none of them can ever appear as a competitor. One
     number, because the operator asked for the table to stay a competitor list.
+
+    A **manually excluded** advert is not counted here either: this is the same
+    panel making the same judgement, and a car available only by order is not
+    the market refusing your price.
     """
     now = _naive(now) or datetime.now(timezone.utc).replace(tzinfo=None)
     return sum(
         1 for listing in live
         if _in_band(listing, band) and _passes(listing, filters)
+        and listing.manual_exclusion_reason is None
         and listing.price is not None and listing.price >= sell_price
         and (_age_days(listing, now) or 0) > OVERPRICED_AFTER_DAYS
     )
@@ -489,7 +546,7 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
                              if margin.cyprus_eur is not None else None),
         cyprus_confidence=margin.cyprus_confidence,
         profit_eur=profit,
-        competitors=rows,
+        rows=rows,
         considered=considered,
         stuck_above=_stuck_above(band, live, filters, sell_price),
         problem=None if margin.cyprus_eur is not None else margin.reason,
