@@ -181,7 +181,7 @@ def _matches_car(lot: AuctionLot, definition) -> bool:
             and (lot.model or "").upper() == (definition.filters.model or "").upper())
 
 
-def _matches_stats_filters(lot: AuctionLot, definition, filters) -> bool:
+def _matches_stats_filters(lot: AuctionLot, band: Band, filters) -> bool:
     """The two narrowings the sheet cannot re-judge, re-applied to a stored row.
 
     ``requirements.judge`` re-checks year, mileage, grade and the sheet — but not
@@ -189,16 +189,16 @@ def _matches_stats_filters(lot: AuctionLot, definition, filters) -> bool:
     applied when the lot was fetched; they are applied again here so that
     tightening ``model_grade`` drops yesterday's wider sales from the page
     instead of leaving them to sit there looking measured.
+
+    The code comes from the **band**, which is the one narrowing that differs
+    panel to panel: a 2WD sale is not a benchmark for the E-Four's max bid, and
+    the search-wide union would let it be one.
     """
     if filters.model_grade:
         modification = (lot.modification or "").casefold()
         if not any(wanted.casefold() in modification for wanted in filters.model_grade):
             return False
-    if wanted_codes := definition.lot_filters.body_model_code:
-        code = normalize_model_code(lot.body_model_code)
-        if not any(normalize_model_code(w) in code for w in wanted_codes):
-            return False
-    return True
+    return band.prices_code(normalize_model_code(lot.body_model_code))
 
 
 def _in_band(lot: AuctionLot, band: Band) -> bool:
@@ -221,7 +221,7 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
 
     inside = [
         lot for lot in lots
-        if _in_band(lot, band) and _matches_stats_filters(lot, definition, filters)
+        if _in_band(lot, band) and _matches_stats_filters(lot, band, filters)
     ]
 
     rows: list[BenchmarkRow] = []

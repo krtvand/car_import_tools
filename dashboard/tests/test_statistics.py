@@ -23,9 +23,6 @@ car = "toyota-rav4"
 [site]
 grade = ["4", "4.5", "5"]
 
-[api]
-body_model_code = ["AXAH54"]
-
 [sheet]
 no_damage_codes = ["W", "X"]
 
@@ -34,6 +31,7 @@ model_grade = ["HYBRID G"]
 
 [[band]]
 year = 2023
+body_model_code = ["AXAH54"]
 mileage_end = 50000
 max_bid_jpy = { private = 2_505_000 }
 """
@@ -91,18 +89,21 @@ def test_the_trim_line_is_matched_the_way_the_site_matches_it(definition):
     the walk was told to collect."""
     filters = definition.stats_filters(definition.bands[0])
     assert statistics._matches_stats_filters(
-        _lot(modification="5D 4WD HYBRID G"), definition, filters) is True
+        _lot(modification="5D 4WD HYBRID G"), definition.bands[0], filters) is True
     assert statistics._matches_stats_filters(
-        _lot(modification="ADVENTURE"), definition, filters) is False
+        _lot(modification="ADVENTURE"), definition.bands[0], filters) is False
 
 
-def test_a_prefixed_chassis_code_still_matches(definition):
-    """banzai24 writes both `AXAH54` and `6AA-AXAH54` for the same car."""
-    filters = definition.stats_filters(definition.bands[0])
+def test_a_sale_is_measured_only_against_the_variant_its_band_prices(definition):
+    """banzai24 writes both `AXAH54` and `6AA-AXAH54` for the same car — and the
+    2WD AXAH52 is a different car at a different price, so it is not a benchmark
+    for the E-Four's band whatever else it has in common with it."""
+    band = definition.bands[0]
+    filters = definition.stats_filters(band)
     assert statistics._matches_stats_filters(
-        _lot(code="6AA-AXAH54"), definition, filters) is True
+        _lot(code="6AA-AXAH54"), band, filters) is True
     assert statistics._matches_stats_filters(
-        _lot(code="AXAH52"), definition, filters) is False
+        _lot(code="AXAH52"), band, filters) is False
 
 
 # --- which of them become the five -------------------------------------------

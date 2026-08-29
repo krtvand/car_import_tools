@@ -151,6 +151,41 @@ def test_the_year_must_match_exactly_rather_than_borrowing_a_neighbour(tmp_path)
     assert quote.reason == "no band for MAZDA CX-30 2022 · 15,000 km"
 
 
+def test_the_chassis_code_picks_the_band_when_two_variants_share_a_year(tmp_path):
+    """The RAV4: E-Four and 2WD, one year, one mileage range, ¥445,000 apart.
+    The code is the only thing that tells them apart, so it is what picks the
+    price."""
+    bands = (
+        Band(year=2023, body_model_code=("AXAH54",), mileage_end=50_000,
+             max_bid_jpy={"private": 3_150_000}),
+        Band(year=2023, body_model_code=("AXAH52",), mileage_end=50_000,
+             max_bid_jpy={"private": 2_705_000}),
+    )
+    pricer = _pricer(tmp_path, bands=bands)
+    four = pricer.for_lot(_lot(body_model_code="6AA-AXAH54"), _extraction())
+    two = pricer.for_lot(_lot(body_model_code="AXAH52"), _extraction())
+    assert (four.max_bid, two.max_bid) == (3_150_000, 2_705_000)
+
+
+def test_a_car_whose_code_no_band_prices_says_which_code_it_was(tmp_path):
+    """Not the dearer band and not the first one. On a search that prices by
+    code the code is usually the whole answer, so the card carries it."""
+    pricer = _pricer(tmp_path, bands=(
+        Band(year=2023, body_model_code=("AXAH54",), mileage_end=50_000,
+             max_bid_jpy={"private": 3_150_000}),))
+    quote = pricer.for_lot(_lot(body_model_code="AXAH52"), _extraction())
+    assert quote.max_bid is None
+    assert quote.reason.endswith("2023 · 15,000 km · AXAH52")
+    unstated = pricer.for_lot(_lot(), _extraction())
+    assert unstated.reason.endswith("· no model code")
+
+
+def test_a_search_that_does_not_price_by_code_says_nothing_about_one(tmp_path):
+    """On every other search it would be a column of noise."""
+    quote = _pricer(tmp_path).for_lot(_lot(registration_year=2017), _extraction())
+    assert quote.reason == "no band for MAZDA CX-30 2017 · 15,000 km"
+
+
 def test_rental_and_private_are_priced_separately(tmp_path):
     pricer = _pricer(tmp_path, bands=(
         Band(year=2023, mileage_start=0, mileage_end=50_000,

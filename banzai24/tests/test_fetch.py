@@ -26,9 +26,9 @@ def _definition(**overrides) -> SearchDefinition:
 
     definition = search_module.parse({
         "car": "mazda-cx30",
-        "api": {"body_model_code": ["DMEJ3P"]},
         "sheet": {"drivetrain": "4WD", "no_damage_codes": ["W"]},
-        "band": [{"year": 2023, "mileage_end": 55_000,
+        "band": [{"year": 2023, "body_model_code": ["DMEJ3P"],
+                  "mileage_end": 55_000,
                   "max_bid_jpy": {"private": 1_805_000}}],
     }, name="mazda-cx30")
     return dataclasses.replace(definition, **overrides) if overrides else definition
@@ -229,7 +229,7 @@ def test_lots_json_records_the_search_by_name_as_well_as_by_value(tmp_path):
     )
     assert saved["search"]["name"] == "mazda-cx30"
     assert saved["search"]["car"] == "mazda-cx30"
-    assert saved["search"]["api"]["body_model_code"] == ["DMEJ3P"]
+    assert saved["search"]["bands"][0]["body_model_code"] == ["DMEJ3P"]
     assert saved["search"]["sheet"]["no_damage_codes"] == ["W"]
 
 

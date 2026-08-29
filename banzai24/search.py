@@ -62,7 +62,11 @@ _SITE_KEYS = {f.name for f in fields(AuctionFilters)} - _NOT_FROM_FILE
 # been sold yet.
 _STATS_FIXED = {"source", "status"}
 _STATS_KEYS = _SITE_KEYS - _STATS_FIXED
-_API_KEYS = {f.name for f in fields(LotFilters)}
+# `body_model_code` is not in here: it moved onto the `[[band]]` list, where the
+# price it changes lives, and reaches `LotFilters` as the union of the bands.
+# `searches` refuses a file that still writes it in `[api]` and says where it
+# went; keeping it out of this set keeps it out of the "known keys" list too.
+_API_KEYS = {f.name for f in fields(LotFilters)} - {"body_model_code"}
 _SHEET_KEYS = {f.name for f in fields(SheetRequirements)}
 
 
@@ -107,6 +111,17 @@ class SearchDefinition:
     stats_overrides: dict = field(default_factory=dict)   # `[auction_statistics]`
     spec: searches.SearchDefinition | None = None   # the shared file behind this
     source: Path | None = None       # None when read back from run provenance
+
+    def lot_filters_for(self, band: Band) -> LotFilters:
+        """The post-fetch filter narrowed to one band's chassis codes.
+
+        :attr:`lot_filters` is the whole search's — the union, which is what a
+        fetch keeps because it is about to price every band. Anything walking
+        *one* band wants only that band's variant: the archive statistics for
+        the E-Four must not be measured against 2WD sales that are ¥445,000
+        cheaper by construction.
+        """
+        return replace(self.lot_filters, body_model_code=band.body_model_code)
 
     def stats_filters(self, band: Band) -> AuctionFilters:
         """The archive search for one band — `[site]`, overridden, then pinned.
@@ -195,9 +210,12 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
 
     api = dict(spec.sections.get("api") or {})
     _known("api", api, _API_KEYS, where)
-    for key in ("body_model_code", "exclude_colours", "exclude_model_grades"):
+    for key in ("exclude_colours", "exclude_model_grades"):
         if key in api:
             api[key] = _tuple_of_str(api[key], f"{where}: [api] {key}")
+    # The fetch keeps what some band prices. Empty when any band names no code,
+    # which is that band saying it prices every variant.
+    api["body_model_code"] = spec.body_model_code
 
     stats = {_SITE_ALIASES.get(key, key): value
              for key, value in (spec.sections.get("auction_statistics") or {}).items()}

@@ -8,11 +8,11 @@ grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
-# AXAH54 only, i.e. E-Four. HYBRID G and HYBRID Adventure are E-Four cars and
-# nothing else, so the 2WD AXAH52 is a HYBRID X by construction — see the
-# official 主要装備一覧表 (2022年10月), where the G column reads "E-Four" and only
-# the X column reads "E-Four/2WD".
-
+# The chassis codes are on the [[band]] list now, because they are two prices:
+# HYBRID G and HYBRID Adventure are E-Four cars and nothing else, so the 2WD
+# AXAH52 is a HYBRID X by construction — see the official 主要装備一覧表
+# (2022年10月), where the G column reads "E-Four" and only the X column reads
+# "E-Four/2WD". The fetch keeps the union of the bands' codes.
 exclude_colours = ["black", "blue"]
 # The X within E-Four, dropped on the listing's own trim line (Модификация).
 # Written as an exclusion of one word rather than a list of wanted grades

@@ -26,6 +26,10 @@ def _print_search(name: str, search) -> None:
         profit = search.profit_for(band)
         detail = (f"competitors {band.competitors.describe()}"
                   if band.competitors.declared else "competitors: no bounds declared")
+        if phrases := band.competitors.exclude_phrases:
+            # This band's own, on top of the search's — printed here rather than
+            # merged into the line below, so it is clear which band drops them.
+            detail += f" · not saying {', '.join(phrases)}"
         print(f"      {detail}"
               + (f" · profit €{profit:,.0f}" if profit is not None else " · no profit set"))
     if search.competitors.declared:

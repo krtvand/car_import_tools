@@ -5,8 +5,9 @@ for in Japan, what to demand of the auction sheet, and who counts as
 competition when it is time to sell it in Cyprus. Both parsers read this file
 and nothing else; there is no second table to keep in step with it.
 
-**A search is made of bands.** A ``[[band]]`` is a year, a mileage range and
-the max bid for it — the rows that used to live in ``bid_prices.csv``. The
+**A search is made of bands.** A ``[[band]]`` is a year, a mileage range, the
+chassis codes it prices and the max bid for them — the rows that used to live in
+``bid_prices.csv``. The
 site's own year and mileage bounds are the *union* of the bands and are never
 written by hand, because writing them twice is how they drift: when this
 replaced the CSV, the CX-30 fetched to 55,000 km while the table priced to
@@ -26,7 +27,7 @@ applied.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import cars
@@ -58,7 +59,18 @@ _DERIVED_SITE_KEYS = ("year_start", "year_end", "mileage_start", "mileage_end")
 # The car names these, so [site] must not.
 _CAR_SITE_KEYS = ("make", "model")
 
+# Moved out of [api] and onto the bands, and derived back from them here. A code
+# is worth a different amount of money — the RAV4's E-Four and 2WD are one year,
+# one mileage range and ¥445,000 apart — so the code belongs where the price is.
+# Left in [api] it would be a second, search-wide answer to the same question.
+_DERIVED_API_KEYS = ("body_model_code",)
+
 _COMPETITOR_BOUND_KEYS = ("year_start", "year_end", "mileage_start", "mileage_end")
+
+# A band's competitor block takes the bounds plus the one filter that differs
+# band to band. `exclude_phrases` is not a bound — it is checked against what the
+# seller wrote — so it is listed here rather than folded into the four above.
+_BAND_COMPETITOR_KEYS = _COMPETITOR_BOUND_KEYS + ("exclude_phrases",)
 
 
 class SearchDefinitionError(ValueError):
@@ -117,6 +129,22 @@ def _folded_tuple(value, where: str, label: str) -> tuple[str, ...]:
     return tuple(item.strip().lower() for item in value if item.strip())
 
 
+def _code_tuple(value, where: str, label: str) -> tuple[str, ...]:
+    """A list of chassis codes, upper-cased — the spelling every side compares in.
+
+    Same shape as :func:`_folded_tuple`, opposite fold: banzai24 writes model
+    codes upper-case and :func:`banzai24.lot_filters.normalize_model_code`
+    upper-cases whatever it is handed, so upper is what a comparison already
+    holds on both sides.
+    """
+    if isinstance(value, str):
+        raise SearchDefinitionError(f"{where}: {label} must be a list, not a string ({value!r})")
+    if (not isinstance(value, (list, tuple))
+            or not all(isinstance(item, str) for item in value)):
+        raise SearchDefinitionError(f"{where}: {label} must be a list of strings")
+    return tuple(item.strip().upper() for item in value if item.strip())
+
+
 def _folded(value, where: str, label: str) -> str:
     if not isinstance(value, str):
         raise SearchDefinitionError(f"{where}: {label} must be a string, not {value!r}")
@@ -134,16 +162,30 @@ class CompetitorBounds:
     two years older, still takes the sale away from you. Bounds are inclusive,
     and an absent bound is an absent key — there is no null in TOML and no need
     for one.
+
+    ``exclude_phrases`` is here as well as in ``[competitors]`` because the trim
+    you are not selling against is a fact about *one band*. On the RAV4 the two
+    are opposites: the AXAH54 band is the G, so an advert saying "hybrid x"
+    undercuts it with a cheaper car and is dropped — while the AXAH52 band **is**
+    the X, and those same adverts are the whole market it competes in. Band
+    phrases add to the search's; they never replace them.
     """
 
     year_start: int | None = None
     year_end: int | None = None
     mileage_start: int | None = None
     mileage_end: int | None = None
+    exclude_phrases: tuple[str, ...] = ()
 
     @property
     def declared(self) -> bool:
-        """False when the block was omitted, which is not the same as "no limits"."""
+        """False when the block declared no *bounds*, which is not "no limits".
+
+        Deliberately the four bounds and not ``exclude_phrases``: a band that
+        excluded a phrase and bounded nothing has still said nothing about which
+        adverts compete with it, and the dashboard has to say so rather than
+        crawl every year of the car.
+        """
         return any(getattr(self, key) is not None for key in _COMPETITOR_BOUND_KEYS)
 
     def covers_year(self, year: int | None) -> bool:
@@ -176,15 +218,23 @@ def _range_label(low, high, unit: str, comma: bool = True) -> str:
 
 @dataclass(frozen=True)
 class Band:
-    """One year and mileage range, and the most this operation will pay for it.
+    """One year, one mileage range, one set of chassis codes — and its max bid.
 
     Mileage is **inclusive at both ends**, and ``mileage_end`` omitted means
     open-ended. The year is an exact match: an unpriced year gets no bid rather
     than borrowing the number next door, because a guessed bid is the one number
     on the page that spends money.
+
+    ``body_model_code`` is here rather than in ``[api]`` because a code is worth
+    a different amount of money. The RAV4 was what showed it: the E-Four AXAH54
+    and the 2WD AXAH52 are the same year and the same kilometres and ¥445,000
+    apart, so one code per search could only ever price one of them. A band that
+    names no code prices every code, which is what every single-variant search
+    still says by saying nothing.
     """
 
     year: int
+    body_model_code: tuple[str, ...] = ()
     mileage_start: int = 0
     mileage_end: int | None = None
     max_bid_jpy: dict[str, int] = field(default_factory=dict)
@@ -195,6 +245,26 @@ class Band:
         if mileage_km < self.mileage_start:
             return False
         return self.mileage_end is None or mileage_km <= self.mileage_end
+
+    def prices_code(self, code: str | None) -> bool:
+        """Does this band price a car wearing this chassis code?
+
+        **Substring**, the same match ``[api]`` always made, so a deliberately
+        short ``AXAH5`` covers both AXAH52 and AXAH54 and a full ``5AA-AXAH54``
+        still finds its ``AXAH54``. The caller passes the code as the lot
+        carries it; stripping the ``5AA-`` type prefix is banzai24's business
+        (:func:`banzai24.lot_filters.normalize_model_code`) and this module has
+        no opinion about how a website spells one.
+
+        A band that names codes cannot price a car whose code nobody stated —
+        the same rule ``[api]`` applies at the fetch, for the same reason:
+        nothing has shown it is the variant being priced, and the variant is
+        where the money is.
+        """
+        if not self.body_model_code:
+            return True
+        code = (code or "").strip().upper()
+        return bool(code) and any(wanted in code for wanted in self.body_model_code)
 
     def bid(self, rental_kind: str = PRIVATE) -> int:
         """The max bid for a 車歴, falling back to ``private``.
@@ -208,10 +278,15 @@ class Band:
     @property
     def label(self) -> str:
         top = f"{self.mileage_end:,}" if self.mileage_end is not None else "∞"
-        return f"{self.year} · {self.mileage_start:,}–{top} km"
+        code = f" · {'/'.join(self.body_model_code)}" if self.body_model_code else ""
+        return f"{self.year}{code} · {self.mileage_start:,}–{top} km"
 
     def overlaps(self, other: "Band") -> bool:
         if self.year != other.year:
+            return False
+        if not _codes_can_meet(self.body_model_code, other.body_model_code):
+            # Two variants of one car, same year, same kilometres, different
+            # price: that is the whole point of a code on a band, not a clash.
             return False
         low = max(self.mileage_start, other.mileage_start)
         high = min(
@@ -219,6 +294,18 @@ class Band:
             float("inf") if other.mileage_end is None else other.mileage_end,
         )
         return low <= high
+
+
+def _codes_can_meet(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """Could one car's code match both lists? Empty means "any code".
+
+    Substring both ways, because that is how :meth:`Band.prices_code` matches:
+    ``AXAH5`` and ``AXAH54`` are not two different variants, they are one band
+    shadowing another, and a shadowed band is a price you never see.
+    """
+    if not left or not right:
+        return True
+    return any(one in two or two in one for one in left for two in right)
 
 
 @dataclass(frozen=True)
@@ -325,6 +412,25 @@ class SearchDefinition:
             return None
         return max(band.mileage_end for band in self.bands)
 
+    @property
+    def body_model_code(self) -> tuple[str, ...]:
+        """The codes a fetch keeps: the union of the bands', in file order.
+
+        Derived for the same reason the year and mileage bounds are — the codes
+        worth fetching are the codes some band prices, and written twice they
+        drift into a lot that arrives and then cannot be priced.
+
+        **One band naming no code unbounds the whole search.** That band prices
+        every variant, so narrowing the fetch to the codes its neighbours happen
+        to name would drop the very lots it exists to price.
+        """
+        seen: dict[str, None] = {}
+        for band in self.bands:
+            if not band.body_model_code:
+                return ()
+            seen.update(dict.fromkeys(band.body_model_code))
+        return tuple(seen)
+
     def competitor_scope(self) -> CompetitorBounds:
         """The union of every band's competitor bounds — what to actually crawl.
 
@@ -344,6 +450,10 @@ class SearchDefinition:
             # the crawl; narrowing to the others would miss its competitors.
             return None if any(value is None for value in values) else pick(values)
 
+        # Phrases are deliberately not unioned here: this is the *crawl* scope,
+        # and the phrases are applied in memory afterwards, per band. Excluding
+        # at the crawl would delete an advert from every band's evidence because
+        # one band did not want it.
         return CompetitorBounds(
             year_start=widest("year_start", min),
             year_end=widest("year_end", max),
@@ -351,18 +461,40 @@ class SearchDefinition:
             mileage_end=widest("mileage_end", max),
         )
 
+    def competitors_for(self, band: Band) -> CompetitorFilters:
+        """``[competitors]`` plus the phrases this band excludes on its own.
+
+        Additive, like :meth:`profit_for` is not: a phrase the search excludes is
+        excluded everywhere, and a band only ever adds to it. There is no way to
+        un-exclude from a band, because a phrase the whole search does not sell
+        against is not a phrase one band does.
+        """
+        if not band.competitors.exclude_phrases:
+            return self.competitors
+        merged = dict.fromkeys(
+            self.competitors.exclude_phrases + band.competitors.exclude_phrases)
+        return replace(self.competitors, exclude_phrases=tuple(merged))
+
     def profit_for(self, band: Band) -> float | None:
         """The profit required from one band — its own, else the search's."""
         if band.expected_profit_eur is not None:
             return band.expected_profit_eur
         return self.dashboard.expected_profit_eur
 
-    def band_for(self, year: int | None, mileage_km: int | None) -> Band | None:
-        """The band one car falls in, or ``None``. Bands never overlap; see :func:`parse`."""
+    def band_for(self, year: int | None, mileage_km: int | None,
+                 body_model_code: str | None = None) -> Band | None:
+        """The band one car falls in, or ``None``. Bands never overlap; see :func:`parse`.
+
+        ``body_model_code`` is what the lot itself carries. Omitting it is
+        answering "no code was stated", which no code-bearing band prices —
+        so a search whose bands name codes will say ``None`` rather than pick
+        the E-Four's price for a car that might be the 2WD.
+        """
         if year is None or mileage_km is None:
             return None
         for band in self.bands:
-            if band.year == year and band.covers(mileage_km):
+            if (band.year == year and band.covers(mileage_km)
+                    and band.prices_code(body_model_code)):
                 return band
         return None
 
@@ -392,6 +524,7 @@ class SearchDefinition:
             "bands": [
                 {
                     "year": band.year,
+                    "body_model_code": list(band.body_model_code),
                     "mileage_start": band.mileage_start,
                     "mileage_end": band.mileage_end,
                     "max_bid_jpy": dict(band.max_bid_jpy),
@@ -415,12 +548,15 @@ class SearchDefinition:
 def _parse_bounds(payload, where: str, label: str) -> CompetitorBounds:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: {label} must be a table")
-    _known(where, label, payload, _COMPETITOR_BOUND_KEYS)
+    _known(where, label, payload, _BAND_COMPETITOR_KEYS)
     values = {
         key: _int(payload[key], where, f"{label}.{key}", minimum=0)
         for key in _COMPETITOR_BOUND_KEYS
         if key in payload
     }
+    if "exclude_phrases" in payload:
+        values["exclude_phrases"] = _folded_tuple(
+            payload["exclude_phrases"], where, f"{label}.exclude_phrases")
     bounds = CompetitorBounds(**values)
     for low, high, name in (
         (bounds.year_start, bounds.year_end, "year"),
@@ -455,8 +591,8 @@ def _parse_band(payload, where: str, index: int) -> Band:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: {label} must be a table")
     _known(where, label, payload,
-           ("year", "mileage_start", "mileage_end", "max_bid_jpy",
-            "competitors", "expected_profit_eur"))
+           ("year", "body_model_code", "mileage_start", "mileage_end",
+            "max_bid_jpy", "competitors", "expected_profit_eur"))
 
     if "year" not in payload:
         raise SearchDefinitionError(f"{where}: {label} needs a year")
@@ -472,6 +608,9 @@ def _parse_band(payload, where: str, index: int) -> Band:
 
     band = Band(
         year=_int(payload["year"], where, f"{label}.year", minimum=1900),
+        body_model_code=(
+            _code_tuple(payload["body_model_code"], where, f"{label}.body_model_code")
+            if "body_model_code" in payload else ()),
         mileage_start=start,
         mileage_end=end,
         max_bid_jpy=_parse_max_bid(payload["max_bid_jpy"], where, f"{label}.max_bid_jpy"),
@@ -591,6 +730,16 @@ def _check_site(site: dict, where: str) -> None:
                 f"{where}: [site] {key} is named by `car`, not here")
 
 
+def _check_api(api: dict, where: str) -> None:
+    """``[api]`` may not name what the bands now say."""
+    for key in _DERIVED_API_KEYS:
+        if key in api:
+            raise SearchDefinitionError(
+                f"{where}: [api] {key} is a [[band]] key now — a band is what "
+                f"prices one code — and the fetch derives it from the bands. "
+                f"Write it in each [[band]] instead")
+
+
 def parse(payload: dict, name: str, path: Path | None = None) -> SearchDefinition:
     """Build a definition from already-decoded TOML (or from run provenance)."""
     where = (path.name if path else f"{name}{SUFFIX}")
@@ -613,6 +762,7 @@ def parse(payload: dict, name: str, path: Path | None = None) -> SearchDefinitio
 
     sections = {section: dict(payload.get(section) or {}) for section in _OPAQUE}
     _check_site(sections["site"], where)
+    _check_api(sections["api"], where)
 
     raw_bands = payload.get("band") or []
     if not isinstance(raw_bands, list):
@@ -693,16 +843,34 @@ def from_provenance(payload: dict) -> SearchDefinition | None:
         return None
     rebuilt = {
         "car": stored.get("car"),
-        **{section: stored.get(section) or {} for section in _OPAQUE},
+        # Copied, not aliased: the shim below edits this dict, and the payload
+        # it came from is the run's own file as somebody else still holds it.
+        **{section: dict(stored.get(section) or {}) for section in _OPAQUE},
         "band": [
             {key: value for key, value in band.items() if value is not None}
             for band in (stored.get("bands") or [])
         ],
     }
+    _lower_the_old_api_code_onto_the_bands(rebuilt)
     try:
         return parse(rebuilt, name=str(stored["name"]))
     except SearchDefinitionError:
         return None
+
+
+def _lower_the_old_api_code_onto_the_bands(rebuilt: dict) -> None:
+    """Read back a run recorded while ``body_model_code`` was still an ``[api]`` key.
+
+    One code for the whole search *is* the same code on each of its bands, so
+    the old shape converts exactly. Dropping the key instead would re-render an
+    old morning with the filter switched off — a wider report that still looks
+    measured — and refusing to load it would cost the run its fallback entirely.
+    """
+    codes = (rebuilt.get("api") or {}).pop("body_model_code", None)
+    if not codes:
+        return
+    for band in rebuilt["band"]:
+        band.setdefault("body_model_code", list(codes))
 
 
 def for_run(payload: dict) -> tuple[SearchDefinition | None, str | None]:

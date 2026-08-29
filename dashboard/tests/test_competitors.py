@@ -131,6 +131,37 @@ def test_an_advert_that_names_no_trim_at_all_is_kept():
         _advert(description="Japan import, full extra, 2 keys"), filters) is True
 
 
+def test_two_bands_of_one_search_can_disagree_about_the_same_advert():
+    """The RAV4 in one assertion: the band buying the G drops an advert that
+    says it is an X, and the band buying the X — which is the same car as that
+    advert — keeps it. Same listings, same search, one filter set apart."""
+    import searches
+
+    search = searches.parse({
+        "car": "toyota-rav4",
+        "competitors": {"fuel_type": ["hybrid petrol"]},
+        "band": [
+            {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+             "max_bid_jpy": {"private": 3_150_000},
+             "competitors": {"year_start": 2022, "mileage_end": 70_000,
+                             "exclude_phrases": ["hybrid x"]}},
+            {"year": 2023, "body_model_code": ["AXAH52"], "mileage_end": 50_000,
+             "max_bid_jpy": {"private": 2_705_000},
+             "competitors": {"year_start": 2022, "mileage_end": 70_000}},
+        ],
+    }, name="toyota-rav4")
+    advert = _advert(year=2023, mileage_km=39_000, fuel_type="Hybrid Petrol",
+                     price=27_800.0, description="RAV4 Hybrid X 2wd, japan import")
+
+    g_band, x_band = search.bands
+    rows, _ = competitors._rows_for(
+        g_band, [advert], search.competitors_for(g_band), 34_000.0, now=NOW)
+    assert rows == ()
+    rows, _ = competitors._rows_for(
+        x_band, [advert], search.competitors_for(x_band), 34_000.0, now=NOW)
+    assert [row.price for row in rows] == [27_800.0]
+
+
 def test_no_filters_declared_keeps_everything():
     assert competitors._passes(_advert(), CompetitorFilters()) is True
 

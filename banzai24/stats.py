@@ -421,6 +421,9 @@ async def walk_band(
 ) -> BandStats:
     """Read the cheap end of one band's archive until it has ``wanted`` keepers."""
     filters = definition.stats_filters(band)
+    # This band's variant, not the search's union: the E-Four is not measured
+    # against 2WD sales, which are cheaper by construction rather than by luck.
+    lots_filter = definition.lot_filters_for(band)
     url = config.build_search_url(filters)
     result = BandStats(band=band, url=url, cap=cap)
 
@@ -461,7 +464,7 @@ async def walk_band(
                 break
 
             result.considered += 1
-            if not definition.lot_filters.matches(item):
+            if not lots_filter.matches(item):
                 result.api_rejected += 1
                 continue
 

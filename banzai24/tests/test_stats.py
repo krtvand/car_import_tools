@@ -28,9 +28,6 @@ car = "toyota-rav4"
 transmission = "auto"
 grade = ["4", "4.5", "5"]
 
-[api]
-body_model_code = ["AXAH54"]
-
 [sheet]
 no_damage_codes = ["W", "X"]
 
@@ -40,6 +37,7 @@ engine_capacity_start = 2.5
 
 [[band]]
 year = 2023
+body_model_code = ["AXAH54"]
 mileage_end = 50000
 max_bid_jpy = { private = 2_505_000 }
 

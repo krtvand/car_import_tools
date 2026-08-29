@@ -14,7 +14,6 @@ grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
-body_model_code = ["KFEP", "KF5P"]
 exclude_colours = ["black", "blue"]
 
 [sheet]
@@ -25,12 +24,14 @@ enabled = false
 
 [[band]]
 year = 2023
+body_model_code = ["KFEP", "KF5P"]
 mileage_start = 30000
 mileage_end = 50000
 max_bid_jpy = { private = 2_055_000, rental = 1_995_000 }
 
 [[band]]
 year = 2023
+body_model_code = ["KFEP", "KF5P"]
 mileage_start = 50001
 mileage_end = 60000
 max_bid_jpy = { private = 1_955_000, rental = 1_940_000 }

@@ -27,7 +27,8 @@ match wins:
 2. ``area prices not loaded`` — the file is absent or unreadable (report-wide)
 3. ``unknown auction house: U Tokyo`` — no alias and no fold match
 4. ``missing year`` / ``missing mileage`` — neither the sheet nor the API has it
-5. ``no band for MAZDA CX-30 2023 · 15,000 km``
+5. ``no band for MAZDA CX-30 2023 · 15,000 km`` — including a car whose chassis
+   code no band prices, which reads ``… · AXAH52`` (or ``· no model code``)
 6. ``area cost ¥47,000 exceeds max bid ¥30,000``
 
 Reasons 3–6 sit on the card; 1 and 2 are report-wide and print once in the
@@ -58,6 +59,7 @@ from pathlib import Path
 
 from searches.definition import PRIVATE, Band
 
+from .lot_filters import normalize_model_code
 from .money import format_yen
 
 INPUTS_DIR = Path(__file__).parent / "inputs"
@@ -401,6 +403,13 @@ class BidPricer:
         """
         rental, assumed_private = _rental_kind(extraction)
 
+        # The API's code, not the sheet's chassis number. `docs/adr/0001` gives
+        # the sheet the year and the mileage because the API *rounds* those; it
+        # does not round a model code, and the two read the same string off the
+        # same car. So there is nothing here for a vision read to correct, and a
+        # misread letter would move the bid ¥445,000.
+        code = normalize_model_code(lot.body_model_code)
+
         year, mileage = sheet_first(lot, extraction)
         if year is None:
             return None, "missing year", assumed_private
@@ -415,8 +424,14 @@ class BidPricer:
                           f"{self.car} this search prices"), assumed_private
 
         for band in self.bands:
-            if band.year == year and band.covers(mileage):
+            if band.year == year and band.covers(mileage) and band.prices_code(code):
                 return band.bid(rental), None, assumed_private
 
+        # The code is named in the reason only when the bands price by one,
+        # because on every other search it would be a column of noise — and when
+        # they do, it is usually the whole answer: an AXAH52 among AXAH54 bands.
+        variant = ""
+        if any(band.body_model_code for band in self.bands):
+            variant = f" · {code or 'no model code'}"
         return None, (f"no band for {lot.mark or '?'} {lot.model or '?'} "
-                      f"{year} · {mileage:,} km"), assumed_private
+                      f"{year} · {mileage:,} km{variant}"), assumed_private

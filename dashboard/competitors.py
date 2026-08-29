@@ -474,7 +474,11 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
     # ``listings`` rather than ``live``: a competitor that has already gone is
     # the most useful row on the page, because how long it took to go is the
     # only direct evidence this system has about whether the price works.
-    rows, considered = _rows_for(band, listings, search.competitors, sell_price)
+    # The band's own filters, not the search's: on the RAV4 the AXAH54 band drops
+    # adverts that say they are an X, and the AXAH52 band — which *is* the X —
+    # keeps the very same ones, because they are the market it sells into.
+    filters = search.competitors_for(band)
+    rows, considered = _rows_for(band, listings, filters, sell_price)
 
     return BandPanel(
         band=band,
@@ -487,7 +491,7 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
         profit_eur=profit,
         competitors=rows,
         considered=considered,
-        stuck_above=_stuck_above(band, live, search.competitors, sell_price),
+        stuck_above=_stuck_above(band, live, filters, sell_price),
         problem=None if margin.cyprus_eur is not None else margin.reason,
         warning=margin.warning,
     )

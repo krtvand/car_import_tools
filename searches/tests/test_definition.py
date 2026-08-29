@@ -55,6 +55,62 @@ def test_a_band_prices_a_car_by_year_and_mileage():
     assert search.band_for(2022, 10_000) is None      # the year is exact
 
 
+def test_two_variants_of_one_car_are_two_bands_at_two_prices():
+    """The RAV4 is why the code sits on the band. The E-Four AXAH54 and the 2WD
+    AXAH52 are one year, one mileage range and ¥445,000 apart, so a search-wide
+    code could only ever price one of them."""
+    search = _parse(car="toyota-rav4", band=[
+        {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 3_150_000}},
+        {"year": 2023, "body_model_code": ["AXAH52"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 2_705_000}},
+    ])
+    assert search.band_for(2023, 20_000, "AXAH54").bid() == 3_150_000
+    assert search.band_for(2023, 20_000, "AXAH52").bid() == 2_705_000
+
+
+def test_a_car_whose_code_nobody_stated_is_priced_by_no_band():
+    """Not the dearer band and not the first one: which variant it is decides
+    ¥445,000, and nothing has said which variant it is."""
+    search = _parse(car="toyota-rav4", band=[
+        {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 3_150_000}}])
+    assert search.band_for(2023, 20_000) is None
+    assert search.band_for(2023, 20_000, "AXAH52") is None
+    # The type prefix banzai24 carries on some lots and not others is no
+    # obstacle: the code is matched as a substring, the way `[api]` always did.
+    assert search.band_for(2023, 20_000, "6AA-AXAH54").bid() == 3_150_000
+
+
+def test_a_band_naming_no_code_prices_every_code():
+    """Which is what every single-variant search says by saying nothing."""
+    band = _parse().bands[0]
+    assert band.prices_code("DMEJ3P") and band.prices_code(None)
+
+
+def test_the_codes_the_fetch_keeps_are_the_union_of_the_bands():
+    """Derived for the reason the year and mileage bounds are: written twice,
+    they drift into a lot that arrives and then cannot be priced."""
+    search = _parse(car="toyota-rav4", band=[
+        {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 3_150_000}},
+        {"year": 2023, "body_model_code": ["AXAH52"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 2_705_000}},
+    ])
+    assert search.body_model_code == ("AXAH54", "AXAH52")
+
+
+def test_one_band_without_a_code_leaves_the_fetch_unnarrowed():
+    """That band prices every variant, so narrowing the fetch to the codes its
+    neighbours name would drop the very lots it exists to price."""
+    search = _parse(band=[
+        {"year": 2023, "body_model_code": ["DMEJ3P"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 1}},
+        {"year": 2024, "mileage_end": 50_000, "max_bid_jpy": {"private": 2}},
+    ])
+    assert search.body_model_code == ()
+
+
 def test_a_missing_rental_price_falls_back_to_private():
     """The dearer of the two, so not the cautious choice — the only one that
     always resolves, since some cars have no rental price at all."""
@@ -77,6 +133,40 @@ def test_two_bands_that_could_both_price_one_car_are_caught_at_load():
         _parse(band=[
             {"year": 2023, "mileage_end": 50_000, "max_bid_jpy": {"private": 1}},
             {"year": 2023, "mileage_start": 40_000, "max_bid_jpy": {"private": 2}},
+        ])
+
+
+def test_bands_that_price_different_codes_never_overlap():
+    """Same year, same kilometres, different variant: that is the point of a
+    code on a band, not a clash."""
+    search = _parse(car="toyota-rav4", band=[
+        {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 3_150_000}},
+        {"year": 2023, "body_model_code": ["AXAH52"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 2_705_000}},
+    ])
+    assert len(search.bands) == 2
+
+
+def test_a_shorter_code_that_swallows_its_neighbour_still_overlaps():
+    """``AXAH5`` and ``AXAH54`` are not two variants — they are one band
+    shadowing another, and a shadowed band is a price you never see."""
+    with pytest.raises(SearchDefinitionError, match="overlap"):
+        _parse(car="toyota-rav4", band=[
+            {"year": 2023, "body_model_code": ["AXAH5"], "mileage_end": 50_000,
+             "max_bid_jpy": {"private": 1}},
+            {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+             "max_bid_jpy": {"private": 2}},
+        ])
+
+
+def test_a_coded_band_and_an_uncoded_one_still_overlap():
+    """The uncoded band prices every code, this one included."""
+    with pytest.raises(SearchDefinitionError, match="overlap"):
+        _parse(car="toyota-rav4", band=[
+            {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+             "max_bid_jpy": {"private": 1}},
+            {"year": 2023, "mileage_end": 50_000, "max_bid_jpy": {"private": 2}},
         ])
 
 
@@ -106,6 +196,13 @@ def test_an_open_ended_band_needs_open_ended_competitors():
     with pytest.raises(SearchDefinitionError, match="open-ended"):
         _parse(band=[{"year": 2023, "max_bid_jpy": {"private": 1},
                       "competitors": {"mileage_end": 90_000}}])
+
+
+def test_the_code_written_in_api_says_where_it_went():
+    """It used to live there, and one search-wide code is a second answer to the
+    question a band now answers with a price attached."""
+    with pytest.raises(SearchDefinitionError, match=r"\[\[band\]\] key now"):
+        _parse(api={"body_model_code": ["DMEJ3P"]})
 
 
 @pytest.mark.parametrize("key", ["year_start", "year_end", "mileage_start", "mileage_end"])
@@ -153,6 +250,60 @@ def test_an_unknown_section_is_an_error():
 
 
 # --- competition and money ---------------------------------------------------
+
+
+def test_a_band_excludes_a_phrase_the_search_as_a_whole_does_not():
+    """The RAV4's two bands are opposites about the same word: the AXAH54 is the
+    G and an advert saying "hybrid x" undercuts it, while the AXAH52 *is* the X
+    and those adverts are the market it sells into."""
+    search = _parse(car="toyota-rav4", competitors={"fuel_type": ["hybrid petrol"]},
+                    band=[
+        {"year": 2023, "body_model_code": ["AXAH54"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 3_150_000},
+         "competitors": {"year_start": 2022, "mileage_end": 70_000,
+                         "exclude_phrases": ["Hybrid X"]}},
+        {"year": 2023, "body_model_code": ["AXAH52"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 2_705_000},
+         "competitors": {"year_start": 2022, "mileage_end": 70_000}},
+    ])
+    g, x = search.bands
+    assert search.competitors_for(g).exclude_phrases == ("hybrid x",)
+    assert search.competitors_for(x).exclude_phrases == ()
+    # Folded the same way the search-wide ones are, and the rest of the block
+    # comes along: a band narrows the filters, it does not replace them.
+    assert search.competitors_for(g).fuel_type == ("hybrid petrol",)
+
+
+def test_a_band_adds_to_the_searchs_phrases_rather_than_replacing_them():
+    """A phrase the whole search does not sell against is not a phrase one band
+    does, so there is no way to un-exclude from a band."""
+    search = _parse(competitors={"exclude_phrases": ["x package"]},
+                    band=[{"year": 2023, "mileage_end": 50_000,
+                           "max_bid_jpy": {"private": 1},
+                           "competitors": {"year_start": 2019, "mileage_end": 120_000,
+                                           "exclude_phrases": ["hybrid x"]}}])
+    assert search.competitors_for(search.bands[0]).exclude_phrases == (
+        "x package", "hybrid x")
+
+
+def test_a_band_that_only_excludes_a_phrase_has_still_declared_no_bounds():
+    """It has said nothing about which adverts compete with it, and the
+    dashboard has to say so rather than crawl every year of the car."""
+    search = _parse(band=[{"year": 2023, "mileage_end": 50_000,
+                           "max_bid_jpy": {"private": 1},
+                           "competitors": {"exclude_phrases": ["hybrid x"]}}])
+    assert search.bands[0].competitors.declared is False
+
+
+def test_a_bands_phrases_do_not_narrow_the_crawl():
+    """The crawl is one scrape shared by every band, and the phrases are applied
+    to it in memory afterwards. Excluding at the crawl would delete an advert
+    from every band's evidence because one band did not want it."""
+    scope = _parse(band=[{"year": 2023, "mileage_end": 50_000,
+                          "max_bid_jpy": {"private": 1},
+                          "competitors": {"year_start": 2019, "mileage_end": 120_000,
+                                          "exclude_phrases": ["hybrid x"]}}]).competitor_scope()
+    assert scope.exclude_phrases == ()
 
 
 def test_the_crawl_scope_is_the_union_of_the_bands_competitor_bounds():
@@ -224,6 +375,26 @@ def test_every_shipped_search_loads():
     for name, search, problem in definition.load_all():
         assert problem is None, f"{name}: {problem}"
         assert search.bands, name
+
+
+def test_a_run_recorded_before_the_code_moved_still_reads_back():
+    """One code for the whole search is the same code on each of its bands, so
+    the old shape converts exactly. Dropping it would re-render an old morning
+    with the filter switched off — a wider report that still looks measured."""
+    stored = _parse().to_payload()
+    stored["api"] = {"body_model_code": ["DMEJ3P"]}
+    for band in stored["bands"]:
+        band.pop("body_model_code")
+    restored = definition.from_provenance({"search": stored})
+    assert all(band.body_model_code == ("DMEJ3P",) for band in restored.bands)
+
+
+def test_reading_a_run_back_does_not_edit_the_run():
+    """The payload is the run's own file as its caller still holds it."""
+    payload = {"search": {**_parse().to_payload(),
+                          "api": {"body_model_code": ["DMEJ3P"]}}}
+    definition.from_provenance(payload)
+    assert payload["search"]["api"] == {"body_model_code": ["DMEJ3P"]}
 
 
 def test_the_provenance_round_trips():

@@ -175,9 +175,12 @@ Each car is one file: `searches/<name>.toml`, read by **both** parsers and by th
 dashboard. It is the **whole** declaration — nothing is inherited, so a filter
 that is not in the file is not applied.
 
-A search is made of **bands**. A `[[band]]` is a year, a mileage range and the
-max bid for it; the site's own year and mileage bounds are the union of the
-bands and are never written by hand.
+A search is made of **bands**. A `[[band]]` is a year, a mileage range, the
+chassis codes it prices and the max bid for them; the site's own year and
+mileage bounds — and the codes the fetch keeps — are the union of the bands and
+are never written by hand. Two variants worth different money are two bands: the
+RAV4's E-Four `AXAH54` and 2WD `AXAH52` share a year and a mileage range and are
+¥445,000 apart.
 
 ```toml
 car = "mazda-cx30"                     # how each parser spells it is its own business
@@ -187,7 +190,7 @@ transmission = "auto"                  # and the sheet re-judges them
 grade = ["4", "4.5", "5"]
 
 [api]                                  # we drop these ourselves, from list data.
-body_model_code = ["DMEJ3P"]           # Rejects never reach the report.
+exclude_colours = ["black", "blue"]    # Rejects never reach the report.
 
 [sheet]                                # only the auction sheet can answer these
 drivetrain = "2WD"
@@ -202,12 +205,15 @@ engine_size_start = 1.8
 
 [[band]]
 year = 2023
+body_model_code = ["DMEJ3P"]           # which variant this price is for
 mileage_end = 50000
 max_bid_jpy = { private = 1_805_000 }
 
   [band.competitors]                   # wider than the band on purpose
   year_start = 2019
   mileage_end = 120000
+  exclude_phrases = ["hybrid x"]       # a trim *this band* is not selling
+                                       # against; adds to [competitors]
 ```
 
 ```bash

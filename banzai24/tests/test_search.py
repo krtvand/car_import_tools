@@ -26,7 +26,6 @@ transmission = "auto"
 grade = ["4", "4.5", "5"]
 
 [api]
-body_model_code = ["DMEJ3P"]
 exclude_colours = ["black", "blue"]
 
 [sheet]
@@ -35,6 +34,7 @@ no_damage_codes = ["W", "X"]
 
 [[band]]
 year = 2023
+body_model_code = ["DMEJ3P"]
 mileage_end = 55000
 max_bid_jpy = { private = 1_805_000 }
 """
