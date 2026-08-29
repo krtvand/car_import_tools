@@ -84,6 +84,21 @@ def _tuple_of_str(value, where: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value if item.strip())
 
 
+def _stats_table(raw, where: str, section: str = "auction_statistics") -> dict:
+    """One ``[auction_statistics]`` table: aliased, checked, lists made tuples.
+
+    Shared by the search-wide section and by each band's override, because two
+    readings of one vocabulary is how a band ends up accepting a key the section
+    rejects.
+    """
+    table = {_SITE_ALIASES.get(key, key): value for key, value in (raw or {}).items()}
+    _known(section, table, _STATS_KEYS, where)
+    for key in ("grade_origin", "model_grade"):
+        if key in table:
+            table[key] = _tuple_of_str(table[key], f"{where}: [{section}] {key}")
+    return table
+
+
 def _known(section: str, keys, allowed: set[str], where: str) -> None:
     """An unrecognised key is an error, never a shrug.
 
@@ -126,12 +141,16 @@ class SearchDefinition:
     def stats_filters(self, band: Band) -> AuctionFilters:
         """The archive search for one band — `[site]`, overridden, then pinned.
 
-        Three layers, narrowest last. `[site]` is the base, because a statistics
+        Four layers, narrowest last. `[site]` is the base, because a statistics
         search that did not share the buy-side filters would be measuring a
         different car from the one being bought. `[auction_statistics]` overrides
         it, which is how the trim line (`model_grade`) narrows the measurement
-        without narrowing tomorrow's fetch. Then the band pins year and mileage,
-        the same way it does everywhere else, and the archive pins itself.
+        without narrowing tomorrow's fetch. `[band.auction_statistics]` overrides
+        *that*, for the narrowing that is true of one band and not its
+        neighbours: a 2WD AXAH52 is a HYBRID X whatever the auction house typed,
+        while an E-Four AXAH54 is a G, an Adventure or an X and has to say so.
+        Then the band pins year and mileage, the same way it does everywhere
+        else, and the archive pins itself.
 
         Year is an exact match rather than the search-wide span: a band is the
         thing that has a price on it, so the sales it is measured against are
@@ -139,7 +158,7 @@ class SearchDefinition:
         """
         return replace(
             self.filters,
-            **self.stats_overrides,
+            **{**self.stats_overrides, **band.auction_statistics},
             year_start=band.year,
             year_end=band.year,
             mileage_start=band.mileage_start,
@@ -155,8 +174,13 @@ class SearchDefinition:
         An absent section is not an error — a search may simply not want the
         page — but it is different from an empty one, and the caller says so
         rather than rendering a panel that looks like "no sales found".
+
+        A band's own override counts: a file whose section is empty because
+        every narrowing is per band has said plenty, and reporting it as
+        unnarrowed would be the warning crying wolf.
         """
-        return bool(self.stats_overrides)
+        return bool(self.stats_overrides
+                    or any(band.auction_statistics for band in self.bands))
 
     def describe(self) -> str:
         bits = [f"[site] {', '.join(_describe_site(self.filters))}"]
@@ -217,12 +241,16 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
     # which is that band saying it prices every variant.
     api["body_model_code"] = spec.body_model_code
 
-    stats = {_SITE_ALIASES.get(key, key): value
-             for key, value in (spec.sections.get("auction_statistics") or {}).items()}
-    _known("auction_statistics", stats, _STATS_KEYS, where)
-    for key in ("grade_origin", "model_grade"):
-        if key in stats:
-            stats[key] = _tuple_of_str(stats[key], f"{where}: [auction_statistics] {key}")
+    stats = _stats_table(spec.sections.get("auction_statistics"), where)
+
+    # A band's override is checked against the same vocabulary and normalized
+    # here rather than in `searches`, which cannot see these key names.
+    bands = tuple(
+        replace(band, auction_statistics=_stats_table(
+            band.auction_statistics, f"{where}: [[band]] #{index}",
+            section="band.auction_statistics"))
+        for index, band in enumerate(spec.bands, 1)
+    )
 
     sheet = dict(spec.sections.get("sheet") or {})
     _known("sheet", sheet, _SHEET_KEYS, where)
@@ -238,7 +266,7 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
             filters=AuctionFilters(**site),
             lot_filters=LotFilters(**api),
             requirements=SheetRequirements(**sheet),
-            bands=spec.bands,
+            bands=bands,
             stats_overrides=stats,
             spec=spec,
             source=spec.source,

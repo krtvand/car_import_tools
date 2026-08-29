@@ -13,6 +13,11 @@ exclude_colours = ["black", "blue"]
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
 
+# What the archive is narrowed to when measuring what these actually sell for.
+# Inherits [site] and [api]; the chassis code is not written here, because each
+# band already narrows the walk to its own. `source` and `status` are not either:
+# an archive search is over completed sales by definition.
+[auction_statistics]
 
 [dashboard]
 enabled = true
@@ -30,6 +35,25 @@ body_model_code = ["AXAH52"]
 mileage_start = 0
 mileage_end = 50000
 max_bid_jpy = { private = 2_705_000 }
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  exclude_phrases = ["COMING SOON"]
+
+[[band]]
+year = 2023
+body_model_code = ["AXAH54"]
+mileage_start = 0
+mileage_end = 50000
+max_bid_jpy = { private = 2_705_000 }
+  # The E-Four is sold as a G, an Adventure *and* an X, so this band's benchmark
+  # has to name the trim line or it measures a G's price. The band above needs
+  # no such line: AXAH52 is 2WD, and 2WD is an X by construction — filtering it
+  # on a word would only throw away the one lot in nine whose grade the auction
+  # house never typed. See docs/reference/rav4-grades.md.
+  [band.auction_statistics]
+  model_grade = ["X"]
+
   [band.competitors]
   year_start = 2022
   mileage_end = 70000

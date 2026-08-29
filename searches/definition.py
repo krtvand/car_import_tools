@@ -231,6 +231,16 @@ class Band:
     apart, so one code per search could only ever price one of them. A band that
     names no code prices every code, which is what every single-variant search
     still says by saying nothing.
+
+    ``auction_statistics`` is this band's override of the search's section, and
+    is handed on unread for the same reason that section is — the keys are
+    banzai24's. It exists because a chassis code does not always name a trim: the
+    2WD AXAH52 is a HYBRID X by construction, while the E-Four AXAH54 is a G, an
+    Adventure *or* an X. One search-wide trim line therefore has to either mix
+    three grades into the E-Four's benchmark or throw away the 2WD sales whose
+    grade nobody bothered to type — the same asymmetry that already put
+    ``exclude_phrases`` on ``[band.competitors]``. It narrows the *measurement*
+    only: a fetch is one URL for the whole search and never reads it.
     """
 
     year: int
@@ -239,6 +249,7 @@ class Band:
     mileage_end: int | None = None
     max_bid_jpy: dict[str, int] = field(default_factory=dict)
     competitors: CompetitorBounds = field(default_factory=CompetitorBounds)
+    auction_statistics: dict = field(default_factory=dict)
     expected_profit_eur: float | None = None
 
     def covers(self, mileage_km: int) -> bool:
@@ -535,6 +546,8 @@ class SearchDefinition:
                         key: value for key, value
                         in vars(band.competitors).items() if value is not None
                     },
+                    **({"auction_statistics": dict(band.auction_statistics)}
+                       if band.auction_statistics else {}),
                     "expected_profit_eur": band.expected_profit_eur,
                 }
                 for band in self.bands
@@ -543,6 +556,23 @@ class SearchDefinition:
 
 
 # --- parsing -----------------------------------------------------------------
+
+
+def _parse_band_stats(payload, where: str) -> dict:
+    """``[band.auction_statistics]``, checked for shape and handed on unread.
+
+    Opaque like the section it overrides, and for the same reason: the keys are
+    banzai24's spelling of a website's query parameters, which this module
+    deliberately cannot see. :func:`banzai24.search.adapt` rejects an unknown
+    one, so a typo here is still an error rather than a band quietly measured
+    against every trim line of the car.
+    """
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise SearchDefinitionError(
+            f"{where}: [band.auction_statistics] must be a table")
+    return dict(payload)
 
 
 def _parse_bounds(payload, where: str, label: str) -> CompetitorBounds:
@@ -592,7 +622,8 @@ def _parse_band(payload, where: str, index: int) -> Band:
         raise SearchDefinitionError(f"{where}: {label} must be a table")
     _known(where, label, payload,
            ("year", "body_model_code", "mileage_start", "mileage_end",
-            "max_bid_jpy", "competitors", "expected_profit_eur"))
+            "max_bid_jpy", "competitors", "auction_statistics",
+            "expected_profit_eur"))
 
     if "year" not in payload:
         raise SearchDefinitionError(f"{where}: {label} needs a year")
@@ -616,6 +647,8 @@ def _parse_band(payload, where: str, index: int) -> Band:
         max_bid_jpy=_parse_max_bid(payload["max_bid_jpy"], where, f"{label}.max_bid_jpy"),
         competitors=_parse_bounds(payload.get("competitors") or {}, where,
                                   f"{label} [band.competitors]"),
+        auction_statistics=_parse_band_stats(
+            payload.get("auction_statistics"), f"{where}: {label}"),
         expected_profit_eur=(
             _number(payload["expected_profit_eur"], where, f"{label}.expected_profit_eur")
             if "expected_profit_eur" in payload else None),

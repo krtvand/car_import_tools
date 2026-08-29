@@ -123,6 +123,18 @@ def test_a_band_without_a_private_price_is_refused():
         _parse(band=[{"year": 2023, "max_bid_jpy": {"rental": 1}}])
 
 
+def test_a_band_may_narrow_its_own_statistics():
+    """Handed on unread — the keys belong to banzai24 — but kept per band,
+    because the trim a chassis code implies differs band to band."""
+    search = _parse(band=[{"year": 2023, "max_bid_jpy": {"private": 1},
+                           "auction_statistics": {"model_grade": ["X"]}}])
+    assert search.bands[0].auction_statistics == {"model_grade": ["X"]}
+
+
+def test_a_band_that_narrows_nothing_carries_an_empty_table():
+    assert _parse().bands[0].auction_statistics == {}
+
+
 # --- the errors that would otherwise render a plausible page -----------------
 
 
@@ -402,3 +414,12 @@ def test_the_provenance_round_trips():
     restored = definition.from_provenance({"search": original.to_payload()})
     assert restored.car == original.car
     assert restored.bands == original.bands
+
+
+def test_a_bands_own_statistics_survive_the_provenance_copy():
+    """Recorded like everything else on a band. A run read back from a renamed
+    file would otherwise measure the E-Four against every trim line at once."""
+    original = _parse(band=[{"year": 2023, "max_bid_jpy": {"private": 1},
+                             "auction_statistics": {"model_grade": ["X"]}}])
+    restored = definition.from_provenance({"search": original.to_payload()})
+    assert restored.bands[0].auction_statistics == {"model_grade": ["X"]}

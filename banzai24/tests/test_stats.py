@@ -112,6 +112,65 @@ def test_the_url_carries_the_trim_line_and_the_archive(tmp_path):
     assert "yearStart=2023&yearEnd=2023" in url
 
 
+# --- what one band narrows for itself ----------------------------------------
+
+
+def test_a_band_narrows_its_own_measurement(tmp_path):
+    """The RAV4 is why this exists. AXAH52 is 2WD and a 2WD hybrid RAV4 is a
+    HYBRID X by construction, so its benchmark needs no trim line; AXAH54 is
+    sold as a G, an Adventure *and* an X, so its benchmark has to name one or it
+    measures the dearer car. One search-wide `model_grade` cannot say both."""
+    text = RAV4.replace(
+        'max_bid_jpy = { private = 2_505_000 }',
+        'max_bid_jpy = { private = 2_505_000 }\n'
+        '\n  [band.auction_statistics]\n  model_grade = ["X"]')
+    definition = search.load("toyota-rav4", _write(tmp_path, text))
+    narrowed, inherited = (definition.stats_filters(b) for b in definition.bands)
+
+    assert narrowed.model_grade == ("X",)             # the band overrides
+    assert inherited.model_grade == ("HYBRID G",)     # the section still holds
+    # Everything else the band inherits is untouched by the override.
+    assert narrowed.engine_capacity_start == 2.5
+    assert (narrowed.source, narrowed.status) == ("archive", "SOLD")
+    assert "modelGrade=X" in config.build_search_url(narrowed)
+
+
+def test_a_misspelled_key_on_a_band_names_the_band(tmp_path):
+    """Checked against the same vocabulary as the section — a band that quietly
+    accepted `model_grades` would render five cars of every grade and look
+    exactly like five cars of one."""
+    text = RAV4.replace(
+        'max_bid_jpy = { private = 2_505_000 }',
+        'max_bid_jpy = { private = 2_505_000 }\n'
+        '\n  [band.auction_statistics]\n  model_grades = ["X"]')
+    with pytest.raises(SearchDefinitionError, match=r"\[\[band\]\] #1.*model_grades"):
+        search.load("toyota-rav4", _write(tmp_path, text))
+
+
+def test_a_band_may_not_ask_for_statistics_over_unsold_lots_either(tmp_path):
+    """`source` and `status` are what a statistics search *is*, wherever they
+    are written — a band could otherwise reopen the door the section closes."""
+    text = RAV4.replace(
+        'max_bid_jpy = { private = 2_505_000 }',
+        'max_bid_jpy = { private = 2_505_000 }\n'
+        '\n  [band.auction_statistics]\n  source = "auctions"')
+    with pytest.raises(SearchDefinitionError, match="source"):
+        search.load("toyota-rav4", _write(tmp_path, text))
+
+
+def test_narrowing_only_per_band_still_counts_as_declared(tmp_path):
+    """Otherwise the "measuring against [site] and [api] alone" warning fires on
+    a file that narrowed every band it has, and a warning that cries wolf is a
+    warning nobody reads."""
+    text = (RAV4.replace('[auction_statistics]\nmodel_grade = ["HYBRID G"]\n'
+                         'engine_capacity_start = 2.5\n', "")
+                .replace('max_bid_jpy = { private = 2_505_000 }',
+                         'max_bid_jpy = { private = 2_505_000 }\n'
+                         '\n  [band.auction_statistics]\n  model_grade = ["X"]'))
+    definition = search.load("toyota-rav4", _write(tmp_path, text))
+    assert definition.stats_declared is True
+
+
 def test_a_search_without_the_section_still_measures_something(tmp_path):
     """An absent section is not an error — [site] and [api] describe a perfectly
     good archive search. It is only reported, so an unnarrowed measurement is
