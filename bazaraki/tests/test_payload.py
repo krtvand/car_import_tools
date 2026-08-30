@@ -34,8 +34,34 @@ def test_flight_stream_keeps_a_chunk_containing_the_push_marker():
 
 
 def test_row_values_skips_module_and_text_rows():
-    stream = '1:I[9766,[],""]\n2:T216d,not json at all\n3:{"kept":true}\n'
+    stream = '1:I[9766,[],""]\n2:Tf,not json at all\n3:{"kept":true}\n'
     assert list(payload.row_values(stream)) == [{"kept": True}]
+
+
+def test_row_values_reads_the_row_after_a_text_row():
+    """A text row is measured, not scanned for. Its text runs straight into the
+    next row's header, and holds newlines of its own — so a reader that looked
+    for headers at line starts would lose every row behind one description."""
+    stream = '1:T1b,first line\nand a second one2:{"kept":true}\n'
+    assert list(payload.row_values(stream)) == [{"kept": True}]
+
+
+def test_row_values_measures_a_text_row_in_bytes():
+    # The length bazaraki states counts UTF-8 bytes; a Greek advert is two
+    # bytes a letter, and counting characters would cut the row short.
+    stream = '1:T10,ΙΑΠΩΝΙΑΣ2:{"kept":true}\n'
+    assert list(payload.row_values(stream)) == [{"kept": True}]
+
+
+def test_find_splices_in_a_text_row_the_object_only_references():
+    soup = _page('1:T5,words2:{"id":7,"description":"$1"}\n')
+    assert payload.find(soup, "id", "description") == {"id": 7, "description": "words"}
+
+
+def test_find_leaves_alone_a_dollar_value_that_is_not_a_text_row():
+    soup = _page('1:{"id":7,"name":"$undefined","other":"$ff"}\n')
+    assert payload.find(soup, "id", "name") == {
+        "id": 7, "name": "$undefined", "other": "$ff"}
 
 
 def test_row_values_reads_a_row_that_follows_a_scalar_on_the_same_row():
