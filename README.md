@@ -197,7 +197,8 @@ drivetrain = "2WD"
 no_damage_codes = ["W", "X", "欠"]
 
 [dashboard]
-expected_profit_eur = 2000             # what this car has to earn
+expected_profit_eur = 2000             # what this car has to earn — a flat sum,
+# expected_profit_percent = 20         # or a share of its landed cost. Not both.
 
 [competitors]                          # what a Cyprus advert must be to count
 fuel_type = ["petrol", "hybrid petrol"]
@@ -274,7 +275,8 @@ Two static pages in `runs/`: `index.html` (the last ten runs, with a link) and
 in Cyprus for less than you would have to charge**.
 
 One section per band. A band's max bid gives a landed cost; landed cost plus
-resale costs plus that car's `expected_profit_eur` gives a **cyprus sell price**;
+resale costs plus the profit that car has to earn — `expected_profit_eur`, or
+`expected_profit_percent` of the landed cost — gives a **cyprus sell price**;
 a **competitor** is a live Cyprus advert, inside that band's declared competitor
 bounds, asking less. The **Cyprus estimate** sits beside the sell price, because
 if your required price is above it the band does not work at any profit and the

@@ -352,8 +352,52 @@ def test_profit_comes_from_the_search_unless_a_band_overrides_it():
               {"year": 2024, "mileage_end": 50_000, "max_bid_jpy": {"private": 2},
                "expected_profit_eur": 3500}],
     )
-    assert search.profit_for(search.bands[0]) == 2000
-    assert search.profit_for(search.bands[1]) == 3500
+    assert search.profit_for(search.bands[0]).eur == 2000
+    assert search.profit_for(search.bands[1]).eur == 3500
+
+
+def test_a_profit_can_be_asked_for_as_a_share_of_the_landed_cost():
+    """20% on what you put in, so it re-prices itself when the yen moves."""
+    search = _parse(
+        dashboard={"expected_profit_percent": 20},
+        band=[{"year": 2023, "mileage_end": 50_000, "max_bid_jpy": {"private": 1}}],
+    )
+    target = search.profit_for(search.bands[0])
+    assert target.percent == 20
+    assert target.eur_for(15_000) == 3_000
+
+
+def test_a_bands_percent_replaces_the_searchs_flat_sum_whole():
+    """The two are answers to the same question; adding them asks for both."""
+    search = _parse(
+        dashboard={"expected_profit_eur": 2000},
+        band=[{"year": 2023, "mileage_end": 50_000, "max_bid_jpy": {"private": 1},
+               "expected_profit_percent": 15}],
+    )
+    target = search.profit_for(search.bands[0])
+    assert target.eur is None and target.percent == 15
+
+
+def test_a_flat_sum_and_a_percent_together_are_refused():
+    """A file naming both has an intention this module cannot read."""
+    for where in ("dashboard", "band"):
+        payload = {"expected_profit_eur": 2000, "expected_profit_percent": 20}
+        kwargs = ({"dashboard": payload} if where == "dashboard" else
+                  {"band": [{"year": 2023, "max_bid_jpy": {"private": 1}, **payload}]})
+        with pytest.raises(definition.SearchDefinitionError, match="set one"):
+            _parse(**kwargs)
+
+
+def test_a_percent_of_nothing_is_refused():
+    with pytest.raises(definition.SearchDefinitionError, match="above zero"):
+        _parse(dashboard={"expected_profit_percent": 0})
+
+
+def test_a_bands_percent_survives_the_provenance_copy():
+    original = _parse(band=[{"year": 2023, "max_bid_jpy": {"private": 1},
+                             "expected_profit_percent": 20}])
+    restored = definition.from_provenance({"search": original.to_payload()})
+    assert restored.bands[0].expected_profit_percent == 20
 
 
 def test_an_absent_dashboard_section_means_enabled():

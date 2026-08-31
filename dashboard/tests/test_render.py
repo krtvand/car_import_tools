@@ -29,6 +29,18 @@ def _dashboard(*panels) -> competitors.Dashboard:
     return competitors.Dashboard(panels=panels, rates="¥185/€", costs="Aug 2026")
 
 
+def test_a_percent_profit_says_so_next_to_the_euro_it_came_to():
+    """The euro is what it came to; the percent is what was actually declared."""
+    html = cli.render(_dashboard(competitors.SearchPanel(
+        name="mazda-cx30", car="Mazda CX-30",
+        bands=(competitors.BandPanel(
+            band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
+            profit_eur=3_171.8, profit_percent=20.0, sell_price_eur=19_030.8),))))
+
+    assert "20% of landed" in html
+    assert "€3,172" in html
+
+
 def test_a_dismissed_advert_is_shown_struck_through_with_its_reason():
     """It stays on the page because bazaraki still shows it under these filters;
     it is struck through because it is not competition."""

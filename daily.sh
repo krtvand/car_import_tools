@@ -56,7 +56,8 @@ dashboard() { uv run python -m dashboard "$@"; }
 #SEARCHES=(mazda-cx30)
 #SEARCHES=("mazda-3")
 #SEARCHES=("mazda-cx5")
-SEARCHES=("toyota-rav4")
+#SEARCHES=("toyota-rav4-g" "toyota-rav4-x")
+SEARCHES=("toyota-rav4-x")
 
 # --dry-run prints URLs and fetches nothing, so a session check would be a
 # pointless SMS risk on a command whose whole point is to touch nothing.
@@ -103,7 +104,12 @@ echo
 echo "== sheets =="
 # --today matters: without it the queue is every pending sheet ever downloaded,
 # so you would pay to read lots that traded last week.
-banzai24 extract --today
+#
+# Never fatal. An empty queue is an exit 1 saying "No sheets waiting", and it is
+# the ordinary state of a morning whose lots all traded before: the sheets were
+# read on the day they arrived and match by image hash, so a re-fetch queues
+# nothing. Under `set -e` that ends the morning before a single report is built.
+banzai24 extract --today || true
 
 echo
 echo "== reports =="

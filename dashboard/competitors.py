@@ -2,8 +2,9 @@
 
 One panel per saved search, one section per **band** — because the band is the
 thing that has a price. A band's max bid gives a landed cost; the landed cost
-plus resale costs plus the profit that car has to earn gives a **cyprus sell
-price**; and a **competitor** is a Cyprus advert, inside that band's declared
+plus resale costs plus the profit that car has to earn — a flat
+``expected_profit_eur``, or an ``expected_profit_percent`` of the landed cost —
+gives a **cyprus sell price**; and a **competitor** is a Cyprus advert, inside that band's declared
 competitor bounds, asking less than that — live, or gone within the last
 ``COMPETITOR_HISTORY_DAYS``.
 
@@ -293,6 +294,10 @@ class BandPanel:
     cyprus_estimate_eur: float | None = None
     cyprus_confidence: str | None = None
     profit_eur: float | None = None
+    # Set only when the profit was asked for as a share of the landed cost. The
+    # euro above is what it came to; this is what was actually declared, so the
+    # panel can say 20% and not leave the reader deriving it.
+    profit_percent: float | None = None
     # Every advert rendered under the sell price, cheapest first — including the
     # manually excluded ones, which are shown and counted nowhere. ``competitors``
     # is the half of this that the word actually covers.
@@ -505,10 +510,11 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
             "no [band.competitors] bounds — nothing declared as competition for "
             "this band"))
 
-    profit = search.profit_for(band)
-    if profit is None:
+    target = search.profit_for(band)
+    if target is None:
         return _with(base, problem=(
-            "no expected_profit_eur — add one under [dashboard], or on this band"))
+            "no expected_profit_eur or expected_profit_percent — add one under "
+            "[dashboard], or on this band"))
 
     if rates is None:
         return _with(base, problem="no exchange rates, so no landed cost")
@@ -527,6 +533,10 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
         return _with(base, problem=margin)
 
     landed = float(margin.landed.total_eur)
+    # Resolved here rather than in the file, because a percent target is a
+    # question about *this* band's landed cost — which is the yen of the day
+    # through today's rates, and is not known until the margin above is run.
+    profit = target.eur_for(landed)
     sell_price = landed + float(margin.resale_costs_eur) + profit
     # ``listings`` rather than ``live``: a competitor that has already gone is
     # the most useful row on the page, because how long it took to go is the
@@ -546,6 +556,7 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
                              if margin.cyprus_eur is not None else None),
         cyprus_confidence=margin.cyprus_confidence,
         profit_eur=profit,
+        profit_percent=target.percent,
         rows=rows,
         considered=considered,
         stuck_above=_stuck_above(band, live, filters, sell_price),

@@ -48,10 +48,7 @@ no_damage_codes = ["W", "X", "欠"]
 
 [dashboard]
 enabled = true
-# What this car has to earn, in euro. The cyprus sell price is the landed cost
-# plus resale costs plus this — what you must charge — and a competitor is any
-# Cyprus advert asking less.
-expected_profit_eur = 3000
+expected_profit_percent = 20
 
 # What a Cyprus advert must be, beyond being a CX-30, to count as competition.
 # Matched case-insensitively against what the scraper stored, and applied in
@@ -70,7 +67,7 @@ year = 2023
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
 mileage_start = 0
 mileage_end = 50000
-max_bid_jpy = { private = 1_805_000 }
+max_bid_jpy = { private = 1_733500 }
 
   # Wider than the band on purpose: an older CX-30 with more kilometres on it
   # still takes the sale. These bounds must contain the band itself.

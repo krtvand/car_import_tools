@@ -217,6 +217,38 @@ def _range_label(low, high, unit: str, comma: bool = True) -> str:
 
 
 @dataclass(frozen=True)
+class ProfitTarget:
+    """What one band has to earn: a flat sum of euro, or a share of its money.
+
+    Two spellings because two questions are being asked. ``expected_profit_eur``
+    is "this trade is worth doing if it clears €5,000", which is a statement
+    about your time; ``expected_profit_percent`` is "I want 20% on what I put
+    in", which is a statement about your capital — and a percent re-prices
+    itself when the yen moves or a band's max bid is re-tuned, where a flat sum
+    silently becomes a thinner margin on a dearer car.
+
+    The percent is of the **landed cost**: the money on the table when the car
+    reaches Cyprus, before the resale costs it takes to turn it back into cash.
+    That is the base the operator asked for, and it is the one number on the
+    panel that is already there to be read next to it.
+    """
+
+    eur: float | None = None
+    percent: float | None = None
+
+    def eur_for(self, landed_eur: float) -> float:
+        """The euro this target asks for on a car that landed at *landed_eur*."""
+        if self.eur is not None:
+            return self.eur
+        return landed_eur * (self.percent or 0.0) / 100.0
+
+    def describe(self) -> str:
+        if self.eur is not None:
+            return f"€{self.eur:,.0f}"
+        return f"{self.percent:g}% of landed"
+
+
+@dataclass(frozen=True)
 class Band:
     """One year, one mileage range, one set of chassis codes — and its max bid.
 
@@ -251,6 +283,16 @@ class Band:
     competitors: CompetitorBounds = field(default_factory=CompetitorBounds)
     auction_statistics: dict = field(default_factory=dict)
     expected_profit_eur: float | None = None
+    expected_profit_percent: float | None = None
+
+    @property
+    def profit(self) -> ProfitTarget | None:
+        """This band's own profit target, or ``None`` — it inherits the search's."""
+        if self.expected_profit_eur is not None:
+            return ProfitTarget(eur=self.expected_profit_eur)
+        if self.expected_profit_percent is not None:
+            return ProfitTarget(percent=self.expected_profit_percent)
+        return None
 
     def covers(self, mileage_km: int) -> bool:
         if mileage_km < self.mileage_start:
@@ -386,6 +428,16 @@ class DashboardSettings:
 
     enabled: bool = True
     expected_profit_eur: float | None = None
+    expected_profit_percent: float | None = None
+
+    @property
+    def profit(self) -> ProfitTarget | None:
+        """The whole search's profit target, or ``None`` if it names none."""
+        if self.expected_profit_eur is not None:
+            return ProfitTarget(eur=self.expected_profit_eur)
+        if self.expected_profit_percent is not None:
+            return ProfitTarget(percent=self.expected_profit_percent)
+        return None
 
 
 @dataclass(frozen=True)
@@ -486,11 +538,14 @@ class SearchDefinition:
             self.competitors.exclude_phrases + band.competitors.exclude_phrases)
         return replace(self.competitors, exclude_phrases=tuple(merged))
 
-    def profit_for(self, band: Band) -> float | None:
-        """The profit required from one band — its own, else the search's."""
-        if band.expected_profit_eur is not None:
-            return band.expected_profit_eur
-        return self.dashboard.expected_profit_eur
+    def profit_for(self, band: Band) -> ProfitTarget | None:
+        """The profit required from one band — its own, else the search's.
+
+        A band overrides the search *whole*: a band asking for a percent replaces
+        a search-wide flat sum outright, because the two are answers to the same
+        question and adding them would be asking for both.
+        """
+        return band.profit or self.dashboard.profit
 
     def band_for(self, year: int | None, mileage_km: int | None,
                  body_model_code: str | None = None) -> Band | None:
@@ -549,6 +604,7 @@ class SearchDefinition:
                     **({"auction_statistics": dict(band.auction_statistics)}
                        if band.auction_statistics else {}),
                     "expected_profit_eur": band.expected_profit_eur,
+                    "expected_profit_percent": band.expected_profit_percent,
                 }
                 for band in self.bands
             ],
@@ -616,6 +672,35 @@ def _parse_max_bid(payload, where: str, label: str) -> dict[str, int]:
     }
 
 
+def _parse_profit(payload: dict, where: str, label: str, joiner: str = ".") -> dict:
+    """``expected_profit_eur`` / ``expected_profit_percent``, at most one of them.
+
+    Refused together rather than ranked, because a file naming both has an
+    intention this module cannot read, and either reading silently prices a car
+    the operator did not ask for.
+    """
+    eur = f"{label}{joiner}expected_profit_eur"
+    percent = f"{label}{joiner}expected_profit_percent"
+    if "expected_profit_eur" in payload and "expected_profit_percent" in payload:
+        raise SearchDefinitionError(
+            f"{where}: {eur} and {percent} are two ways of saying the same thing "
+            f"— set one")
+    parsed = {
+        "expected_profit_eur": (
+            _number(payload["expected_profit_eur"], where, eur)
+            if "expected_profit_eur" in payload else None),
+        "expected_profit_percent": (
+            _number(payload["expected_profit_percent"], where, percent)
+            if "expected_profit_percent" in payload else None),
+    }
+    if parsed["expected_profit_percent"] is not None and (
+            parsed["expected_profit_percent"] <= 0):
+        raise SearchDefinitionError(
+            f"{where}: {percent} must be above zero — a band that has to earn "
+            f"nothing is priced at cost")
+    return parsed
+
+
 def _parse_band(payload, where: str, index: int) -> Band:
     label = f"[[band]] #{index}"
     if not isinstance(payload, dict):
@@ -623,7 +708,7 @@ def _parse_band(payload, where: str, index: int) -> Band:
     _known(where, label, payload,
            ("year", "body_model_code", "mileage_start", "mileage_end",
             "max_bid_jpy", "competitors", "auction_statistics",
-            "expected_profit_eur"))
+            "expected_profit_eur", "expected_profit_percent"))
 
     if "year" not in payload:
         raise SearchDefinitionError(f"{where}: {label} needs a year")
@@ -649,9 +734,7 @@ def _parse_band(payload, where: str, index: int) -> Band:
                                   f"{label} [band.competitors]"),
         auction_statistics=_parse_band_stats(
             payload.get("auction_statistics"), f"{where}: {label}"),
-        expected_profit_eur=(
-            _number(payload["expected_profit_eur"], where, f"{label}.expected_profit_eur")
-            if "expected_profit_eur" in payload else None),
+        **_parse_profit(payload, where, label),
     )
     _check_band_covered_by_its_competitors(band, where, label)
     return band
@@ -738,15 +821,14 @@ def _parse_competitors(payload, where: str) -> CompetitorFilters:
 def _parse_dashboard(payload, where: str) -> DashboardSettings:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: [dashboard] must be a table")
-    _known(where, "[dashboard]", payload, ("enabled", "expected_profit_eur"))
+    _known(where, "[dashboard]", payload,
+           ("enabled", "expected_profit_eur", "expected_profit_percent"))
     enabled = payload.get("enabled", True)
     if not isinstance(enabled, bool):
         raise SearchDefinitionError(f"{where}: [dashboard] enabled must be true or false")
     return DashboardSettings(
         enabled=enabled,
-        expected_profit_eur=(
-            _number(payload["expected_profit_eur"], where, "[dashboard] expected_profit_eur")
-            if "expected_profit_eur" in payload else None),
+        **_parse_profit(payload, where, "[dashboard]", joiner=" "),
     )
 
 

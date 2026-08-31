@@ -142,7 +142,7 @@
           <span class="value">€{{ '{:,.0f}'.format(band.landed_eur) }}</span>
         </div>
         <div>
-          <span class="label">+ profit</span>
+          <span class="label">+ profit{% if band.profit_percent is not none %} ({{ '{:g}'.format(band.profit_percent) }}% of landed){% endif %}</span>
           <span class="value">€{{ '{:,.0f}'.format(band.profit_eur) }}</span>
         </div>
         <div>
@@ -258,7 +258,7 @@
 <footer>
   Built {{ generated_at }} by <code>dashboard build</code>.
   A cyprus sell price is the landed cost plus resale costs plus the profit the
-  search asks for; a competitor is an advert under it, inside the band's own
+  search asks for — a flat sum, or a percent of the landed cost; a competitor is an advert under it, inside the band's own
   competitor bounds, live or gone within the last 90 days. Buyers work the
   market cheapest-first, so a competitor is one car ahead of you in the queue
   and its age is a fact about your own wait. Delisting is a sold-proxy, not a
