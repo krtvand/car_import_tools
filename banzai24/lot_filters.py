@@ -131,10 +131,23 @@ class LotFilters:
     inconsistently: asking for ``HYBRID G`` loses every lot listed as ``G 4WD``,
     while banning ``X`` catches all four spellings of an X in this run's data and
     leaves the unstated ones for the report to show you.
+
+    ``model_grades`` is that positive list, for the cars an exclusion cannot
+    describe. The Harrier's HYBRID Z and HYBRID Z LEATHER PACKAGE are two prices
+    and the second's trim line *contains* the first's, so no set of banned words
+    keeps the leather one without also keeping the plain Z — you have to be able
+    to ask for ``LEATHER``. Matched as whole consecutive words like the
+    exclusion, and pointing the same way as ``body_model_code``: a lot whose trim
+    line does not name a wanted grade is dropped, and so is a lot with no trim
+    line at all, because nothing has shown it is the car asked for. That is the
+    opposite of what the exclusion does with silence, and deliberately so — see
+    :meth:`keeps`. Prefer the exclusion where it can say what you mean; this one
+    throws away the unlabelled lots the report would otherwise let you judge.
     """
 
     body_model_code: tuple[str, ...] = ()
     exclude_colours: tuple[str, ...] = ()
+    model_grades: tuple[str, ...] = ()
     exclude_model_grades: tuple[str, ...] = ()
 
     @property
@@ -166,6 +179,11 @@ class LotFilters:
         exclusion only ever drops what it can positively recognise, and dropping
         the unlabelled ones would quietly narrow the search to lots that happened
         to have the field filled in.
+
+        ``model_grades`` is the one criterion on the trim line that points the
+        other way, and it takes the model code's answer to silence rather than
+        the exclusion's: an unlabelled lot is dropped, because a search that
+        names the grade it wants has not been shown this is it.
         """
         if self.body_model_code:
             code = normalize_model_code(code)
@@ -176,6 +194,11 @@ class LotFilters:
             colour = normalize_colour(colour)
             unwanted = {normalize_colour(c) for c in self.exclude_colours}
             if colour and colour in unwanted:
+                return False
+        if self.model_grades:
+            line = normalize_model_grade(modification)
+            wanted = (normalize_model_grade(g) for g in self.model_grades)
+            if not line or not any(_names_grade(line, grade) for grade in wanted):
                 return False
         if self.exclude_model_grades:
             line = normalize_model_grade(modification)

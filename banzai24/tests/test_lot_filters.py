@@ -237,3 +237,42 @@ def test_the_grade_exclusion_applies_alongside_the_others():
     assert wanted.matches(_lot(code="6AA-AXAH54", modification="5D 4WD HYBRID G"))
     assert not wanted.matches(_lot(code="6AA-AXAH54", modification="5D 4WD HYBRID X"))
     assert not wanted.matches(_lot(code="6AA-AXAH52", modification="5D 4WD HYBRID G"))
+
+
+def test_a_wanted_grade_keeps_only_the_lots_that_name_it():
+    """All three spellings of a Harrier's leather package in one archive walk."""
+    wanted = LotFilters(model_grades=("LEATHER",))
+    assert wanted.matches(_lot(modification="HYBRID Z LEATHER PACKAGE"))
+    assert wanted.matches(_lot(modification="HYBRID Z LEATHER PACKAGE 4WD"))
+    assert wanted.matches(_lot(modification="4WD HYBRID Z LEATHER PACKAGE"))
+    assert not wanted.matches(_lot(modification="HYBRID Z"))
+    assert not wanted.matches(_lot(modification="HYBRID Z 4WD"))
+
+
+def test_a_wanted_grade_is_whole_consecutive_words_like_the_exclusion():
+    wanted = LotFilters(model_grades=("HYBRID G",))
+    assert wanted.matches(_lot(modification="4WD HYBRID G"))
+    assert not wanted.matches(_lot(modification="HYBRID Z"))
+    assert not wanted.matches(_lot(modification="G 4WD"))       # not spelled out
+    assert LotFilters(model_grades=("g",)).matches(_lot(modification="4WD HYBRID G"))
+
+
+def test_a_lot_with_no_trim_line_fails_a_wanted_grade():
+    """The opposite of the exclusion, and for the model code's reason."""
+    wanted = LotFilters(model_grades=("HYBRID Z",))
+    assert not wanted.matches(_lot(modification="4WD"))
+    assert not wanted.matches(_lot(modification=""))
+    assert not wanted.matches(_lot())
+
+
+def test_wanting_a_grade_is_an_active_filter():
+    assert LotFilters(model_grades=("LEATHER",)).active
+    assert "LEATHER" in LotFilters(model_grades=("LEATHER",)).describe()
+
+
+def test_a_wanted_grade_and_an_excluded_one_both_apply():
+    """The plain Harrier Z: the site says Z, and the leather ones are dropped."""
+    wanted = LotFilters(model_grades=("HYBRID Z",), exclude_model_grades=("LEATHER",))
+    assert wanted.matches(_lot(modification="HYBRID Z 4WD"))
+    assert not wanted.matches(_lot(modification="HYBRID Z LEATHER PACKAGE"))
+    assert not wanted.matches(_lot(modification="HYBRID G"))

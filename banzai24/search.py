@@ -234,7 +234,7 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
 
     api = dict(spec.sections.get("api") or {})
     _known("api", api, _API_KEYS, where)
-    for key in ("exclude_colours", "exclude_model_grades"):
+    for key in ("exclude_colours", "model_grades", "exclude_model_grades"):
         if key in api:
             api[key] = _tuple_of_str(api[key], f"{where}: [api] {key}")
     # The fetch keeps what some band prices. Empty when any band names no code,
