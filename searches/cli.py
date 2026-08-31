@@ -31,7 +31,7 @@ def _print_search(name: str, search) -> None:
             # merged into the line below, so it is clear which band drops them.
             detail += f" · not saying {', '.join(phrases)}"
         print(f"      {detail}"
-              + (f" · profit €{profit:,.0f}" if profit is not None else " · no profit set"))
+              + (f" · profit {profit.describe()}" if profit is not None else " · no profit set"))
     if search.competitors.declared:
         print(f"    all bands: {search.competitors.describe()}")
     for section in ("site", "api", "sheet"):
