@@ -41,14 +41,21 @@ engine_size_end = 2.5
 year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
 mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 2_454_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  # Nothing cheaper to exclude — the S is the bottom of the range.
+  exclude_phrases = ["coming soon"]
+
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 35001
 mileage_end = 50000
-# PROVISIONAL, and the thinnest of the four: solved against a €25,000 Cyprus
-# asking price at 50,000 km, which is extrapolated from a single advert — an
-# S-package import asking €26,500 at 22,000 km. One advert is not a market.
-# No S in the archive walk had sold yet, so there is no hammer price to check
-# this against either; what is known is that the fleet lots *open* at ¥1,000,000,
-# a long way under this ceiling.
-max_bid_jpy = { private = 2_224_000 }
+max_bid_jpy = { private = 2_313_000 }
 
   [band.competitors]
   year_start = 2022

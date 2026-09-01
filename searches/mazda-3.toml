@@ -14,6 +14,9 @@ exclude_colours = ["black", "blue"]
 drivetrain = "2WD"
 no_damage_codes = ["W", "X", "欠"]
 
+[dashboard]
+enabled = false
+
 [[band]]
 year = 2023
 body_model_code = ["BP5P", "BP5R"]

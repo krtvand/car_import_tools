@@ -24,7 +24,7 @@ no_damage_codes = ["W", "X", "欠"]
 [auction_statistics]
 
 [dashboard]
-enabled = true
+enabled = false
 expected_profit_percent = 20
 
 [competitors]

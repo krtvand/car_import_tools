@@ -62,29 +62,24 @@ engine_size_end = 2.5
 
 [[band]]
 year = 2023
-# Both drivetrains at one price. The E-Four does hammer higher — the leather Zs
-# in the archive walk went ¥3.50–3.86M on AXUH85 against ¥3.35–3.40M on AXUH80 —
-# but there is no Cyprus data yet to say whether it sells for the difference, and
-# a second band written on a guess would be a price pretending to be a
-# measurement. Split it when the panel can answer.
 body_model_code = ["AXUH80", "AXUH85"]
 mileage_start = 0
-mileage_end = 50000
-# PROVISIONAL. Solved, not measured: this is the bid at which a car landing at
-# today's rates clears the 20% above, against a €27,000 Cyprus asking price at
-# 50,000 km with the 0.92 asking→sale haircut on it. The €27,000 is read off two
-# 2023 adverts that state a G — €28,000 at 29,000 km and €29,500 at 22,000 km —
-# and not off a fitted curve, because bazaraki.db holds no Harriers at all until
-# this search has run. Re-derive it with `python -m price_calculator` once it
-# does; the one 2023 G in the archive walk hammered ¥2,399,000 at 11,000 km, so
-# this is not obviously the wrong side of the market.
-max_bid_jpy = { private = 2_638_000 }
+mileage_end = 35000
+max_bid_jpy = { private = 2_636_000 }
 
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  # The trims that undercut a G: the S below it. Dearer trims are left in — an
-  # advert that never names a grade is not shown to be one, and it still takes
-  # the sale. "coming soon" is the Cyprus dealer's advert for a car that is not
-  # here yet, at a price nobody has had to accept.
+  exclude_phrases = ["hybrid s", "s package", "coming soon"]
+
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 2_575_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
   exclude_phrases = ["hybrid s", "s package", "coming soon"]
