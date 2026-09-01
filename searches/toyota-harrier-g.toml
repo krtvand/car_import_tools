@@ -1,0 +1,90 @@
+# Toyota Harrier HYBRID G, 2023, to 50,000 km.
+#
+# One of four Harrier files, one per trim, because the four trims are four
+# prices and a band cannot tell them apart: unlike the RAV4, where AXAH52 *is* a
+# HYBRID X, every 2023 Harrier hybrid is AXUH80 (2WD) or AXUH85 (E-Four)
+# whatever its grade. The chassis code says the drivetrain and nothing else, so
+# the trim line is the only thing left to split them on — see
+# docs/reference/harrier-grades.md, which is where the whole comparison lives.
+#
+# This is the annotated one of the four; the others say only what differs.
+# See mazda-cx30.toml for what the sections mean.
+
+car = "toyota-harrier"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+# Half of the 2023 hybrid Harriers at auction are black — 35 of the 70 distinct
+# lots in the archive walk this file was written from, against 25 white. That is
+# a much dearer exclusion here than on the other searches, and Cyprus adverts
+# sell "Black Pearl" as a feature rather than apologise for it. Kept anyway,
+# because it is the same rule every other search in this directory runs; drop
+# the "black" if you want the other half of the market.
+exclude_colours = ["black", "blue"]
+# The trim line — Модификация — is all that separates a G from a Z here. Written
+# as an exclusion of the other grades rather than as a request for "HYBRID G",
+# for the RAV4's reason: the auction houses spell the same car "HYBRID G" and
+# "4WD HYBRID G", and a lot that names no grade at all is left on the report
+# where the photographs can answer. Unlike the RAV4's one hybrid in nine, only
+# one of the 70 hybrid lots in that walk was silent — so this is mostly
+# insurance, but it is not free insurance: that lot reaches this report and the
+# S's and the Z's alike, and only a photograph settles which of them it is.
+#
+# "LEATHER" does not need banning here: it only ever appears on a Z.
+exclude_model_grades = ["S"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+# Inherits [site] and [api] — including the grade exclusion above, so the sales
+# measured are Gs and not the Zs that hammer half a million yen higher. `source`
+# and `status` are not written here: an archive search is over completed sales
+# by definition.
+[auction_statistics]
+
+[dashboard]
+enabled = true
+expected_profit_percent = 20
+
+# 2.5 litres and "hybrid petrol" together are what fence off the two other
+# Harriers on bazaraki: the 2.0 petrol is dropped by the engine size, and the
+# PHEV — which asks €41,900 and would lift this panel on its own — is a separate
+# bazaraki fuel type ("plug-in hybrid petrol") and is dropped by naming this one.
+[competitors]
+fuel_type = ["hybrid petrol"]
+engine_size_start = 2.5
+engine_size_end = 2.5
+
+
+[[band]]
+year = 2023
+# Both drivetrains at one price. The E-Four does hammer higher — the leather Zs
+# in the archive walk went ¥3.50–3.86M on AXUH85 against ¥3.35–3.40M on AXUH80 —
+# but there is no Cyprus data yet to say whether it sells for the difference, and
+# a second band written on a guess would be a price pretending to be a
+# measurement. Split it when the panel can answer.
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 0
+mileage_end = 50000
+# PROVISIONAL. Solved, not measured: this is the bid at which a car landing at
+# today's rates clears the 20% above, against a €27,000 Cyprus asking price at
+# 50,000 km with the 0.92 asking→sale haircut on it. The €27,000 is read off two
+# 2023 adverts that state a G — €28,000 at 29,000 km and €29,500 at 22,000 km —
+# and not off a fitted curve, because bazaraki.db holds no Harriers at all until
+# this search has run. Re-derive it with `python -m price_calculator` once it
+# does; the one 2023 G in the archive walk hammered ¥2,399,000 at 11,000 km, so
+# this is not obviously the wrong side of the market.
+max_bid_jpy = { private = 2_638_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  # The trims that undercut a G: the S below it. Dearer trims are left in — an
+  # advert that never names a grade is not shown to be one, and it still takes
+  # the sale. "coming soon" is the Cyprus dealer's advert for a car that is not
+  # here yet, at a price nobody has had to accept.
+  exclude_phrases = ["hybrid s", "s package", "coming soon"]

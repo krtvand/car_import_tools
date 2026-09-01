@@ -8,8 +8,17 @@ generation, not per body code; a hybrid and a petrol of one generation really di
 euro_standard and fuel feed only the one-off registration surcharge, which is EUR 0
 for every Euro 6 car and so EUR 0 for every row below. body_model_code lists the codes
 a row covers; it is read by humans, matched by nothing.
+The HARRIER is the one row not seeded from a European figure, because the car was
+never sold in Europe: its dimensions are the 主要諸元表 2023年10月 in
+docs/reference/harrier/, and its co2_gkm is derived from that sheet's WLTC 22.3
+km/L (2,322 g CO2 per litre of petrol / 22.3). It is the hybrid's figure, not the
+2.0 petrol's, because every Harrier search is a hybrid one. Both 104 and a
+pessimistic 120 sit inside the scale's bottom band, so the annual road tax moves
+by EUR 8 across that whole range -- verify it off a registration document before
+using this row to price a petrol Harrier, where it would be badly wrong.
 make,model,year_from,year_to,length_cm,width_cm,height_cm,co2_gkm,euro_standard,fuel,body_model_code
 MAZDA,CX-30,2019,2026,439.5,179.5,154.0,133,6,petrol,DMEJ3P DMEJ3R DMFP
 MAZDA,CX-5,2017,2026,457.5,184.5,169.0,158,6,petrol,KFEP KF5P
 MAZDA,3,2019,2026,446.0,179.5,144.0,128,6,petrol,BP5P BP5R
 TOYOTA,RAV4,2019,2026,460.0,185.5,169.0,126,6,petrol,AXAH54 AXAP54 MXAA52 MXAA54
+TOYOTA,HARRIER,2020,2025,474.0,185.5,166.0,104,6,petrol,AXUH80 AXUH85

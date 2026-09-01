@@ -25,6 +25,7 @@ SLUGS: dict[str, tuple[str, str]] = {
     "mazda-cx5": ("MAZDA", "CX-5"),
     "mazda-3": ("MAZDA", "3"),
     "toyota-rav4": ("TOYOTA", "RAV4"),
+    "toyota-harrier": ("TOYOTA", "HARRIER"),
 }
 
 

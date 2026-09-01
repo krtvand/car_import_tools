@@ -27,6 +27,10 @@ SLUGS: dict[str, tuple[str, str]] = {
     "mazda-3": ("mazda", "3"),
     # Not "rav4" and not "rav-4" — both 404. bazaraki prefixes the make here.
     "toyota-rav4": ("toyota", "toyota-rav4"),
+    # And here it does not: /toyota/harrier/ is the page with the adverts on
+    # it, while /toyota/toyota-harrier/ answers 200 with nothing listed — a
+    # soft 404, which is worse than the RAV4's honest one. Verified live.
+    "toyota-harrier": ("toyota", "harrier"),
 }
 
 

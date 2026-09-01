@@ -1,0 +1,64 @@
+# Toyota Harrier HYBRID Z "Leather Package", 2023, to 50,000 km.
+# See toyota-harrier-g.toml for what every section is doing, and
+# docs/reference/harrier-grades.md for how the four trims are told apart.
+
+car = "toyota-harrier"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+exclude_colours = ["black", "blue"]
+# The one search of the four that cannot be written as an exclusion. A leather
+# Z's trim line *contains* a plain Z's — "HYBRID Z LEATHER PACKAGE" against
+# "HYBRID Z" — so no set of banned words keeps this car without also keeping the
+# cheaper one, and the grade has to be asked for. One word, because the houses
+# write it three ways and "LEATHER" is in all three; it cannot catch another
+# grade, since no other 2023 Harrier has a leather package.
+#
+# The cost of asking rather than banning: a lot whose trim line is blank is
+# dropped here, where the other three searches would keep it and let the report
+# decide. One of the 70 hybrid lots in the archive walk was blank, so the cost is
+# real but small — and it is paid in the right direction, since a blank line is
+# much more likely to be one of the three commoner trims than this one.
+model_grades = ["LEATHER"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+[auction_statistics]
+
+[dashboard]
+enabled = true
+expected_profit_percent = 20
+
+[competitors]
+fuel_type = ["hybrid petrol"]
+engine_size_start = 2.5
+engine_size_end = 2.5
+
+
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 0
+mileage_end = 50000
+# PROVISIONAL: solved against a €30,000 Cyprus asking price at 50,000 km. No
+# 2023 leather Z is advertised in Cyprus today, so that figure is read off the
+# 2024s — €32,400 at 32,808 km and €33,500 at 19,500 km — and walked back a year.
+#
+# This is the least likely of the four to be buyable. Every leather Z in the
+# archive walk hammered between ¥3.35M and ¥3.86M, at 20,000–40,000 km, and the
+# cheapest of them lands at about €27,000 before a cent of profit. The gap is
+# not a mispriced ceiling; it is the trim whose Japanese premium Cyprus does not
+# pay back.
+max_bid_jpy = { private = 2_789_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  # Every trim below this one undercuts it.
+  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
+                     "g model", "coming soon"]

@@ -46,6 +46,7 @@ CARS: dict[str, Car] = {
         Car(key="mazda-cx5", make="Mazda", model="CX-5"),
         Car(key="mazda-3", make="Mazda", model="3"),
         Car(key="toyota-rav4", make="Toyota", model="RAV4"),
+        Car(key="toyota-harrier", make="Toyota", model="Harrier"),
     )
 }
 
