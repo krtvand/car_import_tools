@@ -276,3 +276,27 @@ def test_a_wanted_grade_and_an_excluded_one_both_apply():
     assert wanted.matches(_lot(modification="HYBRID Z 4WD"))
     assert not wanted.matches(_lot(modification="HYBRID Z LEATHER PACKAGE"))
     assert not wanted.matches(_lot(modification="HYBRID G"))
+
+
+# --- naming which grade decided ----------------------------------------------
+#
+# `keeps` only needs to know whether anything matched. The report has to print
+# *which* word did, so the same match is exposed as the list of grades named.
+
+
+def test_the_grades_named_come_back_spelled_as_the_search_wrote_them():
+    """Not as the lot wrote them. The word on the card is then the word to look
+    for in the file the operator would edit."""
+    assert lot_filters.grades_named("4WD HYBRID G", ("HYBRID G", "S")) == ["HYBRID G"]
+    assert lot_filters.grades_named("5D 4WD HYBRID X", ("X",)) == ["X"]
+
+
+def test_every_grade_the_line_names_comes_back_not_just_the_first():
+    assert lot_filters.grades_named(
+        "HYBRID Z LEATHER PACKAGE", ("Z", "LEATHER", "G")) == ["Z", "LEATHER"]
+
+
+def test_a_line_with_no_trim_words_names_nothing():
+    assert lot_filters.grades_named("4WD", ("G", "S")) == []
+    assert lot_filters.grades_named(None, ("G",)) == []
+    assert lot_filters.grades_named("HYBRID G", ()) == []

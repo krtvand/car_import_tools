@@ -407,7 +407,11 @@ def _judge(definition: SearchDefinition, filters, lot_number: str, client):
     stored = db.extraction_for(lot_number)
     if stored is None:
         return None, spent
-    return requirements.judge(filters, definition.requirements, lot, stored), spent
+    # The search's own `[api]` filter, not the band's variant: `lot_filters_for`
+    # narrows only the chassis codes, and the grade rules — the one thing judged
+    # from it here — are the same in both.
+    return requirements.judge(filters, definition.lot_filters,
+                              definition.requirements, lot, stored), spent
 
 
 async def walk_band(

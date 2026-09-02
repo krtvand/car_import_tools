@@ -109,9 +109,10 @@ def test_a_box_holding_only_a_modifier_matches_nothing():
 
 
 def test_a_car_with_no_table_reads_every_box_as_unmatched():
-    reading = trims.read("mazda-cx30", "20S PROACTIVE")
+    """The CX-5 — a car this repo searches for and has never read a sheet for."""
+    reading = trims.read("mazda-cx5", "25S プロアクティブ")
     assert reading.trim is None
-    assert reading.printed == "20S PROACTIVE"
+    assert reading.printed == "25S プロアクティブ"
 
 
 def test_a_blank_box_is_none_rather_than_an_unmatched_reading():

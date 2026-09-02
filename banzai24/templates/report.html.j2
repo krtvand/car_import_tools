@@ -67,6 +67,7 @@
     text-transform: uppercase; white-space: nowrap;
   }
   .badge.mismatch { background: var(--bad); }
+  .badge.unstated-trim { background: var(--warn); }
   .badge.low-confidence { background: var(--warn); }
 
   /* Why this card is not in the top group, said once, above the fields. */
@@ -290,6 +291,27 @@
           {%- endif -%}
           {%- if view.trim.note %}<span class="note translation">{{ view.trim.note }}</span>{% endif -%}
           {%- endif -%}
+        </dd>
+        {% endif %}
+
+        {# The listing's own trim line, against the `[api]` grade rules the
+           search splits one car on. Directly under the sheet's box, because the
+           whole reason to print a line the <h2> already carries is to have the
+           two answers a centimetre apart: the file is re-read every time this
+           page is built, so a grade banned since the fetch is a lot sitting here
+           that nothing else would mention.
+
+           Shown whenever the search names any grade — like Drivetrain, and for
+           the same reason: an empty line is the reason a card wears a badge, and
+           hiding the row would hide the reason. #}
+        {% if view.check('trim') %}
+        <dt>Trim (listing)</dt>
+        <dd>
+          <span class="{{ view.check('trim') | verdict }}">
+            {%- if lot.modification %}{{ lot.modification }}
+            {%- else %}<span class="unset">not stated</span>{% endif -%}
+          </span>
+          <span class="note{{ ' bad' if view.check('trim').failed }}">({{ view.trim_rule }})</span>
         </dd>
         {% endif %}
 

@@ -110,6 +110,26 @@ def _names_grade(line: list[str], grade: list[str]) -> bool:
                for at in range(len(line) - len(grade) + 1))
 
 
+def grades_named(modification: str | None, grades: tuple[str, ...]) -> list[str]:
+    """Which of ``grades`` this trim line names, spelled as the search wrote them.
+
+    The verdict and its reason in one call. :meth:`LotFilters.keeps` only needs
+    to know whether the list came back empty, but a report has to print *which*
+    word decided — "HYBRID G 4WD, the search bans G" rather than a rule the
+    reader re-applies by eye. Returning the search's own spelling rather than the
+    lot's is deliberate: the word printed on the card is then the word to look
+    for in the file you would edit.
+
+    ``[]`` for a lot with no trim line at all, whichever way the criterion points.
+    What that *means* differs — see :meth:`LotFilters.keeps` — and is the
+    caller's to decide, not this function's.
+    """
+    line = normalize_model_grade(modification)
+    if not line:
+        return []
+    return [g for g in grades if _names_grade(line, normalize_model_grade(g))]
+
+
 @dataclass(frozen=True)
 class LotFilters:
     """Post-fetch criteria. Empty means keep everything.
@@ -195,16 +215,10 @@ class LotFilters:
             unwanted = {normalize_colour(c) for c in self.exclude_colours}
             if colour and colour in unwanted:
                 return False
-        if self.model_grades:
-            line = normalize_model_grade(modification)
-            wanted = (normalize_model_grade(g) for g in self.model_grades)
-            if not line or not any(_names_grade(line, grade) for grade in wanted):
-                return False
-        if self.exclude_model_grades:
-            line = normalize_model_grade(modification)
-            unwanted = (normalize_model_grade(g) for g in self.exclude_model_grades)
-            if line and any(_names_grade(line, grade) for grade in unwanted):
-                return False
+        if self.model_grades and not grades_named(modification, self.model_grades):
+            return False
+        if grades_named(modification, self.exclude_model_grades):
+            return False
         return True
 
     def describe(self) -> str:

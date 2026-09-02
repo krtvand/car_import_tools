@@ -233,7 +233,8 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
     failed = unconfirmed = 0
     for lot in sorted(inside, key=lambda l: (l.end_price_jpy is None, l.end_price_jpy or 0)):
         assessment = requirements.judge(
-            filters, definition.requirements, lot, extractions.get(lot.lot_number))
+            filters, lot_filters, definition.requirements, lot,
+            extractions.get(lot.lot_number))
         if assessment.group == requirements.FAILS:
             failed += 1
             continue

@@ -110,11 +110,9 @@ def _view(lot=None, extraction=None, **overrides) -> report.LotView:
 
     lot = lot or _lot()
     checks = sheets.cross_check(extraction, lot) if extraction else None
-    return report.LotView(
-        lot=lot, extraction=extraction, checks=checks,
-        flags=report._flags(extraction, checks),
-        **overrides,
-    )
+    view = report.LotView(lot=lot, extraction=extraction, checks=checks, **overrides)
+    view.flags = report._flags(view)
+    return view
 
 
 # --- the trim ----------------------------------------------------------------
@@ -154,13 +152,26 @@ def test_the_api_saying_a_plain_z_does_not_soften_the_sheet_saying_leather():
 
 
 def test_a_trim_with_no_table_prints_the_japanese_and_no_english():
-    """The CX-30's own fixture sheet. Nobody has written Mazda trims down."""
+    """The CX-5 — a car this repo searches for and has never read a sheet for."""
+    from cars.definitions import get as car
+
+    view = _view(extraction=_extraction(trim_ja="25S プロアクティブ"),
+                 car=car("mazda-cx5"))
+    assert view.trim["printed"] == "25S プロアクティブ"
+    assert view.trim["en"] is None
+    assert not view.trim["matched"]
+
+
+def test_the_cx30_fixtures_half_width_box_is_glossed():
+    """The fixture sheet's box is typed in half-width katakana
+    (`ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ`), which is the case the NFKC fold exists for. If
+    this ever stops matching, the fold has been narrowed."""
     from cars.definitions import get as car
 
     view = _view(extraction=_extraction(), car=car("mazda-cx30"))
     assert view.trim["printed"] == "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ"
-    assert view.trim["en"] is None
-    assert not view.trim["matched"]
+    assert view.trim["en"] == "20S PROACTIVE Touring Selection"
+    assert view.trim["matched"]
 
 
 def test_a_blank_trim_box_says_so_rather_than_going_quiet():
@@ -296,22 +307,25 @@ def _judged(view, definition=None):
     from banzai24.requirements import judge
 
     definition = definition or _definition()
-    view.assessment = judge(definition.filters, definition.requirements,
-                            view.lot, view.extraction)
+    view.assessment = judge(definition.filters, definition.lot_filters,
+                            definition.requirements, view.lot, view.extraction)
     view.requirements = definition.requirements
+    view.lot_filters = definition.lot_filters
+    view.flags = report._flags(view)
     return view
 
 
-def _definition():
+def _definition(**overrides):
     from banzai24.config import AuctionFilters
     from banzai24.requirements import SheetRequirements
     from banzai24.search import SearchDefinition
 
-    return SearchDefinition(
+    base = dict(
         name="fixture",
         filters=AuctionFilters(make="MAZDA", model="CX-30", mileage_end=55_000),
         requirements=SheetRequirements(no_damage_codes=("W", "X", "欠")),
     )
+    return SearchDefinition(**{**base, **overrides})
 
 
 def test_the_group_outranks_severity_in_the_ordering():
@@ -518,8 +532,9 @@ def test_an_unglossed_trim_names_the_file_that_would_gloss_it():
     """The card is where you find out the table has a hole, so it says where."""
     from cars.definitions import get as car
 
-    html = _render([_view(extraction=_extraction(), car=car("mazda-cx30"))])
-    assert "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ" in html
+    html = _render([_view(extraction=_extraction(trim_ja="20S Lパッケージ"),
+                          car=car("mazda-cx30"))])
+    assert "20S Lパッケージ" in html
     assert "cars/inputs/trims.toml" in html
 
 
@@ -703,3 +718,100 @@ def test_a_header_note_does_not_claim_cards_are_blank_when_they_are_not():
 
     assert "aliased twice" in html
     assert "no bid price on any card below" not in html
+
+
+# --- the listing's trim line -------------------------------------------------
+#
+# The other half of the trim question, and the half the search's `[api]` grade
+# rules are written against. The row exists because the file is re-read every
+# time this page is built: a grade banned since the fetch is a lot sitting on
+# the page that nothing else on it would mention.
+
+
+def _grade_search(**lot_filter_kwargs):
+    from banzai24.lot_filters import LotFilters
+
+    return _definition(lot_filters=LotFilters(**lot_filter_kwargs))
+
+
+def test_a_grade_banned_since_the_fetch_says_so_on_the_card():
+    view = _judged(
+        _view(lot=_lot(modification="4WD HYBRID G"), extraction=_extraction()),
+        _grade_search(exclude_model_grades=("G", "S")),
+    )
+    html = _render([view])
+    assert "Trim (listing)" in html
+    assert "4WD HYBRID G" in html
+    assert "the search bans G" in html
+
+
+def test_the_rule_is_printed_beside_the_line_even_when_it_passes():
+    """The row is not only for failures. Seeing "bans G/S" next to "HYBRID Z" is
+    how the operator confirms this report is about the car they meant, which is
+    the whole question the row was added to answer."""
+    html = _render([_judged(
+        _view(lot=_lot(modification="HYBRID Z")),
+        _grade_search(exclude_model_grades=("G", "S")),
+    )])
+    assert "the search bans G/S" in html
+
+
+def test_a_search_that_names_no_grades_renders_no_listing_trim_row():
+    assert "Trim (listing)" not in _render([_judged(_view())])
+
+
+def test_a_lot_nobody_stated_a_trim_for_is_badged_rather_than_disqualified():
+    """One hybrid RAV4 in nine. The exclusion kept it on purpose, so it stays in
+    its group — but the answer is in the photographs, and a card that said
+    nothing would let it pass for a car whose grade had been checked."""
+    view = _judged(
+        _view(lot=_lot(modification=None), extraction=_extraction(trim_ja=None)),
+        _grade_search(exclude_model_grades=("X",)),
+    )
+    assert view.group == "meets"
+    assert view.trim_unstated
+    assert [flag.key for flag in view.flags] == ["unstated-trim"]
+    html = _render([view])
+    assert "trim not stated" in html          # the badge, at the top of the card
+    assert "not stated" in html               # and the row it is about
+
+
+def test_a_sheet_that_names_the_trim_answers_for_a_listing_that_did_not():
+    """The badge asks whether *anyone* has named this car's trim. The sheet's
+    グレード box is on the same card saying so, and a badge next to it would be
+    the page contradicting itself."""
+    view = _judged(
+        _view(lot=_lot(modification=None), extraction=_extraction()),
+        _grade_search(exclude_model_grades=("X",)),
+    )
+    assert not view.trim_unstated
+    assert view.flags == []
+
+
+def test_an_unread_sheet_leaves_a_blank_listing_line_unanswered():
+    """An unread sheet has not said no. The badge stays up until something does."""
+    view = _judged(
+        _view(lot=_lot(modification=None)),
+        _grade_search(exclude_model_grades=("X",)),
+    )
+    assert view.trim_unstated
+
+
+def test_an_unstated_trim_sorts_above_a_low_confidence_read_and_below_a_mismatch():
+    search = _grade_search(exclude_model_grades=("X",))
+    unstated = _judged(_view(lot=_lot("47-1312-00001", modification=None),
+                             extraction=_extraction("47-1312-00001", trim_ja=None)),
+                       search)
+    smudged = _judged(_view(lot=_lot("47-1312-00002"),
+                            extraction=_extraction("47-1312-00002", confidence=0.7)),
+                      search)
+    wrong_car = _judged(_view(lot=_lot("47-1312-00003"),
+                              extraction=_extraction("47-1312-00003",
+                                                     chassis_full="DMEJ3P-100000")),
+                        search)
+    ordered = sorted([smudged, unstated, wrong_car], key=lambda v: v.sort_key)
+    assert [v.lot.lot_number for v in ordered] == [
+        "47-1312-00003",   # a mismatch — this may not be the car at all
+        "47-1312-00001",   # nobody said which trim
+        "47-1312-00002",   # the sheet was hard to read
+    ]

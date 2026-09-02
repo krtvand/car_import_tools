@@ -103,3 +103,84 @@ ja = ["Zレザーパッケージ", "ZLEATHERPACKAGE"]
 rank = 5
 note = """Identical to a Z from the outside — same wheels, same spoiler, same \
 lights. Only the genuine leather seats separate them, and only from inside."""
+
+# --- Mazda CX-30 -------------------------------------------------------------
+
+[mazda-cx30]
+# 1st generation DM, 2019年10月 onwards — the only one `model_specs.csv` carries
+# and the only one any search here names. Mazda's grade name is the engine
+# designation plus a suffix, so the engine is *part of the trim*: a `20S` is the
+# 2.0 petrol and an `X` the SKYACTIV-X, and they are different money. That is
+# why `20S` and `X` are written into every `ja` spelling below rather than being
+# lifted out as modifiers the way `4WD` is.
+generation = "1st generation DM (2019年10月–)"
+reference = "cars/reference/cx30-grades.md"
+
+# **Every trim below has been printed by a real lot in `auction.db`.** Nothing
+# here is transcribed from a catalogue, because nobody has read one for this car
+# — there is no 主要装備一覧表 under `cars/reference/cx30/` the way there is for
+# the Harrier and the RAV4, and `rank` is therefore the order the auction prices
+# actually came out in rather than the order a price list says.
+#
+# So the table is deliberately short. The grades Mazda also sells — L Package,
+# Smart Edition, and the whole 1.8 diesel `XD` family, which this search's
+# `engine_capacity_start = 1.9` never fetches — are **not** guessed at. A lot
+# printing one comes back unmatched, shows its Japanese, and the card names this
+# file; that is a line to add with a lot number beside it, not a gap to fill in
+# from memory.
+
+[[mazda-cx30.trim]]
+key = "20s"
+en = "20S"
+ja = ["20S"]
+rank = 1
+
+[[mazda-cx30.trim]]
+key = "20s-proactive"
+en = "20S PROACTIVE"
+ja = ["20S プロアクティブ", "20S PROACTIVE"]
+rank = 2
+
+[[mazda-cx30.trim]]
+key = "20s-proactive-touring"
+en = "20S PROACTIVE Touring Selection"
+# The commonest CX-30 in this repo's data by a distance, and the fixture sheet's
+# own box — typed half-width (`20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ`), which the NFKC fold
+# is there to reach. The list API truncates it two ways, `20S PROACTIVE TOURING`
+# and `20S PROACTIVE TOURING SET`; both are this car, and neither is a grade
+# Mazda sells under that name.
+ja = ["20S プロアクティブ ツーリングセレクション", "20S PROACTIVE TOURING SELECTION"]
+rank = 3
+
+[[mazda-cx30.trim]]
+key = "20s-black-tone"
+en = "20S Black Tone Edition"
+# Written both ways round on real sheets — `20S ブラックトーンエディション` at U
+# Tokyo and `ブラックトーンエディション 20S` at JU Fukushima. The fold drops the
+# spaces but never reorders the words, so both spellings have to be listed or
+# half the cars come back unmatched.
+ja = ["20S ブラックトーンエディション", "ブラックトーンエディション 20S",
+      "20S BLACK TONE EDITION"]
+rank = 4
+note = """Black where the rest of the range is bright: gloss-black wheels, \
+grille surround and mirror caps, and a black cabin with red stitching. The trim \
+exists to be seen from outside, so a lot photo settles it."""
+
+[[mazda-cx30.trim]]
+key = "20s-retro-sports"
+en = "20S Retro Sports Edition"
+ja = ["20S レトロスポーツエディション", "20S RETRO SPORTS EDITION"]
+rank = 5
+note = """Terracotta-brown leather interior — the one thing that names it, and \
+only visible in an interior shot."""
+
+[[mazda-cx30.trim]]
+key = "x-black-tone"
+en = "X Black Tone Edition"
+# The only SKYACTIV-X lot seen so far. `X` is a different engine from `20S`, not
+# a dearer version of it, which is why it is its own trim rather than a modifier.
+ja = ["X ブラックトーンエディション", "ブラックトーンエディション X",
+      "X BLACK TONE EDITION"]
+rank = 6
+note = """The same black exterior treatment as the 20S Black Tone Edition, on \
+the SKYACTIV-X engine — the badge on the tailgate is what separates them."""

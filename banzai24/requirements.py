@@ -6,8 +6,11 @@ is able to check it* — not how much it matters:
 * ``[site]`` — banzai24 filters these out for us, so a lot that reaches this
   module has already passed them **on the API's word**. The auction sheet then
   re-judges them against its own, better numbers.
-* ``[api]`` — checked in :mod:`banzai24.lot_filters` before any sheet is read.
-  Rejects never reach a report, so nothing here knows about them.
+* ``[api]`` — checked in :mod:`banzai24.lot_filters` before any sheet is read,
+  and the **trim line** re-judged here at render. A fetch drops what the file
+  banned that morning; the file is re-read every time the page is built, so a
+  grade banned since is a lot already on the page that nothing else would say a
+  word about. See ``docs/adr/0009-api-grades-are-rejudged-at-render.md``.
 * ``[sheet]`` — only the auction sheet can answer these.
 
 That difference decides what a missing value means, which is the one subtle rule
@@ -34,6 +37,7 @@ import json
 from dataclasses import dataclass, fields
 
 from .config import AuctionFilters
+from .lot_filters import LotFilters, grades_named
 
 # One requirement's answer.
 PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
@@ -55,9 +59,10 @@ GROUP_LABELS = {
 # merely unchecked — it holds both unread sheets and sheets that were read but
 # left the field blank, which from your side of the screen are the same problem.
 GROUP_BLURBS = {
-    MEETS: "the sheet was read and nothing on it disqualifies the car",
+    MEETS: "everything checkable was checked and nothing disqualifies the car",
     UNCONFIRMED: "no answer yet — the sheet is unread, or the field was blank",
-    FAILS: "the sheet was read and something on it disqualifies the car",
+    FAILS: "something read off the car — the sheet, or the listing's own trim "
+           "line — disqualifies it",
 }
 
 
@@ -70,7 +75,7 @@ class Check:
     rule: "55,415 km, over 55,000" and not "mileage requirement not met".
     """
 
-    name: str                  # "mileage", "grade", "drivetrain", "damage"
+    name: str                  # "trim", "mileage", "grade", "drivetrain", "damage"
     verdict: str               # PASS | FAIL | UNKNOWN
     detail: str | None = None
 
@@ -220,6 +225,38 @@ def _bounds_check(name: str, value, low, high, unit: str = "") -> Check:
     return Check(name, PASS)
 
 
+def _trim_checks(lot_filters: LotFilters, lot) -> list[Check]:
+    """The ``[api]`` grade rules, re-judged on the listing's own trim line.
+
+    The one ``[api]`` criterion re-judged here, and it earns the exception: one
+    car is four search definitions split on nothing but this line
+    (``cars/reference/harrier-grades.md``), so it is the criterion an operator
+    actually re-tunes between a fetch and the report they read. A chassis code or
+    a banned colour is written once and left alone, and a lot that reached the
+    page under either is not evidence of anything.
+
+    **A blank trim line passes.** That is the exclusion's own rule — see
+    :meth:`banzai24.lot_filters.LotFilters.keeps` — and overturning it here would
+    make the report disagree with the fetch that kept the lot. The report says so
+    another way instead: the card carries the empty line with the rule beside it,
+    and :func:`banzai24.report._flags` puts a badge on it, because a lot whose
+    grade nobody stated is one the photographs have to answer.
+
+    The exclusion is tested first, because "the search bans G" names the word
+    that decided, where a positive list can only name what it wanted.
+    """
+    if not (lot_filters.model_grades or lot_filters.exclude_model_grades):
+        return []
+
+    line = (getattr(lot, "modification", None) or "").strip()
+    if banned := grades_named(line, lot_filters.exclude_model_grades):
+        return [Check("trim", FAIL, f"{line}, the search bans {'/'.join(banned)}")]
+    if lot_filters.model_grades and not grades_named(line, lot_filters.model_grades):
+        wanted = "/".join(lot_filters.model_grades)
+        return [Check("trim", FAIL, f"{line or 'no trim line'}, wanted {wanted}")]
+    return [Check("trim", PASS)]
+
+
 def _site_checks(filters: AuctionFilters, lot, extraction) -> list[Check]:
     """The ``[site]`` requirements, re-judged on the sheet where it has a value.
 
@@ -292,6 +329,7 @@ def _sheet_checks(requirements: SheetRequirements, extraction) -> list[Check]:
 
 def judge(
     filters: AuctionFilters,
+    lot_filters: LotFilters,
     requirements: SheetRequirements,
     lot,
     extraction,
@@ -301,8 +339,14 @@ def judge(
     ``extraction`` is ``None`` for a lot whose sheet has not been read, which is
     the majority of a freshly fetched run — and which is exactly why the middle
     group exists rather than these lots being quietly counted as passing.
+
+    The trim check comes first because it is the only one asking *which car is
+    this*: a lot the search's grade rules disown is not a car in poor condition,
+    it is a different car, and that is the sentence
+    :meth:`Assessment.describe` should lead with.
     """
     return Assessment(tuple(
-        _site_checks(filters, lot, extraction)
+        _trim_checks(lot_filters, lot)
+        + _site_checks(filters, lot, extraction)
         + _sheet_checks(requirements, extraction)
     ))

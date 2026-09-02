@@ -86,16 +86,21 @@ reach us — and which the auction sheet then re-judges more precisely.
 
 **API requirement** (`[api]`):
 A requirement we check ourselves against list data, before any sheet is read.
-Lots failing it are dropped and never appear on a report.
+Lots failing it are dropped and never appear on a report — as the file stood
+*that morning*. The grade rules are checked again when the report is built,
+because the file is re-read live and a grade banned since the fetch would
+otherwise sit on the page unremarked; see
+`docs/adr/0009-api-grades-are-rejudged-at-render.md`.
 
 **Sheet requirement** (`[sheet]`):
 A requirement only the auction sheet can answer. The only kind that can put a
-lot in *fails a requirement*.
+lot in *unconfirmed* — a `[site]` or `[api]` requirement has already been
+enforced by somebody, so it either passes or fails and is never a shrug.
 
 ### The verdict
 
 **Meets all requirements**:
-The sheet was read and nothing on it disqualifies the car.
+Everything that could be checked was, and nothing disqualifies the car.
 _Avoid_: Approved, passed, clean, buy
 
 **Unconfirmed**:
@@ -104,7 +109,9 @@ requirement needed was blank on an otherwise-readable sheet.
 _Avoid_: Unchecked, pending, unknown
 
 **Fails a requirement**:
-The sheet was read and something on it disqualifies the car.
+Something read off the car disqualifies it — almost always the sheet, and
+otherwise the listing's own trim line, which the report re-judges against the
+search's grade rules.
 _Avoid_: Rejected, failed, excluded
 
 **Mismatch**:

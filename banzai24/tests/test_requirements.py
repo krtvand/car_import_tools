@@ -20,6 +20,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from banzai24.config import AuctionFilters
+from banzai24.lot_filters import LotFilters
 from banzai24.models import AuctionLot, SheetExtraction
 from banzai24.requirements import (
     FAILS,
@@ -61,8 +62,9 @@ def _extraction(marks=(), **overrides) -> SheetExtraction:
     return SheetExtraction(**{**base, **overrides})
 
 
-def _judge(lot=None, extraction=None, filters=FILTERS, requirements=REQUIREMENTS):
-    return judge(filters, requirements, lot or _lot(), extraction)
+def _judge(lot=None, extraction=None, filters=FILTERS, requirements=REQUIREMENTS,
+           lot_filters=LotFilters()):
+    return judge(filters, lot_filters, requirements, lot or _lot(), extraction)
 
 
 # --- groups ------------------------------------------------------------------
@@ -186,3 +188,104 @@ def test_malformed_damage_json_reads_as_clean_rather_than_raising():
     which is why it is asserted rather than left implicit."""
     assert banned_marks("{not json", ("W",)) == []
     assert banned_marks(None, ("W",)) == []
+
+
+# --- the trim line, re-judged from the file at render time -------------------
+#
+# The third rule about missing values, and the one that is neither of the two in
+# the module docstring: a blank trim line **passes**, because that is what the
+# exclusion that kept the lot already decided. The report says it another way —
+# a badge, not a group — and `test_report` owns that half.
+
+
+def test_a_grade_the_search_bans_fails_at_render_even_though_the_fetch_kept_it():
+    """The whole point of judging `[api]` here: the file is read live.
+
+    A lot fetched on Monday under a file that banned nothing, rendered on Friday
+    under a file that bans G, is a car the operator has since said they do not
+    want — sitting under *meets all requirements* with a bid price on it and
+    nothing anywhere saying why it should not be there.
+    """
+    assessment = _judge(
+        lot=_lot(modification="4WD HYBRID G"),
+        extraction=_extraction(),
+        lot_filters=LotFilters(exclude_model_grades=("G", "S")),
+    )
+    assert assessment.group == FAILS
+    assert assessment.get("trim").detail == "4WD HYBRID G, the search bans G"
+
+
+def test_the_banned_word_named_is_the_one_the_search_wrote():
+    """"bans G" and not "bans HYBRID G": the word printed is the word to grep
+    for in the file you would edit."""
+    assessment = _judge(
+        lot=_lot(modification="HYBRID G 4WD"),
+        lot_filters=LotFilters(exclude_model_grades=("HYBRID G",)),
+    )
+    assert assessment.get("trim").detail == "HYBRID G 4WD, the search bans HYBRID G"
+
+
+def test_a_positive_grade_list_the_line_does_not_name_fails():
+    assessment = _judge(
+        lot=_lot(modification="HYBRID Z"),
+        lot_filters=LotFilters(model_grades=("LEATHER",)),
+    )
+    assert assessment.group == FAILS
+    assert assessment.get("trim").detail == "HYBRID Z, wanted LEATHER"
+
+
+def test_an_exclusion_is_reported_before_a_positive_list_it_also_breaks():
+    """Both directions can be set at once — a leather Z asks for LEATHER and
+    bans nothing, but a Z that bans LEATHER and wants Z is writable. When both
+    fire, the ban is the more informative sentence: it names the word that
+    decided rather than the list that did not match."""
+    assessment = _judge(
+        lot=_lot(modification="HYBRID G LEATHER PACKAGE"),
+        lot_filters=LotFilters(model_grades=("Z",), exclude_model_grades=("LEATHER",)),
+    )
+    assert assessment.get("trim").detail.endswith("the search bans LEATHER")
+
+
+def test_a_blank_trim_line_passes_the_exclusion_that_kept_it():
+    """About one hybrid RAV4 in nine names no grade. The fetch keeps them
+    deliberately — an exclusion only drops what it can recognise — so the report
+    must not turn round and disqualify them, or the page would disagree with the
+    run that produced it."""
+    assessment = _judge(
+        lot=_lot(modification=None),
+        extraction=_extraction(),
+        lot_filters=LotFilters(exclude_model_grades=("X",)),
+    )
+    assert assessment.group == MEETS
+    assert assessment.get("trim").verdict == "pass"
+
+
+def test_a_blank_trim_line_fails_a_positive_list_the_same_way_the_fetch_drops_it():
+    """The opposite answer to the same silence, and it matches `LotFilters`:
+    a search that names the grade it wants has not been shown this is it."""
+    assessment = _judge(
+        lot=_lot(modification=None),
+        lot_filters=LotFilters(model_grades=("LEATHER",)),
+    )
+    assert assessment.group == FAILS
+    assert assessment.get("trim").detail == "no trim line, wanted LEATHER"
+
+
+def test_a_search_that_names_no_grades_asks_no_trim_question():
+    """No check at all rather than a vacuous pass — the report keys the whole
+    row off this, and a "✓" beside a rule nobody wrote is a question the page
+    invented."""
+    assert _judge(lot=_lot(modification="HYBRID G")).get("trim") is None
+
+
+def test_the_other_api_criteria_are_not_re_judged():
+    """Only the trim line. A chassis code or a colour is written once and left
+    alone; the trim line is what one car split four ways is split on, and so the
+    only `[api]` value an operator re-tunes between a fetch and a report."""
+    assessment = _judge(
+        lot=_lot(colour="black"),
+        extraction=_extraction(),
+        lot_filters=LotFilters(exclude_colours=("black",)),
+    )
+    assert assessment.group == MEETS
+    assert assessment.get("trim") is None

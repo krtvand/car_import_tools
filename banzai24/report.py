@@ -87,7 +87,14 @@ class Flag:
 # number to read off the card you are already looking at, not a finding — and a
 # report that re-sorted itself every time the price table was re-tuned would stop
 # being the stable page you scroll.
-MISMATCH, LOW_CONFIDENCE_SEV = 50, 30
+#
+# ``unstated-trim`` sits between the two. It is not a disagreement — nothing has
+# contradicted anything — but it is the only badge whose answer is in the
+# photographs rather than on the sheet, and it is a €1.5M-per-thousand question
+# on a Harrier. Below a mismatch because a wrong car beats an unnamed trim, above
+# low confidence because a smudged sheet can be re-read for pennies and a trim
+# line nobody typed cannot be.
+MISMATCH, UNSTATED_TRIM, LOW_CONFIDENCE_SEV = 50, 40, 30
 NEEDS_EYES = LOW_CONFIDENCE_SEV
 
 # Cross-checks that are **not** requirements, and so still earn a badge. Grade
@@ -99,16 +106,20 @@ NEEDS_EYES = LOW_CONFIDENCE_SEV
 STRUCTURAL_CHECKS = ("chassis", "registration")
 
 
-def _flags(
-    extraction: SheetExtraction | None,
-    checks: CrossCheck | None,
-) -> list[Flag]:
+def _flags(view: "LotView") -> list[Flag]:
     """Every reason this lot wants your attention, most urgent first.
 
     Deliberately not deduplicated into one "needs review" boolean: *why* a lot
     is flagged decides what you do about it. A chassis mismatch is a different
-    car; a low confidence score is a legible-sheet problem.
+    car; a low confidence score is a legible-sheet problem; an unstated trim is
+    a question only the photographs can answer.
+
+    Takes the whole view rather than the two rows it used to, because the trim
+    badge is a question about *both* halves of a card — the listing's trim line
+    and the sheet's グレード box — and reading one without the other would fire
+    it on lots whose sheet already says which car this is.
     """
+    extraction, checks = view.extraction, view.checks
     flags = []
 
     if checks and (bad := [name for name in checks.disagreements
@@ -118,6 +129,14 @@ def _flags(
         # It sits at the top of whichever group the lot is in, including *meets
         # all requirements* — which is uncomfortable, and correct.
         flags.append(Flag("mismatch", f"{', '.join(bad)} mismatch", MISMATCH))
+
+    if view.trim_unstated:
+        # The search splits one car on the trim line — see
+        # `cars/reference/harrier-grades.md` — and this lot names no trim on
+        # either side. The exclusion kept it deliberately, so it is not a
+        # failure and does not move group; it is a car whose price question is
+        # open until somebody looks at the photographs.
+        flags.append(Flag("unstated-trim", "trim not stated", UNSTATED_TRIM))
 
     if extraction and extraction.confidence is not None and extraction.confidence < LOW_CONFIDENCE:
         flags.append(Flag("low-confidence", f"confidence {extraction.confidence:.2f}",
@@ -303,6 +322,7 @@ class LotView:
     photo_uris: list[str] = field(default_factory=list)   # a strip under the sheet
     assessment: Assessment | None = None   # None when the run named no search
     requirements: object | None = None     # the [sheet] section, for the card
+    lot_filters: object | None = None      # the [api] section, for the card
     car: Car | None = None                 # the search's car — trims are per-car
 
     @property
@@ -467,6 +487,50 @@ class LotView:
             "blank": False,
             "unasked": False,
         }
+
+    # The listing's own trim line is the other half of the same question, and
+    # the half the search's `[api]` grade rules are actually written against.
+    # The two rows sit together on the card for the obvious reason: when they
+    # disagree, seeing them a paragraph apart is how you fail to notice.
+
+    @property
+    def trim_rule(self) -> str | None:
+        """The ``[api]`` grade rule this lot's trim line was judged against.
+
+        Printed beside the line rather than once in the header, because the
+        header's rule is the search's and the question on a card is always about
+        the one car in front of you. ``None`` when the search names no grades,
+        which is also when the row is not rendered.
+        """
+        bans = getattr(self.lot_filters, "exclude_model_grades", ()) or ()
+        wants = getattr(self.lot_filters, "model_grades", ()) or ()
+        said = []
+        if wants:
+            said.append(f"the search wants {'/'.join(wants)}")
+        if bans:
+            said.append(f"{'and' if said else 'the search'} bans {'/'.join(bans)}")
+        return ", ".join(said) or None
+
+    @property
+    def trim_unstated(self) -> bool:
+        """Does a search that splits on the trim line have no trim line to read?
+
+        True only when *both* sources are silent: the listing's Модификация is
+        empty and the sheet's グレード box has nothing printed in it either — an
+        unread sheet included, because an unread sheet has not said no.
+
+        A sheet that printed something counts as an answer even when
+        ``trims.toml`` could not gloss it. The badge asks whether anyone has
+        named this car's trim, not whether this repo can read the name; the
+        Japanese is on the card either way, and a badge that stayed up next to a
+        legible box would be teaching the operator to ignore it.
+        """
+        if self.check("trim") is None:
+            return False                      # the search does not split on trim
+        if (self.lot.modification or "").strip():
+            return False
+        trim = self.trim
+        return not (trim and trim["printed"])
 
     @property
     def history_note(self) -> dict | None:
@@ -695,22 +759,28 @@ def collect(
         checks = sheets.cross_check(extraction, lot) if extraction else None
 
         quote = bid_pricer.for_lot(lot, extraction)
-        views.append(LotView(
+        view = LotView(
             lot=lot,
             extraction=extraction,
             checks=checks,
             quote=quote,
             margin=landed_pricer.for_lot(lot, quote, extraction),
-            flags=_flags(extraction, checks),
             sheet_uri=_data_uri(_sheet_file(lot)),
             photo_uris=_photo_uris(run_dir, number),
             assessment=(
-                judge(definition.filters, definition.requirements, lot, extraction)
+                judge(definition.filters, definition.lot_filters,
+                      definition.requirements, lot, extraction)
                 if definition else None
             ),
             requirements=definition.requirements if definition else None,
+            lot_filters=definition.lot_filters if definition else None,
             car=definition.spec.car if definition and definition.spec else None,
-        ))
+        )
+        # After the view rather than into its constructor: one flag is a question
+        # about the assessment and the trim reading together, and both of those
+        # live on the view.
+        view.flags = _flags(view)
+        views.append(view)
 
     views.sort(key=lambda view: view.sort_key)
     return Report(run_dir=run_dir, views=views, missing=missing,
