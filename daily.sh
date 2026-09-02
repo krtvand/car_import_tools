@@ -53,8 +53,8 @@ dashboard() { uv run python -m dashboard "$@"; }
 # naming them here rather than globbing is deliberate, because extraction costs
 # money and a file dropped in that directory should not silently start spending
 # it.
-SEARCHES=("mazda-cx30")
-#SEARCHES=("mazda-3")
+#SEARCHES=("mazda-cx30")
+SEARCHES=("mazda-3")
 #SEARCHES=("mazda-cx5")
 #SEARCHES=("toyota-rav4-g" "toyota-rav4-x")
 #SEARCHES=("toyota-rav4-x")

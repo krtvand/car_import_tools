@@ -54,6 +54,14 @@ class TrimTableError(ValueError):
 # Keyed by the folded spelling, valued by what to show. ハイブリット is a
 # misspelling of ハイブリッド and is on a real sheet in this repo (USS 23961);
 # it is here because the house that types it will type it again.
+#
+# The **body style** is here for the same reason a drivetrain is. A MAZDA3 is
+# sold as a FASTBACK and as a SEDAN, and the houses type it right beside the
+# grade — 25 of the 35 MAZDA3 lots in `auction.db` carry `FASTBACK` in the trim
+# line — but it says what shape the car is, never which trim it is. Left in the
+# string it would break the equality match on every one of those lots; lifted
+# out it still reaches the card, which is what an operator who does not want a
+# sedan needs to see.
 MODIFIERS: dict[str, str] = {
     "4WD": "4WD",
     "2WD": "2WD",
@@ -66,6 +74,10 @@ MODIFIERS: dict[str, str] = {
     "HV": "hybrid",
     "PHEV": "PHEV",
     "プラグインハイブリッド": "PHEV",
+    "FASTBACK": "FASTBACK",
+    "ファストバック": "FASTBACK",
+    "SEDAN": "SEDAN",
+    "セダン": "SEDAN",
 }
 
 

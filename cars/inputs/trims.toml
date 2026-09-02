@@ -184,3 +184,101 @@ ja = ["X ブラックトーンエディション", "ブラックトーンエデ�
 rank = 6
 note = """The same black exterior treatment as the 20S Black Tone Edition, on \
 the SKYACTIV-X engine — the badge on the tailgate is what separates them."""
+
+# --- Mazda 3 -----------------------------------------------------------------
+
+[mazda-3]
+# BP, 2019年5月 onwards — sold in Japan as MAZDA3, the name that replaced Axela.
+# Same naming scheme as the CX-30 above: engine designation then suffix, so the
+# `15` and the `20` are part of the trim and not decoration. Both petrol
+# families are here because the auctions have shown both; the chassis code tells
+# them apart cleanly, which is unusual enough to be worth writing down —
+# BP5P/BP5R are every 1.5 in this repo's data and BPFJ3R every 2.0.
+generation = "BP (2019年5月–)"
+reference = "cars/reference/mazda3-grades.md"
+
+# **Weaker footing than any other table in this file, and worth knowing why.**
+# All 35 MAZDA3 sheets in `auction.db` were read before the extraction prompt
+# asked for the グレード box, so *no MAZDA3 box has ever been read here*. The
+# seven trims below are evidenced — every one appears in banzai24's own
+# Модификация field across 50 distinct lots — but the Japanese spellings are
+# **predicted, not observed**.
+#
+# That is a safer bet than it sounds, for two reasons. `ブラックトーンエディション`
+# and `プロアクティブ ツーリングセレクション` are transcribed from real CX-30
+# sheets in this repo, not from memory; and the match is equality, so a spelling
+# guessed wrong costs a missing gloss and can never produce a wrong one.
+# Re-extract a MAZDA3 sheet and these become observed —
+# `cars/reference/mazda3-grades.md` says which lots to read first.
+#
+# `FASTBACK` and `SEDAN` are not trims and are not below: they are the body,
+# lifted out by `MODIFIERS` in `cars/trims.py` and shown beside the English
+# name. Two lots in three carry one, so leaving it in the string would break the
+# match on most of the range.
+
+# --- the 1.5, which is what `mazda-3.toml` prices (BP5P / BP5R) --------------
+
+[[mazda-3.trim]]
+key = "15c"
+en = "15C"
+# The fleet grade at the bottom of the range, about ¥415,000 under a 15S — the
+# widest trim gap of any car in this repo, and the reason `mazda-3.toml` bans
+# the word in `[api] exclude_model_grades` rather than letting the report sort
+# it out. It is still in this table: the ban is on the *listing's* word, and a
+# lot whose listing said nothing still has a sheet that can say 15C.
+ja = ["15C"]
+rank = 1
+
+[[mazda-3.trim]]
+key = "15s"
+en = "15S"
+ja = ["15S"]
+rank = 2
+
+[[mazda-3.trim]]
+key = "15s-touring"
+en = "15S Touring"
+ja = ["15S ツーリング", "15S TOURING"]
+rank = 3
+
+[[mazda-3.trim]]
+key = "15s-black-tone"
+en = "15S Black Tone Edition"
+# Both word orders, on the CX-30's evidence: one house writes the suffix after
+# the designation and another before it, and the fold drops spaces but never
+# reorders words.
+ja = ["15S ブラックトーンエディション", "ブラックトーンエディション 15S",
+      "15S BLACK TONE EDITION"]
+rank = 4
+note = """Black wheels, grille surround and mirror caps against the rest of the \
+range's bright trim, with a black cabin. Visible from outside, so a lot photo \
+settles it."""
+
+# --- the 2.0 (BPFJ3R), which no band prices but the fetch keeps seeing -------
+#
+# Five lots so far, all mild-hybrid (the `5AA-` type prefix). No 2.0 has
+# concluded at a revealed price here, so these three ranks are the catalogue's
+# order rather than a measurement — unlike the 1.5s above them.
+
+[[mazda-3.trim]]
+key = "20s"
+en = "20S"
+ja = ["20S"]
+rank = 5
+
+[[mazda-3.trim]]
+key = "20s-proactive-touring"
+en = "20S PROACTIVE Touring Selection"
+# The listing truncates it to `20S PROACTIVE TOURING`, exactly as it does on the
+# CX-30, and Mazda sells nothing under that shorter name.
+ja = ["20S プロアクティブ ツーリングセレクション", "20S PROACTIVE TOURING SELECTION"]
+rank = 6
+
+[[mazda-3.trim]]
+key = "20s-black-tone"
+en = "20S Black Tone Edition"
+ja = ["20S ブラックトーンエディション", "ブラックトーンエディション 20S",
+      "20S BLACK TONE EDITION"]
+rank = 7
+note = """The same black exterior treatment as the 15S Black Tone Edition, on \
+the 2.0 mild-hybrid engine."""

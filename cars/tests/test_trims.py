@@ -156,3 +156,54 @@ def test_a_repeated_trim_key_is_refused(tmp_path):
                  '[[toyota-harrier.trim]]\nkey = "z"\nen = "Z2"\nja = ["ZZ"]\nrank = 2\n')
     with pytest.raises(trims.TrimTableError, match="repeats a trim key"):
         trims.for_car("toyota-harrier", path)
+
+
+# --- the body style is a modifier, not a trim --------------------------------
+#
+# A MAZDA3 is a FASTBACK or a SEDAN, and the houses type it beside the grade —
+# 25 of the 35 MAZDA3 lots in `auction.db` carry it in the trim line. It says
+# what shape the car is, never which trim, so it is lifted out like a drivetrain
+# and shown on the card rather than being listed in every `ja` spelling.
+
+
+@pytest.mark.parametrize("printed,key,modifiers", [
+    ("FASTBACK 15S", "15s", ("FASTBACK",)),
+    ("15S FASTBACK", "15s", ("FASTBACK",)),
+    ("ファストバック 15S ツーリング", "15s-touring", ("FASTBACK",)),
+    ("セダン 15S", "15s", ("SEDAN",)),
+    ("4WD FASTBACK 15S TOURING", "15s-touring", ("4WD", "FASTBACK")),
+])
+def test_a_body_style_is_lifted_off_the_box_like_a_drivetrain(printed, key, modifiers):
+    reading = trims.read("mazda-3", printed)
+    assert reading.trim.key == key
+    assert set(reading.modifiers) == set(modifiers)
+
+
+def test_the_body_style_reaches_the_english_name():
+    """An operator who does not want a sedan has to be able to see it is one."""
+    assert trims.read("mazda-3", "SEDAN 15S ツーリング").en == "15S Touring SEDAN"
+
+
+def test_a_box_holding_only_a_body_style_matches_nothing():
+    assert trims.read("mazda-3", "FASTBACK").trim is None
+
+
+# --- Mazda 3 -----------------------------------------------------------------
+
+
+def test_a_black_tone_edition_is_read_whichever_way_round_it_is_typed():
+    """One house writes the suffix after the designation, another before it —
+    both spellings are on real CX-30 sheets, and the fold never reorders."""
+    for car in ("mazda-3", "mazda-cx30"):
+        designation = "15S" if car == "mazda-3" else "20S"
+        after = trims.read(car, f"{designation} ブラックトーンエディション")
+        before = trims.read(car, f"ブラックトーンエディション {designation}")
+        assert after.trim is not None and after.trim.key == before.trim.key
+
+
+def test_a_mazda3_grade_nobody_has_seen_is_unmatched_rather_than_guessed():
+    """The 2.0, the diesel and the special editions are deliberately absent —
+    no MAZDA3 lot has named one, and the table only holds what was evidenced."""
+    for box in ("20S ツーリング", "XD ブラックトーンエディション",
+                "15S バーガンディセレクション"):
+        assert trims.read("mazda-3", box).trim is None
