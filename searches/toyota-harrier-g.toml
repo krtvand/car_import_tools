@@ -35,7 +35,7 @@ exclude_colours = ["black", "blue"]
 # S's and the Z's alike, and only a photograph settles which of them it is.
 #
 # "LEATHER" does not need banning here: it only ever appears on a Z.
-exclude_model_grades = ["S"]
+exclude_model_grades = ["S", "Z"]
 
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
