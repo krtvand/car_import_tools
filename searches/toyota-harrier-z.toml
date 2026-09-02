@@ -16,7 +16,7 @@ exclude_colours = ["black", "blue"]
 # LEATHER PACKAGE", "HYBRID Z LEATHER PACKAGE 4WD", "4WD HYBRID Z LEATHER
 # PACKAGE" — and the one word is in all three. It cannot catch anything else,
 # because no other 2023 Harrier grade has a leather package.
-exclude_model_grades = ["G", "S", "LEATHER"]
+exclude_model_grades = ["G", "S"]
 
 [sheet]
 no_damage_codes = ["W", "X", "欠"]
@@ -24,7 +24,7 @@ no_damage_codes = ["W", "X", "欠"]
 [auction_statistics]
 
 [dashboard]
-enabled = false
+enabled = true
 expected_profit_percent = 20
 
 [competitors]

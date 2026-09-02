@@ -1,5 +1,3 @@
-# Mazda 3. See mazda-cx30.toml for what the sections mean.
-
 car = "mazda-3"
 
 [site]
@@ -9,17 +7,18 @@ source = "auctions"
 
 [api]
 exclude_colours = ["black", "blue"]
+exclude_model_grades = ["15C"]
 
 [sheet]
 drivetrain = "2WD"
 no_damage_codes = ["W", "X", "欠"]
 
 [dashboard]
-enabled = false
+enabled = true
 
 [[band]]
 year = 2023
 body_model_code = ["BP5P", "BP5R"]
 mileage_start = 0
 mileage_end = 50000
-max_bid_jpy = { private = 1_605_000 }
+max_bid_jpy = { private = 1_615_000 }

@@ -77,7 +77,8 @@ year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
 mileage_start = 35001
 mileage_end = 50000
-max_bid_jpy = { private = 2_575_000 }
+#max_bid_jpy = { private = 2_575_000 }
+max_bid_jpy = { private = 2_805_000 }
 
   [band.competitors]
   year_start = 2022

@@ -55,8 +55,8 @@ expected_profit_percent = 20
 # memory rather than at the crawl — which is why fuel_type can be a list.
 [competitors]
 fuel_type = ["petrol", "hybrid petrol"]
-engine_size_start = 1.8
-engine_size_end = 2.5
+engine_size_start = 2.0
+engine_size_end = 2.0
 
 [[band]]
 year = 2023
@@ -66,7 +66,7 @@ year = 2023
 # here they are the same car; the RAV4 is where two codes are two prices.
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
 mileage_start = 0
-mileage_end = 50000
+mileage_end = 35000
 max_bid_jpy = { private = 1_733500 }
 
   # Wider than the band on purpose: an older CX-30 with more kilometres on it
@@ -78,10 +78,10 @@ max_bid_jpy = { private = 1_733500 }
 [[band]]
 year = 2023
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
-mileage_start = 50001
-mileage_end = 60000
+mileage_start = 35001
+mileage_end = 50000
 max_bid_jpy = { private = 1_705_000 }
 
   [band.competitors]
   year_start = 2022
-  mileage_end = 80000
+  mileage_end = 70000
