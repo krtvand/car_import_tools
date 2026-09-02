@@ -115,7 +115,7 @@ band; a band's own phrases add to it.
 
 ## Sources
 
-The originals are in `docs/reference/rav4/`. Toyota removed them from toyota.jp
+The originals are in `cars/reference/rav4/`. Toyota removed them from toyota.jp
 when the new RAV4 launched, so the links are Wayback captures.
 
 * [RAV4 主要装備一覧表 2022年10月](https://web.archive.org/web/2024/https://toyota.jp/pages/contents/rav4/002_p_001/4.0/pdf/spec/rav4_equipment_list_202210.pdf)

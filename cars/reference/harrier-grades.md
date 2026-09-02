@@ -80,7 +80,7 @@ Two consequences for `toyota-harrier-s.toml`:
 
 ## Telling them apart in a photograph
 
-From the 主要装備一覧表 2023年10月 in `docs/reference/harrier/`. Rows chosen for
+From the 主要装備一覧表 2023年10月 in `cars/reference/harrier/`. Rows chosen for
 being visible in a lot photo or a Cyprus advert photo, which is what makes them
 useful; ● is standard, ○ a factory option, — not available.
 
@@ -221,7 +221,7 @@ scrape, when the Cyprus column is a fitted curve rather than four adverts.
 
 ## Sources
 
-The PDFs are in `docs/reference/harrier/`, fetched from toyota.jp. The 2022年10月
+The PDFs are in `cars/reference/harrier/`, fetched from toyota.jp. The 2022年10月
 sheets — what a 2023 car strictly is — are no longer served; the 2023年10月 pair
 is the same facelift lineup and stands in for them, and the 2020年6月 spec is
 kept because it is the one that still lists the hybrid S.

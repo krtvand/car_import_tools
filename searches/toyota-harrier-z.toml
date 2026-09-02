@@ -1,6 +1,6 @@
 # Toyota Harrier HYBRID Z — the plain one, without the leather package.
 # 2023, to 50,000 km. See toyota-harrier-g.toml for what every section is doing,
-# and docs/reference/harrier-grades.md for how the four trims are told apart.
+# and cars/reference/harrier-grades.md for how the four trims are told apart.
 
 car = "toyota-harrier"
 
@@ -37,17 +37,21 @@ engine_size_end = 2.5
 year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
 mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 2_805_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 50000
+  # Both trims below a Z undercut it. Adverts that name no grade stay in.
+  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
+                     "g model", "coming soon"]
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 35001
 mileage_end = 50000
-# PROVISIONAL: solved against a €28,800 Cyprus asking price at 50,000 km, from
-# the one 2023 advert that states a Z — €29,900 at 32,750 km, auction grade 5.
-#
-# Read this one knowing it may not be buyable. The four Zs in the archive walk
-# hammered ¥2.40M, ¥3.17M, ¥3.18M and ¥3.45M, all of them at 9,000–21,000 km, so
-# a 50,000 km car has to come in a long way under its low-mileage siblings for
-# this ceiling to be reached at all. If the report shows nothing but lots priced
-# over the bid for a few weeks, that is the answer rather than a fault: the Z's
-# Japanese price and its Cyprus price are ~€1,000 apart and the G's are further.
-max_bid_jpy = { private = 2_649_000 }
+max_bid_jpy = { private = 2_705_000 }
 
   [band.competitors]
   year_start = 2022

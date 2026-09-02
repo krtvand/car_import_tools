@@ -83,7 +83,12 @@ def _extraction(lot_number: str = "55-1850-33152", **overrides) -> SheetExtracti
     base = {
         "lot_number": lot_number,
         "extracted_at": datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc),
-        "model_id": "claude-opus-5", "sheet_sha256": "abc", "raw_json": "{}",
+        "model_id": "claude-opus-5", "sheet_sha256": "abc",
+        # `raw_json` matters here rather than being filler: it is what tells an
+        # extraction made before the trim was asked for from one whose グレード
+        # box was genuinely blank. Both leave `trim_ja` null.
+        "raw_json": '{"trim_ja": "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ"}',
+        "trim_ja": "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ",
         "sheet_grade": "5", "exterior_grade": "A", "interior_grade": "B",
         "sheet_mileage_km": 15415, "chassis_full": "DMEJ3P-103452",
         "first_registration_raw": "R5年1月", "shaken_expiry_raw": "令和8年1月",
@@ -110,6 +115,87 @@ def _view(lot=None, extraction=None, **overrides) -> report.LotView:
         flags=report._flags(extraction, checks),
         **overrides,
     )
+
+
+# --- the trim ----------------------------------------------------------------
+#
+# Which car this is, as against what condition it is in. Four answers, and the
+# row's whole job is not to blur them: a blank box and a sheet read before the
+# question was asked are both a null column, and only one of them is a fact
+# about the car.
+
+
+def test_a_harrier_trim_is_read_off_the_sheet_and_said_in_english():
+    from cars.definitions import get as car
+
+    view = _view(
+        lot=_lot(mark="TOYOTA", model="HARRIER", modification="HYBRID Z"),
+        extraction=_extraction(trim_ja="Z レザーパッケージ",
+                               raw_json='{"trim_ja": "Z レザーパッケージ"}'),
+        car=car("toyota-harrier"),
+    )
+    assert view.trim["printed"] == "Z レザーパッケージ"
+    assert view.trim["en"] == 'Z "Leather Package"'
+    assert view.trim["matched"]
+    assert "leather" in view.trim["note"]
+
+
+def test_the_api_saying_a_plain_z_does_not_soften_the_sheet_saying_leather():
+    """The listing and the sheet disagree by €3,000 and the sheet wins (ADR-0001)."""
+    from cars.definitions import get as car
+
+    view = _view(
+        lot=_lot(mark="TOYOTA", model="HARRIER", modification="HYBRID Z"),
+        extraction=_extraction(trim_ja="Z レザーパッケージ",
+                               raw_json='{"trim_ja": "Z レザーパッケージ"}'),
+        car=car("toyota-harrier"),
+    )
+    assert view.trim["en"] == 'Z "Leather Package"'
+
+
+def test_a_trim_with_no_table_prints_the_japanese_and_no_english():
+    """The CX-30's own fixture sheet. Nobody has written Mazda trims down."""
+    from cars.definitions import get as car
+
+    view = _view(extraction=_extraction(), car=car("mazda-cx30"))
+    assert view.trim["printed"] == "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ"
+    assert view.trim["en"] is None
+    assert not view.trim["matched"]
+
+
+def test_a_blank_trim_box_says_so_rather_than_going_quiet():
+    view = _view(extraction=_extraction(trim_ja=None))
+    assert view.trim["blank"] and not view.trim["unasked"]
+
+
+def test_a_sheet_read_before_the_trim_existed_is_not_reported_as_a_blank_box():
+    """Every extraction already in the database. The column is null either way,
+    so the answer comes off what the model was actually asked."""
+    view = _view(extraction=_extraction(trim_ja=None, raw_json="{}"))
+    assert view.trim["unasked"] and not view.trim["blank"]
+
+
+def test_a_trims_table_that_will_not_parse_costs_a_line_not_the_page(monkeypatch):
+    """One bad input must not cost you the report. `cars.trims` raises; here it
+    degrades, the same trade `ModelSpecs` makes and the opposite of the cost
+    book's."""
+    from cars.definitions import get as car
+    from cars.trims import TrimTableError
+
+    def explode(*_args, **_kwargs):
+        raise TrimTableError("trims.toml: [toyota-harrier] repeats a trim key")
+
+    monkeypatch.setattr(report.trims, "read", explode)
+    view = _view(extraction=_extraction(trim_ja="Z レザーパッケージ"),
+                 car=car("toyota-harrier"))
+    assert view.trim["printed"] == "Z レザーパッケージ"
+    assert "repeats a trim key" in view.trim["note"]
+    assert "Z レザーパッケージ" in _render([view])
+
+
+def test_an_unread_sheet_has_no_trim_row_at_all():
+    """The card's title already carries the API's trim line."""
+    assert _view(lot=_lot(sheet_status="pending")).trim is None
 
 
 # --- flags -------------------------------------------------------------------
@@ -412,6 +498,34 @@ def test_the_warnings_box_is_translated_beside_the_japanese():
     assert "ﾋﾟSD欠品" in html
     assert "Navi SD card missing" in html
     assert "Warnings 注意事項欄" in html
+
+
+def test_the_trim_row_carries_the_japanese_the_english_and_the_tell():
+    from cars.definitions import get as car
+
+    html = _render([_view(
+        lot=_lot(mark="TOYOTA", model="HARRIER"),
+        extraction=_extraction(trim_ja="Z レザーパッケージ",
+                               raw_json='{"trim_ja": "Z レザーパッケージ"}'),
+        car=car("toyota-harrier"))])
+    assert "Trim グレード" in html
+    assert "Z レザーパッケージ" in html
+    assert "Leather Package" in html
+    assert "genuine leather seats" in html   # how to tell it from a plain Z
+
+
+def test_an_unglossed_trim_names_the_file_that_would_gloss_it():
+    """The card is where you find out the table has a hole, so it says where."""
+    from cars.definitions import get as car
+
+    html = _render([_view(extraction=_extraction(), car=car("mazda-cx30"))])
+    assert "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ" in html
+    assert "cars/inputs/trims.toml" in html
+
+
+def test_a_sheet_read_before_the_trim_existed_says_that_on_the_card():
+    html = _render([_view(extraction=_extraction(trim_ja=None, raw_json="{}"))])
+    assert "read before the trim was asked for" in html
 
 
 def test_a_warnings_box_extracted_before_the_translation_still_renders():

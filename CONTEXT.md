@@ -38,6 +38,19 @@ Whether the sheet says the car was privately owned, ex-rental, ex-lease and so
 on. A price input, not a requirement — an unreadable box is priced as private.
 _Avoid_: History, ownership, usage
 
+**Trim**:
+Which of a model's cars this is — a Harrier is an S, a G, a Z or a Z "Leather
+Package" — as against how good the one in front of you is. Printed on the
+auction sheet in a box labelled グレード, in Japanese, and glossed into English
+from `cars/inputs/trims.toml`. Deliberately **not** called a grade in this
+project, though both the sheet and Toyota call it one: a *grade* here is 評価点,
+the inspector's 1–5 condition score, and the two boxes sit an inch apart on the
+same sheet. On a Harrier the trim is worth about ¥1.5M and nothing in the
+chassis code says which one you are looking at, which is why one car is four
+search definitions.
+_Avoid_: Grade (which is 評価点), package, spec (which is a *model spec*),
+variant
+
 **Model spec**:
 The manufacturer's figures for one model over a span of years — body length,
 width, height, CO₂. True of every car of that model, never of one lot: a lot is

@@ -59,8 +59,8 @@ Or a one-off probe with no saved search behind it:
 uv run python -m bazaraki scrape --make mazda --model cx-30 --year-min 2018 --price-max 25000
 ```
 
-To add a car, add it to `searches/cars.py` and give it a slug in
-`bazaraki/cars.py`. Watch that slug: bazaraki prefixes the make on some models
+To add a car, add it to `cars/definitions.py` and give it a slug in
+`bazaraki/cars.py` (and `banzai24/cars.py` if you will bid on it). Watch that slug: bazaraki prefixes the make on some models
 (`toyota/toyota-rav4/`, not `toyota/rav4/`) — open the model's page and read the
 last path segment.
 
@@ -312,8 +312,15 @@ none of that.
 
 ## How it works
 
-- `searches/` — the dependency root: one `.toml` per car, `SearchDefinition` and
-  `Band`, validation, and `python -m searches list/check`. Imports no parser.
+- `cars/` — the dependency root, and the only thing under `searches/`. What is
+  true of a car rather than of a website or a month: `definitions.py` (the key,
+  the make, the model), `specs.py` + `inputs/model_specs.csv` (dimensions, CO2),
+  `trims.py` + `inputs/trims.toml` (the auction sheet's グレード box, in Japanese
+  and English), and `reference/` (the grade comparisons and Toyota's own PDFs
+  behind them). Imports nothing else in the repo. See
+  `docs/adr/0008-a-car-is-not-a-price.md`.
+- `searches/` — one `.toml` per car, `SearchDefinition` and `Band`, validation,
+  and `python -m searches list/check`. Imports `cars` and no parser.
 - `dashboard/` — `competitors.py` (the panel model), `index.py` (the runs list),
   templates, and `python -m dashboard build/open`. Imports both parsers; neither
   imports it.

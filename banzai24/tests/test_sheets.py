@@ -45,6 +45,11 @@ GOLDEN = {
     "sheet_grade": "5",
     "exterior_grade": "A",
     "interior_grade": "B",
+    # The グレード box, in half-width katakana:
+    # `20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ`. Asserted as a contains on the two parts a
+    # reader can be certain of, because the spacing between them is the
+    # house's and not worth a red test.
+    "trim_contains": ("20S", "ｸﾞｾﾚｸｼｮﾝ"),
     "sheet_mileage_km": 15415,
     "chassis_full": "DMEJ3P-103452",
     "first_registration_raw": "R5年1月",
@@ -59,6 +64,7 @@ GOLDEN = {
 def _sheet_data(**overrides) -> SheetData:
     base = {
         "sheet_grade": "5", "exterior_grade": "A", "interior_grade": "B",
+        "trim_ja": "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ",
         "sheet_mileage_km": 15415, "chassis_full": "DMEJ3P-103452",
         "first_registration_raw": "R5年1月", "shaken_expiry_raw": None,
         "damage_marks": [DamageMark(panel="right rear", code="A1")],
@@ -229,6 +235,24 @@ def test_lists_are_stored_as_readable_json_not_python_repr():
     assert "純正" in row["equipment"]
 
 
+def test_the_trim_reaches_the_row_in_the_katakana_the_house_typed():
+    """Half-width katakana and all. `cars.trims` folds; storage does not."""
+    row = sheets.to_row(sheets.Extraction(
+        lot_number="x", data=_sheet_data(), raw_json="{}",
+        sheet_sha256="abc", model_id=sheets.MODEL,
+    ))
+    assert row["trim_ja"] == "20S ﾌﾟﾛｱｸﾃｨﾌﾞ ﾂｰﾘﾝｸﾞｾﾚｸｼｮﾝ"
+
+
+def test_a_blank_grade_box_stores_a_null_trim_rather_than_an_empty_string():
+    """A car whose trim box is blank is one the report must not gloss."""
+    row = sheets.to_row(sheets.Extraction(
+        lot_number="x", data=_sheet_data(trim_ja=None), raw_json="{}",
+        sheet_sha256="abc", model_id=sheets.MODEL,
+    ))
+    assert row["trim_ja"] is None
+
+
 def test_a_blank_shaken_box_stays_null_rather_than_becoming_a_string():
     """No shaken is a fact worth money — it must not be blurred into ''."""
     row = sheets.to_row(sheets.Extraction(
@@ -245,6 +269,18 @@ def test_the_prompt_states_the_damage_legend_as_ground_truth():
     for code in ("A", "U", "XX", "欠"):
         assert code in sheets.PROMPT
     assert "キズ" in sheets.PROMPT and "ヘコミ" in sheets.PROMPT
+
+
+def test_the_prompt_separates_the_trim_box_from_the_condition_grade():
+    """The two boxes are both called a grade in English and neither is the other.
+
+    グレード is which car this is; 評価点 is how good it is. A prompt that lets
+    them blur returns a trim in `sheet_grade` and puts a car in the wrong bid
+    band on the report.
+    """
+    assert "グレード" in sheets.PROMPT
+    assert "レザーパッケージ" in sheets.PROMPT
+    assert "評価点" in sheets.PROMPT
 
 
 def test_the_prompt_asks_for_null_rather_than_a_guess():
@@ -376,6 +412,11 @@ def test_the_model_reads_the_fixture_sheet_correctly():
     assert data.sheet_grade == GOLDEN["sheet_grade"]
     assert data.exterior_grade == GOLDEN["exterior_grade"]
     assert data.interior_grade == GOLDEN["interior_grade"]
+    # The trim, verbatim and untranslated. A model that answered
+    # "20S Proactive Touring Selection" would have read the box correctly and
+    # still broken `cars.trims`, which matches Japanese.
+    for part in GOLDEN["trim_contains"]:
+        assert part in (data.trim_ja or ""), data.trim_ja
     assert data.sheet_mileage_km == GOLDEN["sheet_mileage_km"]
     assert data.chassis_full == GOLDEN["chassis_full"]
 

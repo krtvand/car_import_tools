@@ -12,7 +12,7 @@ this module's business, the same way the URL slugs are ``bazaraki/cars.py``'s.
 """
 from __future__ import annotations
 
-from searches.cars import Car
+from cars.definitions import Car
 
 
 class UnknownCar(KeyError):

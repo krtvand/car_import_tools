@@ -20,7 +20,7 @@ exclude_colours = ["black", "blue"]
 # HYBRID X", "HYBRID X 4WD", "X 4WD", "X" — and about one hybrid RAV4 in nine
 # states no grade at all. A lot that says nothing is kept and reaches the
 # report, where the 17-inch wheels, the fabric seats and the 8-inch screen give
-# an X away; see docs/reference/rav4-grades.md.
+# an X away; see cars/reference/rav4-grades.md.
 exclude_model_grades = ["X"]
 
 [sheet]

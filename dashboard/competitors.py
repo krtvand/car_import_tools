@@ -598,7 +598,8 @@ def build(runs_dir: Path | None = None) -> Dashboard:
     ``docs/adr/0004-bid-prices-are-read-live.md`` for why that does not
     contradict a run's stamped prices.
     """
-    from price_calculator.sources import CyprusMarket, ModelSpecs, money_for_today
+    from cars.specs import ModelSpecs
+    from price_calculator.sources import CyprusMarket, money_for_today
 
     rates, costs, money_problem = money_for_today(runs_dir)
     specs = ModelSpecs()

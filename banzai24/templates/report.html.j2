@@ -264,6 +264,35 @@
       </h2>
 
       <dl>
+        {# The trim — *which* of a model's cars this is, as against the Grade
+           row below, which is what condition it is in. Two boxes on the sheet,
+           both called a grade in English, and on a Harrier the first is worth
+           about ¥1.5M.
+
+           Only shown once a sheet has been read: the <h2> above already carries
+           the API's own trim line, and a second row repeating it in an unread
+           state would push the scan further down for nothing.
+
+           `dd.ja` is pre-wrap, so the whitespace here is controlled — the
+           template's own indentation would otherwise print as a blank first
+           line and a leading indent. #}
+        {% if view.trim %}
+        <dt>Trim グレード</dt>
+        <dd class="ja">
+          {%- if view.trim.unasked -%}
+          <span class="unset">this sheet was read before the trim was asked for</span>
+          {%- elif view.trim.blank -%}
+          <span class="unset">the グレード box is blank</span>
+          {%- else -%}
+          {{ view.trim.printed }}
+          {%- if view.trim.en %} <span class="note">{{ view.trim.en }}</span>
+          {%- else %} <span class="note bad">(no entry in cars/inputs/trims.toml)</span>
+          {%- endif -%}
+          {%- if view.trim.note %}<span class="note translation">{{ view.trim.note }}</span>{% endif -%}
+          {%- endif -%}
+        </dd>
+        {% endif %}
+
         <dt>Grade</dt>
         <dd>
           <span class="{{ view.check('grade') | verdict or (view.checks.grade | check if view.checks else '') }}">
@@ -424,7 +453,7 @@
            road tax comes off the Cyprus CO₂ scale and is worth €45 to €1,500 a
            year, so a car with no figure cannot be landed within a hundred euro
            and gets the sentence instead of a total. Both are fixed in
-           `price_calculator/inputs/model_specs.csv`, and the reason names it.
+           `cars/inputs/model_specs.csv`, and the reason names it.
 
            Only the landed cost prints. `Margin.lines()` also carries the resale
            estimate and the gap to it, and those were crowding out the half of

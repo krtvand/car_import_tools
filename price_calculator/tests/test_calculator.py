@@ -20,10 +20,10 @@ from decimal import Decimal
 
 import pytest
 
+from cars.specs import ModelSpec
 from price_calculator.calculator import (
     CostBook,
     Margin,
-    ModelSpec,
     Rates,
     RegistrationSurcharge,
     RoadTaxBand,

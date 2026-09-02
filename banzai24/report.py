@@ -17,8 +17,10 @@ Several sources meet here, and each answers something the others cannot:
   fields and the paid extraction;
 * the **bid tables** under ``inputs/`` turn that into the number you type into
   the bidding platform — see :mod:`banzai24.bidding`;
-* the **model specs** under ``price_calculator/inputs/`` turn that bid into a
-  landed cost in euro — see :mod:`price_calculator`.
+* the **model specs** under ``cars/inputs/`` turn that bid into a landed cost in
+  euro — see :mod:`price_calculator`;
+* and the **trims** beside them say, in English, which of a model's four cars
+  the sheet's グレード box named — see :mod:`cars.trims`.
 
 Regenerating is free — no network, no browser, no model call — so a template
 tweak is a re-run of ``report``, never a re-fetch or a re-extract.
@@ -32,6 +34,9 @@ from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+
+from cars import trims
+from cars.definitions import Car
 
 from . import db, normalize, search, sheets
 from .bidding import BidPricer, BidQuote
@@ -166,7 +171,8 @@ class LandedPricer:
     """
 
     def __init__(self, run_dir: Path | None = None, rates=None, costs=None):
-        from price_calculator.sources import ModelSpecs, read_costs, read_rates
+        from cars.specs import ModelSpecs
+        from price_calculator.sources import read_costs, read_rates
 
         self.rates = rates if rates is not None else (
             read_rates(run_dir) if run_dir is not None else None)
@@ -297,6 +303,7 @@ class LotView:
     photo_uris: list[str] = field(default_factory=list)   # a strip under the sheet
     assessment: Assessment | None = None   # None when the run named no search
     requirements: object | None = None     # the [sheet] section, for the card
+    car: Car | None = None                 # the search's car — trims are per-car
 
     @property
     def group(self) -> str | None:
@@ -394,6 +401,72 @@ class LotView:
                 "banned": any(b in code.upper() for b in wanted),
             })
         return marks
+
+    @property
+    def trim(self) -> dict | None:
+        """``{printed, en, note, matched, blank, unasked}`` for the グレード box.
+
+        ``None`` before a sheet has been read, because the card's title already
+        carries the API's own trim line and a second empty row saying nothing
+        would only push the scan further down.
+
+        Once a sheet *has* been read there are four answers, and the row shows
+        which one it is rather than collapsing them:
+
+        * the box was **read and matched** — the Japanese, with the English
+          under it and one line on how to tell that trim apart in a photograph;
+        * the box was **read and not matched** — the Japanese alone, and the
+          name of the file to teach. A 60系 Harrier lands here, and so does the
+          first car of a model nobody has written a trims table for;
+        * the box was **blank** — rare, and worth saying out loud, because on a
+          Harrier a blank trim box is the one lot the whole four-file search
+          arrangement cannot place;
+        * the sheet was read **before the trim was asked for** — every
+          extraction in the database predating this field. Distinguishable from
+          a blank box only by the model's own recorded output, which is why the
+          test below is on ``raw_json``: the column is null in both cases, and
+          telling the operator "the box was blank" about a sheet nobody ever
+          looked at that box on would be inventing a fact.
+
+        A fifth is not an answer about the car at all: ``trims.toml`` will not
+        parse. That degrades to the Japanese plus the parser's complaint rather
+        than raising, on the rule the rest of this module follows — one bad
+        input must not cost you the page. It is the same trade
+        :class:`price_calculator.sources.ModelSpecs` makes and the opposite of
+        the cost book's, and the blast radius is why: a mis-edited gloss table
+        costs every card one line of English, while a mis-edited cost book makes
+        every number on the page wrong.
+        """
+        if self.extraction is None:
+            return None
+
+        # A substring test on the raw response rather than a parse of it:
+        # `raw_json` is the whole API envelope with the model's JSON nested as
+        # text inside it, and the only way this name appears anywhere in it is
+        # if the schema that produced it had the field.
+        if "trim_ja" not in (self.extraction.raw_json or ""):
+            return {"printed": None, "en": None, "note": None,
+                    "matched": False, "blank": False, "unasked": True}
+
+        try:
+            reading = trims.read(self.car.key if self.car else None,
+                                 self.extraction.trim_ja)
+        except trims.TrimTableError as exc:
+            return {"printed": self.extraction.trim_ja, "en": None,
+                    "note": f"trims.toml did not load: {exc}",
+                    "matched": False, "blank": False, "unasked": False}
+
+        if reading is None:
+            return {"printed": None, "en": None, "note": None,
+                    "matched": False, "blank": True, "unasked": False}
+        return {
+            "printed": reading.printed,
+            "en": reading.en,
+            "note": reading.trim.note if reading.trim else None,
+            "matched": reading.matched,
+            "blank": False,
+            "unasked": False,
+        }
 
     @property
     def history_note(self) -> dict | None:
@@ -636,6 +709,7 @@ def collect(
                 if definition else None
             ),
             requirements=definition.requirements if definition else None,
+            car=definition.spec.car if definition and definition.spec else None,
         ))
 
     views.sort(key=lambda view: view.sort_key)

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from searches.cars import Car
+from cars.definitions import Car
 from searches.definition import Band
 
 from banzai24 import bidding

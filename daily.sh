@@ -58,8 +58,7 @@ dashboard() { uv run python -m dashboard "$@"; }
 #SEARCHES=("mazda-cx5")
 #SEARCHES=("toyota-rav4-g" "toyota-rav4-x")
 #SEARCHES=("toyota-rav4-x")
-#SEARCHES=("toyota-harrier-g" "toyota-harrier-z" "toyota-harrier-z-leather" "toyota-harrier-s")
-SEARCHES=("toyota-harrier-g" "toyota-harrier-s")
+SEARCHES=("toyota-harrier-g" "toyota-harrier-z" "toyota-harrier-s")
 
 # --dry-run prints URLs and fetches nothing, so a session check would be a
 # pointless SMS risk on a command whose whole point is to touch nothing.

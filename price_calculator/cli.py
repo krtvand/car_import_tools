@@ -31,13 +31,13 @@ from pathlib import Path
 import searches
 from searches.definition import RENTAL_KINDS
 
+from cars.specs import MODEL_SPECS_PATH, ModelSpecs
+
 from .calculator import CostBook, Margin, Rates
 from .sources import (
     COSTS_PATH,
-    MODEL_SPECS_PATH,
     CostBookError,
     CyprusMarket,
-    ModelSpecs,
     RatesUnavailable,
     fetch_rates,
     load_cost_book,

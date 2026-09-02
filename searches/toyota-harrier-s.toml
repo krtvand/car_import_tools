@@ -1,6 +1,6 @@
 # Toyota Harrier HYBRID S, 2023, to 50,000 km.
 # See toyota-harrier-g.toml for what every section is doing and why, and
-# docs/reference/harrier-grades.md for how the four trims are told apart.
+# cars/reference/harrier-grades.md for how the four trims are told apart.
 #
 # The odd one of the four. Toyota's 主要諸元表 2023年10月 lists no hybrid S at
 # all — the S survived the 2022年10月 change only as a 2.0 petrol — yet the

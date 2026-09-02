@@ -1,0 +1,105 @@
+# Trims — the グレード box on an auction sheet, in Japanese and in English.
+#
+# The sheet prints the trim in a box labelled グレード, in whatever mixture of
+# Roman letters and katakana the auction house types: `G`, `S 4WD`,
+# `Z レザーパッケージ`. It is the only machine-readable answer to *which* car
+# this is, and on a Harrier it is worth about ¥1.5M — see
+# `cars/reference/harrier-grades.md`, which argues the whole case and is the
+# source of every English name below.
+#
+# Note the vocabulary clash, which is why this file says **trim** throughout:
+# in this repo "grade" already means 評価点, the inspector's 1–5 condition score.
+# The box is labelled グレード and holds neither.
+#
+# ## How a box is matched
+#
+# `cars/trims.py` folds both sides the same way — NFKC (so half-width ﾚｻﾞｰ and
+# full-width Ｚ become レザー and Z), upper-case, then everything that is not a
+# letter or a digit dropped, so spaces, quotes and ・ cannot matter. Modifiers
+# the box carries alongside the trim — 4WD, E-Four, ハイブリッド — are lifted
+# out before the match and reported separately.
+#
+# So one `ja` spelling covers a great many printed ones, and the aliases below
+# are for the cases the fold genuinely cannot reach: a house that writes
+# `LEATHER PACKAGE` in Roman rather than レザーパッケージ, or ハイブリット,
+# which is a misspelling of ハイブリッド common enough to be on a sheet in this
+# repo (USS lot 23961).
+#
+# What is left after the modifiers come out must **equal** one of the `ja`
+# spellings. A box carrying a word nobody listed therefore comes back with no
+# English rather than with a guess — `Zレザーパッケージ` contains `Z`, and a
+# match that settled for containment would read a leather Z as a plain Z and be
+# €3,000 wrong without saying anything. `cars/trims.py` argues the rest.
+#
+# ## What is not here
+#
+# **The API's own trim line.** banzai24's list response carries a Модификация
+# field ("HYBRID Z LEATHER PACKAGE"), and the search files already filter on it
+# with `model_grades` / `exclude_model_grades`. Restating those spellings here
+# would be a second table saying the same thing, and the two would drift.
+#
+# **Anything a trim does not change.** Dimensions and CO₂ are in
+# `model_specs.csv`: every Harrier trim is the same 4,740 mm box on the same
+# drivetrain, so a trim splits the price and not the freight.
+#
+# **Cars nobody has read a sheet for yet.** A car with no table here, or a box
+# whose wording is not below, prints the Japanese as it was typed and no
+# English. A missing gloss is honest; a wrong one is a car you did not buy.
+
+# --- Toyota Harrier ----------------------------------------------------------
+
+[toyota-harrier]
+# 80系, 2020年6月 onwards — the only generation any search in this repo names,
+# and the only one `model_specs.csv` carries a row for (2020–2025). A 60系 car
+# (グランド, エレガンス, プレミアム, プログレス) would fall through to no
+# English, which is the right answer until someone prices one.
+generation = "80系 (2020年6月–)"
+reference = "cars/reference/harrier-grades.md"
+
+# The five trims of the 80系 hybrid and petrol lineups, cheapest first. `rank`
+# is the catalogue's price order and nothing more — it is what lets a card say a
+# lot is dearer than the search was written for, and it is deliberately not a
+# price: what each one is actually worth in Japan and in Cyprus is a table in
+# the reference doc, measured and thin, and it moves.
+
+[[toyota-harrier.trim]]
+key = "s"
+en = "S"
+ja = ["S"]
+rank = 1
+note = """17-inch wheels with an obvious sidewall, fabric seats, 8-inch screen, \
+no blind-spot monitor. The 2023年10月 catalogue lists S as petrol-only; the \
+auctions carry a hybrid S anyway, largely as fleet disposals."""
+
+[[toyota-harrier.trim]]
+key = "g"
+en = "G"
+ja = ["G"]
+rank = 2
+note = """18-inch machined wheels, still the 8-inch screen, fabric with \
+synthetic leather, 8-way powered driver's seat, black roof spoiler."""
+
+[[toyota-harrier.trim]]
+key = "g-leather"
+en = 'G "Leather Package"'
+ja = ["Gレザーパッケージ", "GLEATHERPACKAGE"]
+rank = 3
+note = """A G with genuine leather. In the 2020年6月 lineup and gone from the \
+2023年10月 one, so a car this old is not what the searches are written for."""
+
+[[toyota-harrier.trim]]
+key = "z"
+en = "Z"
+ja = ["Z"]
+rank = 4
+note = """19-inch super-chrome wheels, 12.3-inch HD screen with JBL, heated and \
+ventilated front seats, hands-free power tailgate, body-coloured roof spoiler. \
+Seats are fabric with synthetic leather, exactly like a G's."""
+
+[[toyota-harrier.trim]]
+key = "z-leather"
+en = 'Z "Leather Package"'
+ja = ["Zレザーパッケージ", "ZLEATHERPACKAGE"]
+rank = 5
+note = """Identical to a Z from the outside — same wheels, same spoiler, same \
+lights. Only the genuine leather seats separate them, and only from inside."""

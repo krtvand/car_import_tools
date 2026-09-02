@@ -116,6 +116,20 @@ class SheetData(BaseModel):
     exterior_grade: str | None = Field(description="外装, exterior sub-grade A-E")
     interior_grade: str | None = Field(description="内装, interior sub-grade A-E")
 
+    # The trim, and the one field on the sheet that says *which car this is*
+    # rather than what condition it is in. On a Harrier the four trims are one
+    # AXUH80 with four price tags about ¥1.5M apart, and nothing in the chassis
+    # code separates them — see `cars/reference/harrier-grades.md`. Verbatim,
+    # because `cars.trims` does the reading and a model that helpfully
+    # translated "Z レザーパッケージ" to "Z Leather Package" would be answering
+    # a question this repo would rather ask its own table.
+    trim_ja: str | None = Field(description="グレード, the trim box, verbatim as "
+                                            "printed: 'G', 'S 4WD', "
+                                            "'Z レザーパッケージ'. This is the "
+                                            "manufacturer's equipment grade, NOT "
+                                            "評価点 — that is sheet_grade above. "
+                                            "Null if the box is blank.")
+
     sheet_mileage_km: int | None = Field(description="走行, in km, digits only. "
                                                      "'15,415 km' -> 15415")
     chassis_full: str | None = Field(description="車台番号, the full unmasked "
@@ -167,6 +181,9 @@ task: report what is printed, and use null for anything absent or illegible.
 
 Field labels to key on:
 - 出品番号 lot number · 評価点 overall grade · 外装 exterior · 内装 interior
+- グレード the manufacturer's trim, e.g. `G`, `S 4WD`, `Z レザーパッケージ`.
+  A different box from 評価点 and never a number: 評価点 is how good this car
+  is, グレード is which car it is.
 - 初度登録 first registration (Japanese era — R=令和, H=平成, S=昭和)
 - 走行 mileage · 車検 shaken (roadworthiness) expiry · 型式 model code
 - 車台番号 chassis number — the sheet prints this in full
@@ -196,6 +213,9 @@ Rules:
   "owner's handbook and warranty booklet", 後送 is "documents to follow". If
   part of the box is illegible or you do not know the abbreviation, translate
   what you can read and leave the rest out rather than inventing a meaning.
+- Copy グレード **exactly as printed**, including any 4WD / ハイブリッド
+  printed with it, and do not translate it. A table downstream reads the
+  Japanese; a helpful "Z Leather Package" would defeat it.
 - Do not convert the era date. Return 初度登録 as printed; conversion happens
   downstream.
 - Mileage is digits only, no separators or units.
@@ -452,6 +472,7 @@ def to_row(extraction: Extraction) -> dict:
         "interior_grade": data.interior_grade,
         "exterior_grade": data.exterior_grade,
         "sheet_grade": data.sheet_grade,
+        "trim_ja": data.trim_ja,
         "sheet_mileage_km": data.sheet_mileage_km,
         "chassis_full": data.chassis_full,
         "damage_marks": json.dumps([m.model_dump() for m in data.damage_marks],
@@ -618,7 +639,8 @@ def run_extract(
                     {k: v for k, v in row.items() if k != "raw_json"},
                     ensure_ascii=False, default=str) + "\n")
 
-        print(f"  {lot.lot_short}: grade {extraction.data.sheet_grade}"
+        print(f"  {lot.lot_short}: {extraction.data.trim_ja or '—'}"
+              f" · grade {extraction.data.sheet_grade}"
               f" ext {extraction.data.exterior_grade}"
               f" int {extraction.data.interior_grade}"
               f" · {extraction.data.sheet_mileage_km} km"

@@ -10,7 +10,7 @@ for every Euro 6 car and so EUR 0 for every row below. body_model_code lists the
 a row covers; it is read by humans, matched by nothing.
 The HARRIER is the one row not seeded from a European figure, because the car was
 never sold in Europe: its dimensions are the 主要諸元表 2023年10月 in
-docs/reference/harrier/, and its co2_gkm is derived from that sheet's WLTC 22.3
+cars/reference/harrier/, and its co2_gkm is derived from that sheet's WLTC 22.3
 km/L (2,322 g CO2 per litre of petrol / 22.3). It is the hybrid's figure, not the
 2.0 petrol's, because every Harrier search is a hybrid one. Both 104 and a
 pessimistic 120 sit inside the scale's bottom band, so the annual road tax moves

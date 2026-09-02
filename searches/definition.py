@@ -30,8 +30,8 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import cars
-from .cars import Car
+from cars import definitions as cars
+from cars.definitions import Car
 
 SEARCH_DIR = Path(__file__).parent
 SUFFIX = ".toml"

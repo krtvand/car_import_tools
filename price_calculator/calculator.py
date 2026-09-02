@@ -59,6 +59,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
+from cars.specs import ModelSpec
+
 
 def _fold(value: str | None) -> str:
     """The same fold the rest of the project uses, for the two enum-ish columns.
@@ -97,75 +99,10 @@ class Rates:
                 f"{self.fetched_at:%Y-%m-%d %H:%M} {self.source}")
 
 
-# --- the model spec ----------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    """The manufacturer's figures for one model, over a span of years.
-
-    A **Model spec** is true of every car of that model; a lot is one car on one
-    day. Dimensions are the only thing here the landed cost reads — they drive
-    shipping volume, and freight was 17% of the CNF price on the sheet's own
-    reference car, so this is not a rounding input.
-
-    ``co2_gkm`` **is read**, and is now the second thing here that spends money:
-    road tax comes off the Cyprus CO₂ band table (spec §5), so a row with an
-    empty ``co2_gkm`` cannot be priced at all and every lot matching it prints
-    the reason instead of a landed cost. It is not defaulted, guessed or
-    interpolated from a neighbouring model — a car's road tax runs from €45 to
-    €1,500 a year across the scale, and a guess in the middle of that is worth
-    less than a blank.
-
-    ``euro_standard`` and ``fuel`` feed only the one-off registration surcharge,
-    which is €0 for every Euro 6 car and so €0 for everything in
-    ``model_specs.csv`` today. They are deliberately weaker inputs than
-    ``co2_gkm``: an unrecorded ``euro_standard`` is priced at no surcharge and
-    said out loud on the answer, and an unrecorded ``fuel`` is priced from the
-    diesel column, the dearer of the two on every row.
-
-    ``body_model_code`` is descriptive — a space-separated list of the codes this
-    row covers, for a human checking that a lot belongs to this row. It is the
-    upgrade path rather than dead weight: it is what separates a hybrid RAV4
-    (``AXAH54``) from a petrol one (``MXAA54``), and it separates them *more
-    reliably than fuel does* — ``auction.db`` holds the same ``KFEP`` six times
-    with a null ``fuel_type`` and four times as ``petrol``.
-
-    Now that road tax *is* a function of CO₂, the key here wants to grow to
-    ``(make, model, year, body_model_code)``, because a hybrid and a petrol of
-    one generation differ by far more CO₂ than they do centimetres. That is a
-    real gap and not a hypothetical one; it is left open because closing it means
-    a CO₂ figure per body code for every row, and one wrong band is €50–€100
-    against the €25 of freight precision this module frets about elsewhere.
-    Until then a row's ``co2_gkm`` is the generation's figure and the margin
-    inherits that error.
-    """
-
-    make: str
-    model: str
-    year_from: int
-    year_to: int
-    length_cm: Decimal
-    width_cm: Decimal
-    height_cm: Decimal
-    co2_gkm: int | None = None
-    euro_standard: str | None = None
-    fuel: str | None = None
-    body_model_code: str | None = None
-    line: int = 0  # for the overlap error, which names both rows
-
-    @property
-    def volume_m3(self) -> Decimal:
-        """The shipping box, ``Calculator!B38:B40`` — length × width × height."""
-        return (self.length_cm * self.width_cm * self.height_cm) / Decimal(1_000_000)
-
-    def covers(self, year: int) -> bool:
-        return self.year_from <= year <= self.year_to
-
-    def describe(self) -> str:
-        return (f"{self.make} {self.model} {self.year_from}–{self.year_to} · "
-                f"{self.length_cm:.0f}×{self.width_cm:.0f}×{self.height_cm:.0f} cm · "
-                f"{self.volume_m3:.2f} m³")
+# The model spec — a car's dimensions, CO2, Euro standard and fuel — is
+# `cars.ModelSpec`, imported above. It was declared here until the day it
+# became clear that a thing true of every Harrier ever built was living in
+# the module that prices this month's freight: ADR-0008.
 
 
 # --- the cost book -----------------------------------------------------------

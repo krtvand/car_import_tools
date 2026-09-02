@@ -17,7 +17,6 @@ same file would be a second place for the two to disagree about what an omitted
 """
 from __future__ import annotations
 
-import csv
 import json
 import re
 import tomllib
@@ -26,10 +25,10 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from cars.specs import ModelSpecs
 from .calculator import (
     CostBook,
     Margin,
-    ModelSpec,
     Rates,
     RegistrationSurcharge,
     RoadTaxBand,
@@ -38,12 +37,7 @@ from .calculator import (
 )
 
 INPUTS_DIR = Path(__file__).parent / "inputs"
-MODEL_SPECS_PATH = INPUTS_DIR / "model_specs.csv"
 COSTS_PATH = INPUTS_DIR / "costs.toml"
-
-MODEL_SPEC_HEADER = ("make", "model", "year_from", "year_to", "length_cm",
-                     "width_cm", "height_cm", "co2_gkm", "euro_standard",
-                     "fuel", "body_model_code")
 
 # The eight cells of `[taxes.first_registration_surcharge]`, in the order
 # `RegistrationSurcharge` declares them. One list, used by the loader, the stamp
@@ -65,176 +59,21 @@ COST_FIELDS = ("exporter_fixed_fee_jpy", "certificate_of_origin_jpy",
                "resale_costs_eur")
 
 
-class ModelSpecError(ValueError):
-    """A spec table is on disk but cannot be trusted — a bad year span, a duplicate.
-
-    Raised by the loader so a test can assert on the edit that caused it.
-    Callers catch it and degrade to a reason string, so a mis-edited CSV costs
-    you the landed cost and not the page.
-    """
+# The model spec table used to be loaded here, next to the cost book. It is
+# now `cars.specs`, because a car's dimensions are a fact about the car and
+# not a price the world sets this month — ADR-0008. The arithmetic that reads
+# a `ModelSpec` is still `price_calculator.calculator`.
 
 
 def _fold(value: str | None) -> str:
-    """The same fold ``banzai24.bidding`` and ``bazaraki.analysis`` use.
+    """The same fold ``banzai24.bidding``, ``bazaraki.analysis`` and
+    ``cars.specs`` use.
 
-    Shared by copy rather than by import because both of theirs are private, and
-    a public re-export would make this module the owner of a convention it does
-    not own. It is one regex, and a test asserts the three agree.
+    Shared by copy rather than by import because each of theirs is private, and a
+    public re-export would make this module the owner of a convention it does not
+    own. It is one regex.
     """
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())
-
-
-def _rows(path: Path, header: tuple[str, ...]):
-    """``(line_number, row_dict)`` per data row, everything above the header dropped.
-
-    Mirrors :func:`banzai24.bidding._rows`, including *why*: the header is matched
-    folded and the rows come back keyed by the canonical names, so a re-export
-    that recases a column does not silently read every row as blank. It also lets
-    the file carry a few lines of prose at the top, which ``model_specs.csv``
-    uses to say the numbers in it are unverified.
-    """
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        fields: list[str] | None = None
-        wanted = tuple(_fold(name) for name in header)
-        for line_no, raw in enumerate(csv.reader(handle), start=1):
-            cells = [cell.strip() for cell in raw]
-            if not any(cells):
-                continue
-            if fields is None:
-                if tuple(_fold(cell) for cell in cells[:len(header)]) == wanted:
-                    fields = list(header)
-                continue
-            yield line_no, dict(zip(fields, cells))
-        if fields is None:
-            raise ModelSpecError(f"{path.name}: no header row ({','.join(header)})")
-
-
-def _decimal(value: str | None, path: Path, line: int, column: str) -> Decimal:
-    text = (value or "").strip()
-    if not text:
-        raise ModelSpecError(f"{path.name} line {line}: {column} is empty")
-    try:
-        return Decimal(text)
-    except InvalidOperation:
-        raise ModelSpecError(
-            f"{path.name} line {line}: {column} is not a number ({value!r})"
-        ) from None
-
-
-def _int(value: str | None, path: Path, line: int, column: str,
-         blank: int | None = ...) -> int | None:
-    text = (value or "").strip()
-    if not text:
-        if blank is ...:
-            raise ModelSpecError(f"{path.name} line {line}: {column} is empty")
-        return blank
-    try:
-        return int(text)
-    except ValueError:
-        raise ModelSpecError(
-            f"{path.name} line {line}: {column} is not a whole number ({value!r})"
-        ) from None
-
-
-def load_model_specs(path: Path = MODEL_SPECS_PATH) -> list[ModelSpec]:
-    """Read ``model_specs.csv``. Raises :class:`ModelSpecError` on a bad edit."""
-    specs: list[ModelSpec] = []
-    for line, row in _rows(path, MODEL_SPEC_HEADER):
-        make = row.get("make", "").strip()
-        model = row.get("model", "").strip()
-        if not make or not model:
-            raise ModelSpecError(f"{path.name} line {line}: make and model are required")
-
-        year_from = _int(row.get("year_from"), path, line, "year_from")
-        year_to = _int(row.get("year_to"), path, line, "year_to")
-        if year_to < year_from:
-            raise ModelSpecError(
-                f"{path.name} line {line}: year_to {year_to} is before "
-                f"year_from {year_from}"
-            )
-
-        spec = ModelSpec(
-            make=make,
-            model=model,
-            year_from=year_from,
-            year_to=year_to,
-            length_cm=_decimal(row.get("length_cm"), path, line, "length_cm"),
-            width_cm=_decimal(row.get("width_cm"), path, line, "width_cm"),
-            height_cm=_decimal(row.get("height_cm"), path, line, "height_cm"),
-            co2_gkm=_int(row.get("co2_gkm"), path, line, "co2_gkm", blank=None),
-            # Blank is allowed on all three and means three different things.
-            # An empty co2_gkm blanks the whole landed cost, said out loud on
-            # every card that matches the row; an empty euro_standard costs no
-            # surcharge and is flagged; an empty fuel takes the dearer column.
-            # None of them is a load error, because a hole in one row must not
-            # cost the other three rows their prices — the same reason
-            # `ModelSpecs` degrades a bad file to a reason string.
-            euro_standard=row.get("euro_standard", "").strip() or None,
-            fuel=row.get("fuel", "").strip() or None,
-            body_model_code=row.get("body_model_code", "").strip() or None,
-            line=line,
-        )
-        if spec.volume_m3 <= 0:
-            raise ModelSpecError(
-                f"{path.name} line {line}: dimensions give a volume of "
-                f"{spec.volume_m3} m³"
-            )
-        specs.append(spec)
-
-    _reject_overlaps(specs, path)
-    return specs
-
-
-def _reject_overlaps(specs: list[ModelSpec], path: Path) -> None:
-    """Two rows that could both describe one car are an error, at load.
-
-    Checked as *year-span overlap* rather than "two rows matched this car", for
-    the reason ``bidding._reject_overlaps`` gives: at load time there is no car,
-    and the stronger check catches a shadowed row on the day it is written rather
-    than on the morning something finally falls in the gap.
-    """
-    groups: dict[tuple[str, str], list[ModelSpec]] = {}
-    for spec in specs:
-        groups.setdefault((_fold(spec.make), _fold(spec.model)), []).append(spec)
-
-    for group in groups.values():
-        for index, first in enumerate(group):
-            for second in group[index + 1:]:
-                if max(first.year_from, second.year_from) <= min(first.year_to, second.year_to):
-                    raise ModelSpecError(
-                        f"{path.name} lines {first.line} and {second.line}: "
-                        f"{first.make} {first.model} year spans overlap "
-                        f"({first.year_from}–{first.year_to} and "
-                        f"{second.year_from}–{second.year_to})"
-                    )
-
-
-class ModelSpecs:
-    """The spec table, loaded once; one pure lookup per car.
-
-    A missing row is a ``None``, never a guess. Freight is 17% of the CNF price,
-    so a car priced off a neighbouring model's dimensions would be wrong by more
-    than any of the fees this module is careful about — and wrong invisibly.
-    """
-
-    def __init__(self, path: Path | None = None):
-        self.reason: str | None = None
-        try:
-            self.specs = load_model_specs(path or MODEL_SPECS_PATH)
-        except FileNotFoundError:
-            self.specs, self.reason = [], "model specs not loaded"
-        except (ModelSpecError, OSError, UnicodeDecodeError) as exc:
-            self.specs, self.reason = [], f"model specs not loaded: {exc}"
-        self.available = self.reason is None
-
-    def for_car(self, make: str | None, model: str | None, year: int | None) -> ModelSpec | None:
-        if not make or not model or year is None:
-            return None
-        key = (_fold(make), _fold(model))
-        for spec in self.specs:
-            if (_fold(spec.make), _fold(spec.model)) == key and spec.covers(year):
-                return spec
-        return None
 
 
 # --- the cost book -----------------------------------------------------------

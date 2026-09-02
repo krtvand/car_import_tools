@@ -106,6 +106,14 @@ class SheetExtraction(SQLModel, table=True):
     interior_grade: str | None = None   # A–E
     exterior_grade: str | None = None   # A–E
     sheet_grade: str | None = None      # cross-check against grade_origin
+
+    # グレード — the trim, verbatim in whatever the auction house typed. The
+    # only field on the sheet that says *which* car this is rather than what
+    # condition it is in, and on a Harrier that is worth about ¥1.5M. Null on
+    # every row extracted before the prompt asked for it, which is not the same
+    # as a blank box: `banzai24.report` tells the two apart off `raw_json`.
+    # `cars.trims` turns it into English.
+    trim_ja: str | None = None
     sheet_mileage_km: int | None = None # exact — 15415 vs API's 15000
     chassis_full: str | None = None     # unmasked
     damage_marks: str | None = None     # JSON: [{panel, code}]

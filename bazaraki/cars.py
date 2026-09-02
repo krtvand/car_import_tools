@@ -13,7 +13,7 @@ URL is this module's business.
 """
 from __future__ import annotations
 
-from searches.cars import Car
+from cars.definitions import Car
 
 
 class UnknownCar(KeyError):

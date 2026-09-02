@@ -14,6 +14,11 @@ also what joins the two databases — ``bazaraki`` stores ``Mazda`` / ``CX-30``
 and banzai24 stores ``MAZDA`` / ``CX-30``, and both sides fold case and
 punctuation away before comparing, so one spelling here serves both.
 
+The key is what the rest of this package is filed under: :mod:`cars.trims` maps
+a trim's Japanese to its English per ``key``, and :mod:`cars.specs` is joined on
+the make and model rather than the key, because its rows predate the key and are
+matched against whatever a listing calls the car.
+
 Adding a car is three edits: an entry here, a slug in each parser that has to
 fetch it. Missing either slug is caught when that parser runs, not here — this
 module cannot ask a website what it calls something.

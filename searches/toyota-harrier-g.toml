@@ -5,7 +5,7 @@
 # HYBRID X, every 2023 Harrier hybrid is AXUH80 (2WD) or AXUH85 (E-Four)
 # whatever its grade. The chassis code says the drivetrain and nothing else, so
 # the trim line is the only thing left to split them on — see
-# docs/reference/harrier-grades.md, which is where the whole comparison lives.
+# cars/reference/harrier-grades.md, which is where the whole comparison lives.
 #
 # This is the annotated one of the four; the others say only what differs.
 # See mazda-cx30.toml for what the sections mean.
@@ -69,7 +69,7 @@ max_bid_jpy = { private = 2_636_000 }
 
   [band.competitors]
   year_start = 2022
-  mileage_end = 70000
+  mileage_end = 50000
   exclude_phrases = ["hybrid s", "s package", "coming soon"]
 
 [[band]]
@@ -77,8 +77,7 @@ year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
 mileage_start = 35001
 mileage_end = 50000
-#max_bid_jpy = { private = 2_575_000 }
-max_bid_jpy = { private = 2_805_000 }
+max_bid_jpy = { private = 2_575_000 }
 
   [band.competitors]
   year_start = 2022

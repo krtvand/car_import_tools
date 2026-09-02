@@ -1,5 +1,9 @@
 # One search file, two parsers
 
+> Amended by ADR-0008: `cars/` now sits one level below `searches/` and is the
+> dependency root. Everything below still holds — `searches` still imports no
+> parser, and no parser's vocabulary appears in a .toml.
+
 `searches/` is the dependency root. One TOML file per car declares everything
 about that car — the auction requirements, the bands and their max bids, who
 counts as competition in Cyprus, and whether the dashboard shows it — and
@@ -14,7 +18,10 @@ checking them would mean importing the package.
 **No parser vocabulary appears in a .toml.** A search names a car —
 `car = "mazda-cx30"` — and each parser translates: `banzai24/cars.py` holds the
 site's slugs (`MAZDA` / `CX-30`), `bazaraki/cars.py` holds the URL slugs, and
-`searches/cars.py` holds only the make and model as a person says them.
+`cars/definitions.py` holds only the make and model as a person says
+them — it was `searches/cars.py` when this was written, and moved out from
+under `searches` for the reason ADR-0008 gives; nothing about the arrangement
+changed with it.
 
 ## Why
 
