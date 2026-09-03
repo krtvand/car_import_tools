@@ -263,6 +263,29 @@ mileage and year: the API rounds to the nearest 1,000 km while the bands match
 to the kilometre, so a car whose sheet reads 50,415 km is priced from the
 over-50,000 band. See `docs/adr/0001-sheet-outranks-api.md`.
 
+### The glossary
+
+The sheet's two shorthand lists — the equipment items and the 注意事項欄 warnings
+box — print with English beside each item: `ｴｱB — airbag`, `後送 — to be sent
+later`. The English comes from `banzai24/inputs/glossary.json`, keyed by the
+term.
+
+A term is translated by Claude **once, ever**, and read from the file for ever
+after. `extract` learns each sheet's new terms as it reads it, so in normal use
+there is nothing to run; the file is committed, so a colleague's clone is already
+full. The backfill and the manual additions are:
+
+```bash
+uv run python -m banzai24 glossary --dry-run    # what has never been glossed
+uv run python -m banzai24 glossary              # translate it (~$0.002/term)
+uv run python -m banzai24 glossary --terms 純正ナビ 後送
+```
+
+`report` only ever *reads* the file — it makes no model call, and a term nobody
+has glossed prints its Japanese alone. Editing a gloss you disagree with is
+editing one line of JSON, and it holds on every past and future report. Why it
+works this way: `docs/adr/0010-a-term-is-glossed-once.md`.
+
 ### The dashboard
 
 ```bash

@@ -212,6 +212,20 @@ def extractions_by_numbers(lot_numbers: list[str]) -> dict[str, SheetExtraction]
         return {row.lot_number: row for row in rows}
 
 
+def all_extractions() -> list[SheetExtraction]:
+    """Every sheet ever read, newest last.
+
+    Only the glossary backfill wants these: the terms a sheet printed are worth
+    translating whether or not the lot it belonged to has already traded, and a
+    term learned from a car sold last month is one this morning's run does not
+    pay for. See :mod:`banzai24.glossary`.
+    """
+    with Session(_engine) as session:
+        return list(
+            session.exec(select(SheetExtraction).order_by(SheetExtraction.lot_number))
+        )
+
+
 def stats_lots() -> list[AuctionLot]:
     """Every lot a statistics walk stored, cheapest first.
 

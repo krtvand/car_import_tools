@@ -514,6 +514,83 @@ def test_the_warnings_box_is_translated_beside_the_japanese():
     assert "Warnings 注意事項欄" in html
 
 
+# --- the glossary on the card ------------------------------------------------
+#
+# The equipment list and the warnings box are the two the report prints as
+# *terms* rather than as prose, and both are glossed from
+# banzai24/inputs/glossary.json rather than translated at render time. What
+# these test is that the file reaches the page, item by item, and that a term
+# nobody has glossed still prints its Japanese.
+
+
+@pytest.fixture
+def glossary_file(isolated_glossary):
+    """Write entries into this test's glossary (see ``conftest.py``)."""
+    from banzai24 import glossary
+
+    def write(table: dict):
+        glossary.save(table, isolated_glossary)
+    return write
+
+
+def test_each_equipment_item_carries_its_english_on_the_same_line(glossary_file):
+    """The list is two-word terms, so the gloss goes beside the Japanese rather
+    than under it — one item, one line, both languages."""
+    glossary_file({"純正メーカーナビTV": "factory navigation with TV"})
+    html = _render([_view(extraction=_extraction())])
+    assert re.search(
+        r'純正メーカーナビTV</span><span class="gloss">factory navigation with TV</span>',
+        html,
+    )
+
+
+def test_an_unglossed_equipment_item_still_prints_its_japanese(glossary_file):
+    """A term nobody has translated yet is a blank gloss, never a blank line:
+    the sheet said it, so the card shows it."""
+    glossary_file({})
+    html = _render([_view(extraction=_extraction())])
+    assert "純正メーカーナビTV" in html
+    assert 'class="gloss"' not in html
+
+
+def test_the_warnings_box_is_glossed_term_by_term(glossary_file):
+    """取保　スペアキー　後送 is three separate things, and a buyer prices them
+    one at a time — so it renders as three lines, not one wall of Japanese with
+    one paragraph of English under it."""
+    glossary_file({"取保": "manual and service book present",
+                   "スペアキー": "spare key",
+                   "後送": "to be sent later"})
+    html = _render([_view(extraction=_extraction(
+        warnings_ja="取保　スペアキー　後送", warnings_en=None))])
+    for japanese, english in [("取保", "manual and service book present"),
+                              ("スペアキー", "spare key"),
+                              ("後送", "to be sent later")]:
+        assert re.search(rf'{japanese}</span><span class="gloss">{english}</span>', html)
+
+
+def test_half_width_katakana_is_glossed_from_the_full_width_entry(glossary_file):
+    """The houses type in whichever width their software emits. ﾋﾟSD欠品 and
+    ピSD欠品 are one term arriving twice, and one entry has to answer both —
+    otherwise the glossary doubles in size and half of it goes unread."""
+    glossary_file({"ピSD欠品": "navigation SD card missing"})
+    html = _render([_view(extraction=_extraction(warnings_ja="ﾋﾟSD欠品"))])
+    assert "ﾋﾟSD欠品" in html                       # printed as the sheet had it
+    assert "navigation SD card missing" in html    # glossed from the folded key
+
+
+def test_the_old_whole_box_translation_shows_only_while_the_glossary_is_silent(
+        glossary_file):
+    """`warnings_en` is the sentence the sheet read produced before the glossary
+    existed. It is worth keeping while nothing else can read the box, and is
+    noise once the terms are glossed — the same information twice."""
+    silent = _render([_view(extraction=_extraction())])
+    assert "Navi SD card missing" in silent
+
+    glossary_file({"ピSD欠品": "navigation SD card missing"})
+    glossed = _render([_view(extraction=_extraction())])
+    assert "Navi SD card missing" not in glossed
+
+
 def test_the_trim_row_carries_the_japanese_the_english_and_the_tell():
     from cars.definitions import get as car
 
@@ -547,7 +624,7 @@ def test_a_warnings_box_extracted_before_the_translation_still_renders():
     """Rows stored by the earlier prompt have no warnings_en, and re-reading a
     sheet costs money — the Japanese must stand on its own until then."""
     html = _render([_view(extraction=_extraction(warnings_en=None))])
-    assert re.search(r"ﾋﾟSD欠品\s*</dd>", html)
+    assert re.search(r"ﾋﾟSD欠品</span></li>", html)
 
 
 def test_unknown_history_wording_still_renders_without_a_gloss():
@@ -556,10 +633,14 @@ def test_unknown_history_wording_still_renders_without_a_gloss():
 
 
 def test_japanese_is_escaped_not_mangled():
-    """Autoescape must not touch the Japanese, and must still escape markup."""
-    view = _view(extraction=_extraction(warnings_ja="<b>取保</b> & 後送"))
+    """Autoescape must not touch the Japanese, and must still escape markup.
+
+    The warnings box splits on whitespace, so the markup is kept inside one item
+    — the escaping is what is under test, not the splitting."""
+    view = _view(extraction=_extraction(warnings_ja="<b>取保</b>&後送 スペアキー"))
     html = _render([view])
-    assert "&lt;b&gt;取保&lt;/b&gt; &amp; 後送" in html
+    assert "&lt;b&gt;取保&lt;/b&gt;&amp;後送" in html
+    assert "スペアキー" in html
 
 
 # --- collecting from a saved run --------------------------------------------

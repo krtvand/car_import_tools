@@ -157,6 +157,16 @@
   /* The English rendering sits under the Japanese it translates, never beside
      it — the two run together otherwise, and the ja text is pre-wrapped. */
   .note.translation { display: block; margin-top: .25rem; }
+  /* Term lists — the equipment items and the 注意事項欄 box — are the one place
+     the English goes *beside* the Japanese instead of under it: these are
+     two-word terms, not sentences, and a list that alternated Japanese and
+     English lines would double in height and stop scanning as a list. One item
+     per line, its gloss on the same line. */
+  ul.terms { margin: 0; padding: 0; list-style: none; font-size: .875rem; }
+  ul.terms li { margin: .15rem 0; }
+  ul.terms .ja { font-size: .9375rem; }
+  ul.terms .gloss { color: var(--muted); font-size: .8125rem; }
+  ul.terms .gloss::before { content: " — "; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9375rem; }
 
   .marks { display: flex; flex-wrap: wrap; gap: .3rem; }
@@ -397,9 +407,21 @@
         {% endif %}
 
         {% if view.extraction %}
-        {% if view.extraction.warnings_ja %}
+        {# Item by item rather than as one block of Japanese with one block of
+           English under it: the box is a list of separate things wrong with the
+           car, and the buyer prices them one at a time. `warnings_note` is the
+           old whole-box translation, kept only for a box the glossary cannot
+           read a single term of. #}
+        {% if view.warnings %}
         <dt>Warnings 注意事項欄</dt>
-        <dd class="ja warn">{{ view.extraction.warnings_ja }}{% if view.extraction.warnings_en %}<span class="note translation">{{ view.extraction.warnings_en }}</span>{% endif %}</dd>
+        <dd>
+          <ul class="terms">
+            {% for item in view.warnings %}
+            <li><span class="ja warn">{{ item.ja }}</span>{% if item.en %}<span class="gloss">{{ item.en }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% if view.warnings_note %}<span class="note translation">{{ view.warnings_note }}</span>{% endif %}
+        </dd>
         {% endif %}
 
         {% if view.extraction.inspector_notes_ja %}
@@ -428,7 +450,11 @@
         <dd>
           <details>
             <summary>{{ view.equipment | length }} items</summary>
-            <ul>{% for item in view.equipment %}<li class="ja">{{ item }}</li>{% endfor %}</ul>
+            <ul class="terms">
+              {% for item in view.equipment %}
+              <li><span class="ja">{{ item.ja }}</span>{% if item.en %}<span class="gloss">{{ item.en }}</span>{% endif %}</li>
+              {% endfor %}
+            </ul>
           </details>
         </dd>
         {% endif %}

@@ -31,6 +31,7 @@ import base64
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
@@ -38,7 +39,7 @@ from jinja2 import Environment, FileSystemLoader
 from cars import trims
 from cars.definitions import Car
 
-from . import db, normalize, search, sheets
+from . import db, glossary, normalize, search, sheets
 from .bidding import BidPricer, BidQuote
 from .models import AuctionLot, SheetExtraction
 from .money import format_yen
@@ -556,9 +557,60 @@ class LotView:
             "unset": False,
         }
 
+    @cached_property
+    def _glossary(self) -> dict[str, str | None]:
+        """The term table, read once per card.
+
+        Per card rather than per process: a report is thirty file reads of a
+        small JSON, which costs nothing measurable, and a table cached for the
+        life of the process would go stale the moment `extract` and `report` ran
+        in the same one.
+        """
+        return glossary.load()
+
     @property
-    def equipment(self) -> list[str]:
-        return [str(item) for item in _json_list(self.extraction.equipment if self.extraction else None)]
+    def equipment(self) -> list[dict]:
+        """``[{ja, en}, …]`` — each item as printed, with its English beside it.
+
+        Glossed from ``banzai24/inputs/glossary.json`` rather than translated
+        here: the same ``純正ナビ`` must read the same on every card, and this
+        report makes no model calls. An item nobody has glossed yet prints its
+        Japanese alone — see :mod:`banzai24.glossary`.
+        """
+        items = [str(item) for item in
+                 _json_list(self.extraction.equipment if self.extraction else None)]
+        return glossary.gloss(items, self._glossary)
+
+    @property
+    def warnings(self) -> list[dict]:
+        """The 注意事項欄 box, item by item, each with its English.
+
+        The box is one string on the sheet and one string in the database, but
+        it is *written* as a list — ``取保　スペアキー　後送`` is three separate
+        things wrong or missing — and a buyer prices them one at a time. Split
+        and glossed the same way equipment is, for the same reason: the terms
+        repeat across sheets, so they are worth translating once.
+        """
+        if self.extraction is None:
+            return []
+        return glossary.gloss(glossary.split_warnings(self.extraction.warnings_ja),
+                              self._glossary)
+
+    @property
+    def warnings_note(self) -> str | None:
+        """The whole-box translation, shown only when no item could be glossed.
+
+        Rows extracted before the glossary existed carry a ``warnings_en``
+        sentence from the sheet read. It is worth keeping on the page while the
+        glossary has nothing to say about that box — but once the items are
+        glossed it is the same information twice, and the per-item lines are the
+        ones the operator asked for.
+        """
+        if self.extraction is None or not self.extraction.warnings_en:
+            return None
+        if any(item["en"] for item in self.warnings):
+            return None
+        return self.extraction.warnings_en
 
     @property
     def lot_url(self) -> str | None:

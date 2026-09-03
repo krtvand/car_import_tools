@@ -36,6 +36,16 @@ and re-judging this morning is a re-run of this, never a re-fetch:
     uv run python -m banzai24 report --open              # and open the runs index
     uv run python -m banzai24 report --bid-prices my.csv # try a re-tuned price table
 
+`glossary` translates the equipment and 注意事項欄 terms the report prints in
+English. `extract` learns each sheet's new terms as it reads it, so this is the
+backfill — it walks every extraction already in the database:
+
+    uv run python -m banzai24 glossary --dry-run         # what is not yet glossed
+    uv run python -m banzai24 glossary                   # translate and save
+
+A term is paid for once and kept in `banzai24/inputs/glossary.json` for ever;
+`report` reads that file and never calls the model.
+
 Each card's bid block is `max bid − area cost = bid reduced`, read out of the two
 CSVs under `banzai24/inputs/`. Editing one of those is the normal way to change
 what the report says to bid; `report` is free to re-run afterwards.
@@ -154,6 +164,22 @@ def _build_parser() -> argparse.ArgumentParser:
                           f"Default {bidding.AREA_PRICES_PATH.relative_to(_ROOT)} — the "
                           f"year in that name is part of the path, not read off the "
                           f"clock, so nothing silently changes file on 1 January.")
+
+    glo = sub.add_parser(
+        "glossary",
+        help="Translate equipment and warning terms the report has never seen "
+             "(costs money, once per term — see --dry-run)",
+    )
+    glo.add_argument("--dry-run", action="store_true", dest="dry_run",
+                     help="List the terms that would be sent, and stop. Free.")
+    glo.add_argument("--limit", type=int, metavar="N",
+                     help="Translate at most N new terms. The rest keep until "
+                          "the next run — nothing is lost by stopping early.")
+    glo.add_argument("--terms", nargs="+", metavar="TERM",
+                     help="Gloss these terms instead of walking the database. "
+                          "For adding a word seen somewhere else, or for "
+                          "re-asking about one you have just deleted from the "
+                          "file by hand.")
 
     sub.add_parser("searches",
                    help="List the saved searches and what each asks for "
@@ -312,6 +338,55 @@ def main() -> None:
         print(result.summary())
         for mismatch in result.mismatches:
             print(f"  cross-check: {mismatch}")
+        return
+
+    if args.command == "glossary":
+        from . import glossary as glossary_mod
+
+        if args.terms:
+            wanted = list(args.terms)
+        else:
+            db.init_db()
+            extractions = db.all_extractions()
+            wanted = [
+                term
+                for row in extractions
+                for term in glossary_mod.terms_of(row.equipment, row.warnings_ja)
+            ]
+            print(f"{len(extractions)} extraction(s) in the database")
+
+        table = glossary_mod.load()
+        unknown = glossary_mod.missing(wanted, table)
+        print(f"{len(table)} term(s) already glossed, {len(unknown)} new")
+
+        if args.limit:
+            unknown = unknown[: args.limit]
+
+        if not unknown:
+            print("Nothing to translate.")
+            return
+
+        # Output is a couple of dozen tokens per term against a cached prompt,
+        # so the bill is in cents even for a full backfill. Printed anyway,
+        # because `extract` prints its price and a command that spends money
+        # silently teaches you to stop reading.
+        batches = -(-len(unknown) // glossary_mod.BATCH)
+        print(f"{len(unknown)} term(s) to translate with {glossary_mod.MODEL} "
+              f"(effort={glossary_mod.EFFORT}) in {batches} request(s) — "
+              f"roughly ${0.002 * len(unknown):.2f}")
+        if args.dry_run:
+            for term in unknown:
+                print(f"  {term}")
+            print("Dry run — nothing sent, nothing spent.")
+            return
+
+        learned = glossary_mod.ensure(unknown)
+        glossed = sum(1 for value in learned.values() if value)
+        print(f"{glossed} glossed, {len(learned) - glossed} unreadable "
+              f"(recorded, so they are not asked about again) — "
+              f"{glossary_mod.PATH.relative_to(_ROOT)}")
+        for term, english in sorted(learned.items()):
+            print(f"  {term} — {english or '(no gloss)'}")
         return
 
     if args.command == "stats":

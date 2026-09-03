@@ -29,7 +29,7 @@ from pathlib import Path
 import anthropic
 from pydantic import BaseModel, Field
 
-from . import db, normalize
+from . import db, glossary, normalize
 from .models import AuctionLot, SheetExtraction
 
 MODEL = "claude-opus-5"
@@ -500,6 +500,7 @@ class ExtractResult:
     skipped: int = 0
     failed: int = 0
     cost_usd: float = 0.0
+    terms_learned: int = 0                  # new glossary entries, see banzai24.glossary
     mismatches: list[str] = None            # "35159: grade, mileage"
 
     def __post_init__(self):
@@ -513,6 +514,8 @@ class ExtractResult:
             bits.append(f"{self.failed} failed")
         if self.cost_usd:
             bits.append(f"~${self.cost_usd:.2f}")
+        if self.terms_learned:
+            bits.append(f"{self.terms_learned} terms glossed")
         if self.mismatches:
             bits.append(f"{len(self.mismatches)} cross-check mismatches")
         return ", ".join(bits)
@@ -632,6 +635,22 @@ def run_extract(
         checks = cross_check(extraction.data, lot)
         if bad := checks.disagreements:
             result.mismatches.append(f"{lot.lot_short}: {', '.join(bad)}")
+
+        # Learn this sheet's new equipment and warning terms while it is in
+        # hand. Almost always free — after the first few runs a sheet prints
+        # nothing nobody has seen — and never allowed to cost the extraction it
+        # rides on: the sheet read is paid for and already in the database, so a
+        # glossary failure is a line of output, not a lost lot. The `glossary`
+        # command picks up whatever was missed.
+        try:
+            learned = glossary.ensure(
+                glossary.terms_of(extraction.data.equipment,
+                                  extraction.data.warnings_ja),
+                client=client,
+            )
+            result.terms_learned += len(learned)
+        except (anthropic.APIError, RuntimeError) as exc:
+            print(f"  {lot.lot_short}: glossary not updated — {exc}")
 
         if target := (run_dir_of(lot) or run_dir):
             with (target / "extractions.jsonl").open("a", encoding="utf-8") as handle:

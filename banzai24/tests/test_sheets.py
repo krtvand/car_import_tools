@@ -33,7 +33,7 @@ import anthropic
 import pytest
 from sqlmodel import create_engine
 
-from banzai24 import db, normalize, sheets
+from banzai24 import db, glossary, normalize, sheets
 from banzai24.models import AuctionLot
 from banzai24.sheets import DamageMark, SheetData
 
@@ -521,6 +521,7 @@ def test_each_extraction_is_written_to_the_run_that_downloaded_its_sheet(
         lot_number=lot.lot_number, data=_sheet_data(), raw_json="{}",
         sheet_sha256=lot.sheet_sha256, model_id="claude-opus-5",
     ))
+    monkeypatch.setattr(glossary, "translate", lambda terms, client=None: {})
 
     sheets.run_extract([cx30, rav4], run_dir=None, client=object())
 
@@ -532,3 +533,70 @@ def test_each_extraction_is_written_to_the_run_that_downloaded_its_sheet(
         "47-1312-35159"]
     assert [r["lot_number"] for r in lines("2026-08-09_090412_TOYOTA-RAV4")] == [
         "65-1953-02391"]
+
+
+def test_a_sheet_teaches_the_glossary_the_terms_it_printed(
+    runs_root, monkeypatch, tmp_path, isolated_glossary
+):
+    """Terms are learned while the sheet is in hand, not looked up later.
+
+    `report` makes no model calls, so a term that is not in the file when the
+    page is built prints untranslated. Learning them here — one small request,
+    and only when the sheet printed something new — is what keeps the glosses
+    ahead of the reports that read them.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    monkeypatch.setattr(db, "_engine", engine)
+    db.init_db()
+
+    lot = _downloaded(runs_root, "2026-08-09_090000_MAZDA-CX-30", "47-1312-35159")
+    data = _sheet_data()
+    data.equipment = ["ｴｱB", "純正ナビ"]
+    data.warnings_ja = "ﾋﾟSD欠品"
+    monkeypatch.setattr(sheets, "extract_lot", lambda lot, **kw: sheets.Extraction(
+        lot_number=lot.lot_number, data=data, raw_json="{}",
+        sheet_sha256=lot.sheet_sha256, model_id="claude-opus-5",
+    ))
+
+    asked = []
+
+    def fake_translate(terms, client=None):
+        asked.append(list(terms))
+        return {"エアB": "airbag", "純正ナビ": "factory navigation",
+                "ピSD欠品": "navigation SD card missing"}
+
+    monkeypatch.setattr(glossary, "translate", fake_translate)
+    result = sheets.run_extract([lot], run_dir=None, client=object())
+
+    # Folded on the way in: the sheet's half-width ｴｱB and the full-width エアB
+    # another house types are one entry, asked about once.
+    assert asked == [["エアB", "純正ナビ", "ピSD欠品"]]
+    assert result.terms_learned == 3
+    assert glossary.load(isolated_glossary)["ピSD欠品"] == "navigation SD card missing"
+
+
+def test_a_glossary_failure_does_not_lose_a_paid_extraction(
+    runs_root, monkeypatch, tmp_path, isolated_glossary
+):
+    """The sheet read is the expensive half and is already in the database by
+    the time the terms are glossed. A translation that fails is a line of
+    output; the `glossary` command picks the terms up next time."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    monkeypatch.setattr(db, "_engine", engine)
+    db.init_db()
+
+    lot = _downloaded(runs_root, "2026-08-09_090000_MAZDA-CX-30", "47-1312-35159")
+    monkeypatch.setattr(sheets, "extract_lot", lambda lot, **kw: sheets.Extraction(
+        lot_number=lot.lot_number, data=_sheet_data(), raw_json="{}",
+        sheet_sha256=lot.sheet_sha256, model_id="claude-opus-5",
+    ))
+
+    def boom(terms, client=None):
+        raise RuntimeError("glossary: no answer for 3 terms")
+
+    monkeypatch.setattr(glossary, "translate", boom)
+    result = sheets.run_extract([lot], run_dir=None, client=object())
+
+    assert result.extracted == 1
+    assert result.terms_learned == 0
+    assert db.extraction_for("47-1312-35159") is not None

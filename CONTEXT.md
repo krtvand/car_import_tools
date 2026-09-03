@@ -33,6 +33,26 @@ sometimes written in Japanese (`トビA`).
 _Avoid_: Defect, damage code (the *code* is the letter; the *mark* is the code
 placed on a panel)
 
+**Gloss**:
+The English beside a Japanese term on the report — "power steering" against
+`PS`, "spare key" against `スペアキー`. Never a replacement for the Japanese: the
+sheet's own wording stays on the card, and the gloss sits next to it. A term
+nobody has glossed prints alone, which costs a glance at the scan; a wrong gloss
+would be read as fact.
+_Avoid_: Translation (the report translates nothing at render time — see
+*Glossary*), meaning, label
+
+**Glossary**:
+`banzai24/inputs/glossary.json` — every equipment and 注意事項欄 term this repo
+has ever met, with its gloss. A *term's* property, not a lot's, so it is
+translated by Claude once and read for ever after: `PS` is on nearly every sheet
+and is paid for on none of them but the first. A committed, hand-editable file,
+not a cache — a correction typed into it is permanent, and `null` is a real
+entry meaning "asked, and unreadable". Filled by `extract` as it reads each
+sheet and by the `glossary` command; only ever *read* by the report, which makes
+no model calls. See `docs/adr/0010-a-term-is-glossed-once.md`.
+_Avoid_: Dictionary, translation cache, lookup table
+
 **車歴**:
 Whether the sheet says the car was privately owned, ex-rental, ex-lease and so
 on. A price input, not a requirement — an unreadable box is priced as private.
