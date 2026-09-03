@@ -1,18 +1,28 @@
-"""Who is already selling this car in Cyprus for less than you would have to charge.
+"""Who is selling this car in Cyprus at a price a buyer would weigh against yours.
 
 One panel per saved search, one section per **band** — because the band is the
 thing that has a price. A band's max bid gives a landed cost; the landed cost
 plus resale costs plus the profit that car has to earn — a flat
 ``expected_profit_eur``, or an ``expected_profit_percent`` of the landed cost —
-gives a **cyprus sell price**; and a **competitor** is a Cyprus advert, inside that band's declared
-competitor bounds, asking less than that — live, or gone within the last
+gives a **cyprus sell price**; and a **competitor** is a Cyprus advert, inside
+that band's declared competitor bounds, asking no more than that price plus
+``[competitors] price_ceiling_percent`` — live, or gone within the last
 ``COMPETITOR_HISTORY_DAYS``.
+
+That last clause is the **ceiling**, five per cent over the sell price unless
+the search says otherwise. It exists because the two obvious lines are both
+wrong: drawn at the sell price exactly, the table cannot show a car asking €134
+more than you that sold in a month, which is the clearest evidence the page can
+carry that your price works; drawn nowhere, a band is two hundred rows and the
+three that matter are lost in them. Everything past the ceiling is counted by
+:func:`_stuck_above` instead of listed. See
+``docs/adr/0011-a-competitor-is-priced-near-you.md``.
 
 Three numbers sit together on every section on purpose:
 
 * the **cyprus sell price** — what you must get,
 * the **Cyprus estimate** — what the market says you would get,
-* the competitors underneath both.
+* the competitors around both.
 
 If the first is above the second the band does not work at any profit, and the
 length of the competitor list is a footnote. That comparison is the reason the
@@ -24,12 +34,14 @@ saying which of those it is. The same instinct as the runs index, which dims a
 run it cannot open rather than hiding it: hiding it is how it gets forgotten.
 
 Every row is marked by how long the advert took to leave the market, and the
-reading is the queue: buyers work a market cheapest-acceptable-first, so a
-competitor is one car ahead of you in that order and its age is a fact about
-your own wait. Gone quickly means the queue is moving; still listed after
-``OVERPRICED_AFTER_DAYS`` means it is not. That is why a *disappeared* advert is
-the friendly mark here while ``bazaraki.analysis`` treats the same event as a
-mere sold-proxy — see ``docs/adr/0007-competitors-are-a-queue.md``.
+reading is the queue: buyers work a market cheapest-acceptable-first, so an
+advert under your sell price is one car ahead of you in that order and one in
+the headroom above it is the next car behind you. The mark judges *that
+advert's* price either way — gone quickly means it worked, still listed after
+``OVERPRICED_AFTER_DAYS`` means the market refused it — but what it means for
+you flips with the side. That is why a *disappeared* advert is the friendly mark
+here while ``bazaraki.analysis`` treats the same event as a mere sold-proxy —
+see ``docs/adr/0007-competitors-are-a-queue.md``.
 
 One advert can be dismissed by hand — **manually excluded**, with the reason
 written into ``carlisting.manual_exclusion_reason``. That is the inverse of a
@@ -250,13 +262,18 @@ def _mark(listing, age: int | None) -> str:
 
 @dataclass(frozen=True)
 class CompetitorRow:
-    """One Cyprus advert asking less than a band's cyprus sell price.
+    """One Cyprus advert asking no more than a band's ceiling.
 
     Live, or gone within :data:`COMPETITOR_HISTORY_DAYS`. ``mark`` is what its
     ``age`` earned it; ``gone`` says which side of the market it is on, because
     the same age reads differently for a car that left and one still sitting.
 
-    A row carrying an ``exclusion_reason`` is *not* one of these: the operator
+    ``versus_sell_price`` is what the band's price says about this advert:
+    positive is the euro it undercuts you by, negative the euro of headroom you
+    have over it — never more than ``price_ceiling_percent`` of the sell price,
+    because past that it is not a row at all.
+
+    A row carrying an ``exclusion_reason`` is *not* a competitor: the operator
     has read it and judged it out. It is still rendered, at its price, because
     bazaraki shows it under the same filters and it will look like a competitor
     again tomorrow — but nothing counts it and it has no ``mark`` worth reading.
@@ -266,7 +283,10 @@ class CompetitorRow:
     url: str
     title: str
     price: float
-    under_by: float          # euro below the sell price; the size of the problem
+    # Euro below the band's cyprus sell price. Negative down to the ceiling,
+    # because an advert a little over your price is still the offer a buyer
+    # weighs against yours — which is why this number is signed.
+    versus_sell_price: float
     year: int | None
     mileage_km: int | None
     fuel_type: str | None
@@ -281,6 +301,15 @@ class CompetitorRow:
     @property
     def excluded(self) -> bool:
         return self.exclusion_reason is not None
+
+    @property
+    def undercuts(self) -> bool:
+        """Ahead of you in the queue: cheaper than you would have to charge.
+
+        The rest of the rows are in the headroom between your sell price and the
+        ceiling — competition, but competition you are not behind.
+        """
+        return not self.excluded and self.versus_sell_price > 0
 
 
 @dataclass(frozen=True)
@@ -298,16 +327,21 @@ class BandPanel:
     # euro above is what it came to; this is what was actually declared, so the
     # panel can say 20% and not leave the reader deriving it.
     profit_percent: float | None = None
-    # Every advert rendered under the sell price, cheapest first — including the
-    # manually excluded ones, which are shown and counted nowhere. ``competitors``
-    # is the half of this that the word actually covers.
+    # Every advert under the ceiling, cheapest first — including the manually
+    # excluded ones, which are shown and counted nowhere. ``competitors`` is the
+    # half of this that the word actually covers.
     rows: tuple[CompetitorRow, ...] = ()
     considered: int = 0            # adverts inside the bounds, priced or not
-    # Live adverts *above* the sell price that have not moved in
-    # OVERPRICED_AFTER_DAYS. Never rows — they hold the better offer, so they are
-    # not competitors — but without the count the table reads as an easy sale
-    # while the market just above you is frozen. See
-    # .scratch/market-state-panel/spec.md, which replaces this line with a panel.
+    # The most an advert may ask and still be a competitor, and the percentage
+    # over the sell price it came from. Both on the panel because the page has
+    # to say where its own edge is: a list that stops somewhere unstated reads
+    # as the whole market.
+    ceiling_eur: float | None = None
+    ceiling_percent: float | None = None
+    # Live adverts *past* the ceiling that have not moved in
+    # OVERPRICED_AFTER_DAYS. Never rows — that is what the ceiling is for — but
+    # without the count the table reads as an easy sale while the market above
+    # you is frozen. See .scratch/market-state-panel/spec.md.
     stuck_above: int = 0
     problem: str | None = None     # why there is no sell price on this section
     warning: str | None = None     # there is one, but do not lean on it
@@ -324,6 +358,16 @@ class BandPanel:
     @property
     def excluded(self) -> tuple[CompetitorRow, ...]:
         return tuple(row for row in self.rows if row.excluded)
+
+    @property
+    def undercutting(self) -> tuple[CompetitorRow, ...]:
+        """The competitors ahead of you in the queue — cheaper than you must charge.
+
+        Counted separately from :attr:`competitors` because the table reaches
+        above the sell price now: "14 competitors" and "0 asking less" are the
+        same band, and either number alone is read as the other.
+        """
+        return tuple(row for row in self.competitors if row.undercuts)
 
     @property
     def underwater(self) -> bool:
@@ -352,6 +396,10 @@ class SearchPanel:
     def competitor_count(self) -> int:
         return sum(len(band.competitors) for band in self.bands)
 
+    @property
+    def undercut_count(self) -> int:
+        return sum(len(band.undercutting) for band in self.bands)
+
 
 @dataclass(frozen=True)
 class Dashboard:
@@ -366,6 +414,16 @@ class Dashboard:
     @property
     def competitor_count(self) -> int:
         return sum(panel.competitor_count for panel in self.panels)
+
+    @property
+    def undercut_count(self) -> int:
+        """How many of them are asking less than the band they compete with must.
+
+        Carried beside the total everywhere it is printed: the two numbers
+        answer different questions, and one of them alone reads as either a
+        market nobody is in or a market you cannot enter.
+        """
+        return sum(panel.undercut_count for panel in self.panels)
 
 
 # --- building it -------------------------------------------------------------
@@ -407,11 +465,11 @@ def _coverage_note(search: SearchDefinition, run) -> str | None:
 
 
 def _still_relevant(listing, now: datetime) -> bool:
-    """Live, or gone recently enough to still describe today's queue.
+    """Live, or gone recently enough to still describe today's market.
 
-    A competitor that vanished in June says nothing about who is ahead of you
-    now, so it is dropped rather than shown grey — the page has one job and a
-    row that cannot be read against today's price is not doing it.
+    An advert that vanished in June says nothing about who you are selling
+    against now, so it is dropped rather than shown grey — the page has one job
+    and a row that cannot be read against today's price is not doing it.
     """
     if listing.is_active:
         return True
@@ -419,17 +477,27 @@ def _still_relevant(listing, now: datetime) -> bool:
     return gone is not None and (now - gone).days <= COMPETITOR_HISTORY_DAYS
 
 
-def _rows_for(band: Band, listings, filters: CompetitorFilters,
-              sell_price: float, now: datetime | None = None,
-              ) -> tuple[tuple[CompetitorRow, ...], int]:
-    """The adverts under a band's sell price, cheapest first.
+def _rows_for(band: Band, listings, filters: CompetitorFilters, sell_price: float,
+              now: datetime | None = None) -> tuple[tuple[CompetitorRow, ...], int]:
+    """The adverts competing with a band, cheapest first, and how many were read.
 
-    Cheapest first because that is the order buyers work through — it is the
-    order of the queue, so the cheapest undercut is both the one that costs the
+    Inside the band's competitor bounds, past the ``[competitors]`` filters, and
+    asking no more than :meth:`CompetitorFilters.ceiling` — the cyprus sell price
+    plus ``price_ceiling_percent``. Cheapest first because that is the order
+    buyers work through, so the cheapest undercut is both the one that costs the
     sale and the first one to clear.
 
-    A car that sold for *more* than the sell price is not here, however fast it
-    went: you hold the better offer, so it was never ahead of you.
+    The ceiling is what keeps this a list you can read. A car asking a little
+    more than you have to is the same offer to a buyer who means to haggle, so
+    it competes; a car asking a third more is a different market, and putting it
+    on the table would bury the rows that matter under two hundred that do not.
+    Those are counted by :func:`_stuck_above` instead. See
+    ``docs/adr/0011-a-competitor-is-priced-near-you.md``.
+
+    ``considered`` is every advert inside the bounds, priced or not, so that an
+    empty list can say what it looked at. An advert with no price at all is
+    counted there and is never a row: it cannot be shown to be under the
+    ceiling, and a filter that keeps what it cannot read is not a filter.
 
     **Manually excluded** adverts are in this list but are not competitors. They
     keep their place in the price order — that is what makes them recognisable
@@ -439,6 +507,7 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
     with, and an advert that has left the site is one you will never meet again.
     """
     now = _naive(now) or datetime.now(timezone.utc).replace(tzinfo=None)
+    ceiling = filters.ceiling(sell_price)
     considered = 0
     rows = []
     for listing in listings:
@@ -451,7 +520,7 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
             continue
         if excluded is None:
             considered += 1
-        if listing.price is None or listing.price >= sell_price:
+        if listing.price is None or listing.price > ceiling:
             continue
         age = _age_days(listing, now)
         rows.append(CompetitorRow(
@@ -459,7 +528,7 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
             url=listing.url,
             title=listing.title,
             price=listing.price,
-            under_by=sell_price - listing.price,
+            versus_sell_price=sell_price - listing.price,
             year=listing.year,
             mileage_km=listing.mileage_km,
             fuel_type=listing.fuel_type,
@@ -477,25 +546,30 @@ def _rows_for(band: Band, listings, filters: CompetitorFilters,
     return tuple(rows), considered
 
 
-def _stuck_above(band: Band, live, filters: CompetitorFilters,
-                 sell_price: float, now: datetime | None = None) -> int:
-    """Live adverts above the sell price that nobody has bought in a month.
+def _stuck_above(band: Band, live, filters: CompetitorFilters, sell_price: float,
+                 now: datetime | None = None) -> int:
+    """Live adverts priced past the ceiling that nobody has bought in a month.
 
     The queue only helps you if it is moving on *both* sides. Cars ahead of you
     clearing is good news; cars behind you frozen is the market saying it will
-    not pay that much, and none of them can ever appear as a competitor. One
-    number, because the operator asked for the table to stay a competitor list.
+    not pay that much, and none of them can ever appear as a row. One number,
+    because the operator asked for the table to stay a competitor list.
+
+    Measured from the ceiling rather than the sell price so that it and the
+    table never describe the same advert twice: everything between the two is a
+    row, everything above it is this count.
 
     A **manually excluded** advert is not counted here either: this is the same
     panel making the same judgement, and a car available only by order is not
     the market refusing your price.
     """
     now = _naive(now) or datetime.now(timezone.utc).replace(tzinfo=None)
+    ceiling = filters.ceiling(sell_price)
     return sum(
         1 for listing in live
         if _in_band(listing, band) and _passes(listing, filters)
         and listing.manual_exclusion_reason is None
-        and listing.price is not None and listing.price >= sell_price
+        and listing.price is not None and listing.price > ceiling
         and (_age_days(listing, now) or 0) > OVERPRICED_AFTER_DAYS
     )
 
@@ -560,6 +634,8 @@ def _band_panel(search: SearchDefinition, band: Band, listings, live, rates,
         rows=rows,
         considered=considered,
         stuck_above=_stuck_above(band, live, filters, sell_price),
+        ceiling_eur=filters.ceiling(sell_price),
+        ceiling_percent=filters.price_ceiling_percent,
         problem=None if margin.cyprus_eur is not None else margin.reason,
         warning=margin.warning,
     )

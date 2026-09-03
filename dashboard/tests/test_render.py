@@ -19,9 +19,10 @@ BAND = Band(year=2023, mileage_start=0, mileage_end=50_000,
 
 def _row(**overrides) -> competitors.CompetitorRow:
     base = dict(ad_id=1, url="https://bazaraki.com/adv/1", title="Mazda CX-30",
-                price=16_000.0, under_by=1_859.0, year=2021, mileage_km=80_000,
-                fuel_type="Petrol", gearbox="Automatic", seller_type="private",
-                age=40, mark=competitors.OVERPRICED, gone=False)
+                price=16_000.0, versus_sell_price=1_859.0, year=2021,
+                mileage_km=80_000, fuel_type="Petrol", gearbox="Automatic",
+                seller_type="private", age=40, mark=competitors.OVERPRICED,
+                gone=False)
     return competitors.CompetitorRow(**{**base, **overrides})
 
 
@@ -85,14 +86,23 @@ def test_a_priced_band_shows_all_three_numbers_and_the_advert():
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
             profit_eur=2_000.0, sell_price_eur=17_859.0,
-            cyprus_estimate_eur=20_705.0, rows=(_row(),), considered=119,
-            stuck_above=3),))))
+            cyprus_estimate_eur=20_705.0, considered=119,
+            ceiling_eur=18_751.95, ceiling_percent=5.0, stuck_above=3,
+            rows=(_row(), _row(ad_id=2, price=18_500.0,
+                               versus_sell_price=-641.0))),))))
 
     assert "€17,859" in html and "€20,705" in html and "€15,859" in html
     assert "https://bazaraki.com/adv/1" in html
+    # Both sides of the sell price are rows, up to the ceiling, and the sign is
+    # the reading.
     assert "−€1,859" in html
+    assert "+€641" in html
+    # The page says where its own edge is, or the list reads as the whole market.
+    assert "ceiling (+5%)" in html and "€18,752" in html
+    # Two counts, never one: everyone weighed against you, and who is ahead.
+    assert "competitors" in html and "asking less" in html
     # Jinja keeps the source line breaks; the sentence is what matters.
-    assert "3 advert" in html and "above your price" in html
+    assert "3 advert" in html and "above the ceiling" in html
     assert "not moving" in html
 
 
@@ -132,6 +142,21 @@ def test_an_empty_list_says_what_it_looked_at():
 
     assert "Nothing under €17,859" in html
     assert "119 adverts inside" in html
+
+
+def test_a_band_with_rows_only_in_the_headroom_still_says_nobody_undercuts_you():
+    """The ceiling put those rows on the page; they must not be read as
+    undercuts because they are on it."""
+    html = cli.render(_dashboard(competitors.SearchPanel(
+        name="mazda-cx30", car="Mazda CX-30",
+        bands=(competitors.BandPanel(
+            band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
+            profit_eur=2_000.0, sell_price_eur=17_859.0,
+            cyprus_estimate_eur=20_705.0, considered=119,
+            rows=(_row(price=18_500.0, versus_sell_price=-641.0),)),))))
+
+    assert "Nothing under €17,859" in html
+    assert "+€641" in html
 
 
 def test_a_band_with_nothing_declared_says_so_instead_of_showing_a_list():
@@ -192,5 +217,6 @@ def test_the_index_summary_separates_adverts_found_from_searches_unpriced():
         competitors.SearchPanel(name="b", bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1),)),
     ))
-    assert "1 advert asking less" in summary
+    assert "1 competing advert in Cyprus" in summary
+    assert "1 asking less than a cyprus sell price" in summary
     assert "1 search not priced yet" in summary

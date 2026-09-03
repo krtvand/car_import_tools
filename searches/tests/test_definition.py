@@ -248,6 +248,8 @@ def test_an_unknown_car_lists_the_ones_that_exist():
     ({"competitors": {"fule_type": []}}, "fule_type"),
     ({"dashboard": {"enabled": "yes"}}, "true or false"),
     ({"competitors": {"fuel_type": "petrol"}}, "must be a list"),
+    ({"competitors": {"price_ceiling_percent": -5}}, "must not be negative"),
+    ({"competitors": {"price_ceiling_percent": "5%"}}, "must be a number"),
     ({"band": [{"year": 2023, "mileage_start": 60_000, "mileage_end": 50_000,
                 "max_bid_jpy": {"private": 1}}]}, "below mileage_start"),
 ])
@@ -420,6 +422,33 @@ def test_excluded_phrases_are_folded_the_same_way():
     filters = _parse(competitors={"exclude_phrases": ["Hybrid X", "X package"]}).competitors
     assert filters.exclude_phrases == ("hybrid x", "x package")
     assert filters.declared
+
+
+def test_a_search_that_says_nothing_still_has_a_ceiling():
+    """5% of the sell price, because a competitor asking a little more than you
+    have to is the same offer to a buyer who means to haggle. A search that
+    never heard of the key still gets the line drawn somewhere it can print."""
+    filters = _parse().competitors
+    assert filters.price_ceiling_percent == 5.0
+    assert filters.ceiling(20_000.0) == 21_000.0
+    # And it is not, on its own, a declared filter: every search has one.
+    assert filters.declared is False
+
+
+def test_a_search_can_widen_its_ceiling():
+    filters = _parse(competitors={"price_ceiling_percent": 12.5}).competitors
+    assert filters.ceiling(20_000.0) == 22_500.0
+
+
+def test_a_band_inherits_the_searchs_ceiling():
+    """The bounds and the phrases are a band's own; how far above your price you
+    look is one policy for the search, applied to each band's own sell price."""
+    search = _parse(competitors={"price_ceiling_percent": 8},
+                    band=[{"year": 2023, "mileage_end": 50_000,
+                           "max_bid_jpy": {"private": 1},
+                           "competitors": {"year_start": 2019, "mileage_end": 120_000,
+                                           "exclude_phrases": ["hybrid x"]}}])
+    assert search.competitors_for(search.bands[0]).price_ceiling_percent == 8
 
 
 # --- the shipped files -------------------------------------------------------

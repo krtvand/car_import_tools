@@ -205,15 +205,28 @@ point: when the required price is above the estimate, the car does not work at
 any profit, and no competitor has to do anything for that to be true.
 
 **Competitor**:
-One Cyprus advert, inside a band's declared competitor bounds, asking less than
-that band's *cyprus sell price* — live, or gone from the market within the last
-three months. Deliberately not the same car: an older one, or one with more
-kilometres on it, still takes the sale. A car that sold for *more* than your
-sell price is not a competitor at all, because you hold the better offer. Not a
-**Cyprus comparable**, which is a median over similar cars and describes a
-market — a competitor is one advert, with a link, that undercuts you
-specifically.
-_Avoid_: Rival, listing, comp
+One Cyprus advert, inside a band's declared competitor bounds, asking no more
+than that band's *ceiling* — live, or gone from the market within the last three
+months. Deliberately not the same car: an older one, or one with more kilometres
+on it, still takes the sale. Deliberately not only the cheaper ones either: a
+car asking a little more than you must is the same offer to a buyer who means to
+haggle. A car asking a third more is a different market and is not a competitor
+at all. Not a **Cyprus comparable**, which is a median over similar cars and
+describes a market — a competitor is one advert, with a link, priced where a
+buyer would weigh it against yours. See
+`docs/adr/0011-a-competitor-is-priced-near-you.md`.
+_Avoid_: Rival, listing, comp — and "competitor" for the cheaper half alone,
+which is *asking less* and is a count on a band, not a different word
+
+**Ceiling**:
+The most an advert may ask and still be a competitor: a band's *cyprus sell
+price* plus `[competitors] price_ceiling_percent`, which is 5% unless the search
+says otherwise. A percentage and not a euro figure because it is haggling room,
+which scales with the car — the same 5% is €900 on a CX-30 and €1,500 on a
+Harrier. Where the competitors table stops, and therefore printed on it: a list
+that stops somewhere unstated is read as the whole market. Everything above it
+is counted in one line under the table and never listed.
+_Avoid_: Max price, cut-off, threshold, price filter
 
 **Advert age**:
 How long one Cyprus advert has been on sale — from the day it was published to
@@ -226,12 +239,16 @@ _Avoid_: Days listed, time on market, freshness
 
 **The queue**:
 The order buyers work through a market: the cheapest acceptable car first, then
-the next. A *competitor* is one car ahead of you in it. What a competitor's
-**advert age** tells you is therefore about your own wait, not only about them —
-cars ahead of you leaving quickly means the queue is moving and your turn comes
-later rather than never, while cars ahead of you sitting still means it is not
-moving at all. The reason the same fact — an advert gone from the market — is
-read as good news here and as a mere *sold-proxy* elsewhere.
+the next. A *competitor* asking less than your **cyprus sell price** is one car
+ahead of you in it; one in the headroom up to the *ceiling* is the next car
+behind you. What a competitor's **advert age** tells you is therefore about your
+own wait, not only about them — cars ahead of you leaving quickly means the
+queue is moving and your turn comes later rather than never, while cars ahead of
+you sitting still means it is not moving at all. Read from the other side, a car
+just *behind* you that sold quickly is the strongest evidence the page carries
+that your price works, and one nobody has bought in a month is the market saying
+it will not pay what you need. The reason the same fact — an advert gone from
+the market — is read as good news here and as a mere *sold-proxy* elsewhere.
 _Avoid_: Pipeline, funnel, market position
 
 **Manually excluded**:

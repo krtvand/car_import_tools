@@ -294,16 +294,36 @@ uv run python -m dashboard open       # …and open them in the parser's Chrome
 ```
 
 Two static pages in `runs/`: `index.html` (the last ten runs, with a link) and
-`competitors.html` — for each enabled search, **who is already selling this car
-in Cyprus for less than you would have to charge**.
+`competitors.html` — for each enabled search, **who is selling this car in
+Cyprus at a price a buyer would weigh against yours**.
 
 One section per band. A band's max bid gives a landed cost; landed cost plus
 resale costs plus the profit that car has to earn — `expected_profit_eur`, or
-`expected_profit_percent` of the landed cost — gives a **cyprus sell price**;
-a **competitor** is a live Cyprus advert, inside that band's declared competitor
-bounds, asking less. The **Cyprus estimate** sits beside the sell price, because
-if your required price is above it the band does not work at any profit and the
-length of the list is a footnote.
+`expected_profit_percent` of the landed cost — gives a **cyprus sell price**; a
+**competitor** is a Cyprus advert, inside that band's declared competitor
+bounds, asking no more than that price plus `price_ceiling_percent` — the
+**ceiling**, 5% unless the search sets it under `[competitors]`. Cheapest first,
+which is the order buyers work through.
+
+```toml
+[competitors]
+fuel_type = ["hybrid petrol"]
+price_ceiling_percent = 5     # the default; raise it to see further above you
+```
+
+Every row prints the euro between its price and yours: `−€1,766` is a car
+undercutting you, `+€134` a car in the headroom just behind you. The section
+carries both counts, because "14 competitors" and "0 asking less" are the same
+band. The **Cyprus estimate** sits beside the sell price, because if your
+required price is above it the band does not work at any profit and the length of
+the list is a footnote. Adverts priced past the ceiling and unsold for a month
+are counted in one line under the table — the market above you not moving is
+worth knowing and is not worth 150 rows.
+
+Why the ceiling is above the sell price rather than on it:
+`docs/adr/0011-a-competitor-is-priced-near-you.md`. A 2022 RAV4 asking €134 more
+than you must, gone in 30 days, is the one fact separating "I am next in the
+queue" from "the market ends below me".
 
 An empty list is never rendered as good news. A search with no profit set, no
 competitor bounds, or no completed bazaraki crawl covering its range gets a

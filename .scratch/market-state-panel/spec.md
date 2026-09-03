@@ -2,6 +2,15 @@
 
 Status: needs-triage
 
+> **Partly answered on 2026-09-03.** The competitors table now reaches 5% above
+> the cyprus sell price — see `docs/adr/0011-a-competitor-is-priced-near-you.md`
+> — so the nearest of the stuck stock, and anything that *sold* just above the
+> sell price, are rows with their own age marks. That is the third bullet below,
+> the one nothing on the page could show. The interim footnote survives, now
+> counting from the ceiling rather than the sell price, and the first two
+> bullets are still unanswered. Re-triage before building: the panel is smaller
+> than it was.
+
 A second panel beside the competitors table, answering the question the
 competitors table deliberately cannot: **how hard is this car to sell at all?**
 

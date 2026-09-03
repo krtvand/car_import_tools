@@ -1,4 +1,4 @@
-{# The competitors panel: per band, what you must charge and who is under it.
+{# The competitors panel: per band, what you must charge and who else is selling.
    Same palette as index.html.j2 and report.html.j2 so moving between the three
    does not feel like leaving the tool. Self-contained — inline CSS, no images,
    no JavaScript — and the link back to the index is relative, so the pair
@@ -64,7 +64,11 @@
   td { padding: .3125rem .5rem .3125rem 0; border-bottom: 1px solid var(--line);
        vertical-align: baseline; }
   td.num, th.num { text-align: right; padding-right: 1rem; }
-  td.under { color: var(--bad); }
+  /* The signed euro against your sell price. Red is an advert ahead of you in
+     the queue; green is the room you have above one. Both are rows — the sign
+     is the reading, not the filter. */
+  td.versus.under { color: var(--bad); }
+  td.versus.over { color: var(--good); }
   tr:last-child td { border-bottom: 0; }
 
   /* The mark colours the age cell alone. The number in that cell is the reason
@@ -99,8 +103,9 @@
   <h1>Competitors in Cyprus</h1>
   <p class="meta">
     {{ dashboard.competitor_count }} advert{{ '' if dashboard.competitor_count == 1 else 's' }}
-    asking less than a cyprus sell price, across
-    {{ dashboard.panels|length }} search{{ '' if dashboard.panels|length == 1 else 'es' }}.
+    priced against
+    {{ dashboard.panels|length }} search{{ '' if dashboard.panels|length == 1 else 'es' }} —
+    {{ dashboard.undercut_count }} of them asking less than a cyprus sell price.
   </p>
   <p class="meta">
     {% if dashboard.rates %}rates {{ dashboard.rates }}{% endif %}
@@ -149,6 +154,14 @@
           <span class="label">cyprus sell price</span>
           <span class="value">€{{ '{:,.0f}'.format(band.sell_price_eur) }}</span>
         </div>
+        {# Printed rather than implied: a list that stops somewhere unstated is
+           read as the whole market. #}
+        {% if band.ceiling_eur is not none %}
+        <div>
+          <span class="label">ceiling{% if band.ceiling_percent is not none %} (+{{ '{:g}'.format(band.ceiling_percent) }}%){% endif %}</span>
+          <span class="value">€{{ '{:,.0f}'.format(band.ceiling_eur) }}</span>
+        </div>
+        {% endif %}
         <div>
           <span class="label">cyprus estimate</span>
           {% if band.cyprus_estimate_eur is not none %}
@@ -157,9 +170,16 @@
           <span class="value">—</span>
           {% endif %}
         </div>
+        {# Two counts, never one: everyone a buyer would weigh against you, and
+           the part of them that is actually ahead of you in the queue. A single
+           figure is read as whichever of the two the reader had in mind. #}
         <div>
-          <span class="label">under it</span>
-          <span class="value {{ 'bad' if band.competitors else 'good' }}">{{ band.competitors|length }}</span>
+          <span class="label">competitors</span>
+          <span class="value">{{ band.competitors|length }}</span>
+        </div>
+        <div>
+          <span class="label">asking less</span>
+          <span class="value {{ 'bad' if band.undercutting else 'good' }}">{{ band.undercutting|length }}</span>
         </div>
       </div>
 
@@ -181,7 +201,7 @@
 
       {# Both can be true at once: a band whose only under-price adverts have all
          been dismissed by hand prints the good news *and* shows those rows. #}
-      {% if not band.competitors %}
+      {% if not band.undercutting %}
       <p class="verdict good">
         Nothing under €{{ '{:,.0f}'.format(band.sell_price_eur) }} — of
         {{ band.considered }} advert{{ '' if band.considered == 1 else 's' }} inside
@@ -194,7 +214,7 @@
         <thead>
           <tr>
             <th class="num">price</th>
-            <th class="num">under by</th>
+            <th class="num">vs sell price</th>
             <th class="num">year</th>
             <th class="num">km</th>
             <th>fuel</th>
@@ -209,9 +229,12 @@
           <tr{% if row.excluded %} class="excluded"{% endif %}>
             <td class="num price">€{{ '{:,.0f}'.format(row.price) }}</td>
             {# An excluded advert is not undercutting you and holds no place in
-               the queue, so the two cells that would claim it does say nothing. #}
-            <td class="num under">{{ '—' if row.excluded else
-              '−€' + '{:,.0f}'.format(row.under_by) }}</td>
+               the queue, so the two cells that would claim it does say nothing.
+               For everybody else the sign is the whole reading: −€ is a car
+               ahead of you, +€ is the room you have above one. #}
+            <td class="num versus{{ ' under' if row.undercuts }}{{ ' over' if not row.excluded and row.versus_sell_price <= 0 }}">{% if
+              row.excluded %}—{% elif
+              row.versus_sell_price > 0 %}−€{{ '{:,.0f}'.format(row.versus_sell_price) }}{% else %}+€{{ '{:,.0f}'.format(-row.versus_sell_price) }}{% endif %}</td>
             <td class="num">{{ row.year or '—' }}</td>
             <td class="num">{{ '{:,}'.format(row.mileage_km) if row.mileage_km is not none else '—' }}</td>
             <td>{{ row.fuel_type or '—' }}</td>
@@ -232,21 +255,26 @@
         </tbody>
       </table>
       <p class="legend">
-        Age runs from the day the advert was published — or the day we first saw
-        it, whichever is earlier, so a re-published advert never comes out
-        younger. <b class="fair">Green</b>: gone within 30 days, the price
-        worked. <b class="overpriced">Red</b>: 30 days or more, gone or still
-        up — the market has refused it. <b>Grey</b>: still up, too soon to say.
-        A <b>struck-through</b> row is one you excluded by hand — it is still on
-        bazaraki under these filters, but it counts for nothing here.
+        Cheapest first, which is the order buyers work through: the rows under
+        your sell price are ahead of you in the queue, and the ones above it are
+        the next cars behind you, up to the ceiling. Age runs from the day the
+        advert was published — or the day we first saw it, whichever is earlier,
+        so a re-published advert never comes out younger.
+        <b class="fair">Green</b>: gone within 30 days, that price worked.
+        <b class="overpriced">Red</b>: 30 days or more, gone or still up — the
+        market has refused that price, which is a warning on a row under yours
+        and a fact about the market on a row above it. <b>Grey</b>: still up,
+        too soon to say. A <b>struck-through</b> row is one you excluded by hand
+        — it is still on bazaraki under these filters, but it counts for nothing
+        here.
       </p>
       {% endif %}
 
       {% if band.stuck_above %}
       <p class="stuck">
         {{ band.stuck_above }} advert{{ '' if band.stuck_above == 1 else 's' }}
-        above your price {{ 'has' if band.stuck_above == 1 else 'have' }} been
-        listed over 30 days — the market just above you is not moving.
+        priced above the ceiling {{ 'has' if band.stuck_above == 1 else 'have' }}
+        been listed over 30 days — the market above you is not moving.
       </p>
       {% endif %}
     {% endif %}
@@ -257,13 +285,16 @@
 
 <footer>
   Built {{ generated_at }} by <code>dashboard build</code>.
-  A cyprus sell price is the landed cost plus resale costs plus the profit the
-  search asks for — a flat sum, or a percent of the landed cost; a competitor is an advert under it, inside the band's own
-  competitor bounds, live or gone within the last 90 days. Buyers work the
-  market cheapest-first, so a competitor is one car ahead of you in the queue
-  and its age is a fact about your own wait. Delisting is a sold-proxy, not a
-  sale record — and a seller who re-lists the same car cheaper still reads as
-  gone.
+  A <b>cyprus sell price</b> is the landed cost plus resale costs plus the
+  profit the search asks for — a flat sum, or a percent of the landed cost. A
+  <b>competitor</b> is an advert inside the band's own competitor bounds asking
+  no more than that price plus the <b>ceiling</b>, which is 5% unless the search
+  sets <code>price_ceiling_percent</code>, live or gone within the last 90 days.
+  Buyers work the market cheapest-first, so an advert under your price is one
+  car ahead of you in the queue and one in the headroom above it is the next car
+  behind you; anything past the ceiling is a different market, counted under the
+  table rather than listed on it. Delisting is a sold-proxy, not a sale record —
+  and a seller who re-lists the same car cheaper still reads as gone.
 </footer>
 
 </div>

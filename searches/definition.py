@@ -72,6 +72,15 @@ _COMPETITOR_BOUND_KEYS = ("year_start", "year_end", "mileage_start", "mileage_en
 # seller wrote — so it is listed here rather than folded into the four above.
 _BAND_COMPETITOR_KEYS = _COMPETITOR_BOUND_KEYS + ("exclude_phrases",)
 
+# How far above a band's cyprus sell price an advert may ask and still be a
+# competitor, when ``[competitors]`` does not say. Five per cent is roughly the
+# haggling room on a €30,000 car: a seller asking €1,500 more than you have to
+# is the same offer to a buyer who intends to negotiate, and is competing with
+# you. Everything above it is the market you are *not* in, counted under the
+# table rather than listed on it. See
+# ``docs/adr/0011-a-competitor-is-priced-near-you.md``.
+DEFAULT_PRICE_CEILING_PERCENT = 5.0
+
 
 class SearchDefinitionError(ValueError):
     """The file is on disk but cannot be trusted — an unknown key, a bad band.
@@ -383,6 +392,13 @@ class CompetitorFilters:
     exclude_colours: tuple[str, ...] = ()
     engine_size_start: float | None = None   # litres
     engine_size_end: float | None = None
+    # How far above the band's cyprus sell price an advert may ask and still
+    # count. A percentage rather than a euro figure because it is a fact about
+    # haggling room, which scales with the car: the same 5% is €900 on a CX-30
+    # and €1,500 on a Harrier. The one filter here that cannot be checked
+    # against an advert alone — it needs the band's price — so it is applied by
+    # the dashboard rather than by ``competitors._passes``.
+    price_ceiling_percent: float = DEFAULT_PRICE_CEILING_PERCENT
     # Phrases that, said by the seller, disqualify the advert — the trim you are
     # not selling against ("hybrid x", "x package"). Matched as substrings of
     # the advert's title and description, which is the only place a Cyprus
@@ -393,10 +409,20 @@ class CompetitorFilters:
 
     @property
     def declared(self) -> bool:
+        """Whether the block narrowed anything.
+
+        Deliberately not counting ``price_ceiling_percent``: it always has a
+        value, so including it would make every search look like it had declared
+        filters it never wrote.
+        """
         return any((self.fuel_type, self.gearbox, self.seller_type,
                     self.exclude_colours, self.exclude_phrases,
                     self.engine_size_start is not None,
                     self.engine_size_end is not None))
+
+    def ceiling(self, sell_price: float) -> float:
+        """The most an advert may ask and still compete with that sell price."""
+        return sell_price * (1 + self.price_ceiling_percent / 100)
 
     def describe(self) -> str:
         bits = []
@@ -788,7 +814,8 @@ def _parse_competitors(payload, where: str) -> CompetitorFilters:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: [competitors] must be a table")
     allowed = ("fuel_type", "gearbox", "seller_type", "exclude_colours",
-               "exclude_phrases", "engine_size_start", "engine_size_end")
+               "exclude_phrases", "engine_size_start", "engine_size_end",
+               "price_ceiling_percent")
     _known(where, "[competitors]", payload, allowed)
 
     filters = CompetitorFilters(
@@ -810,11 +837,21 @@ def _parse_competitors(payload, where: str) -> CompetitorFilters:
         engine_size_end=(_number(payload["engine_size_end"], where,
                                  "[competitors] engine_size_end")
                          if "engine_size_end" in payload else None),
+        price_ceiling_percent=(
+            _number(payload["price_ceiling_percent"], where,
+                    "[competitors] price_ceiling_percent")
+            if "price_ceiling_percent" in payload else DEFAULT_PRICE_CEILING_PERCENT),
     )
     if (filters.engine_size_start is not None and filters.engine_size_end is not None
             and filters.engine_size_end < filters.engine_size_start):
         raise SearchDefinitionError(
             f"{where}: [competitors] engine_size_end is below engine_size_start")
+    # A negative ceiling would demand that a competitor undercut you by a margin
+    # before it counted, which is not a wider or narrower version of this filter
+    # but a different idea; if it is ever wanted it should be written as one.
+    if filters.price_ceiling_percent < 0:
+        raise SearchDefinitionError(
+            f"{where}: [competitors] price_ceiling_percent must not be negative")
     return filters
 
 

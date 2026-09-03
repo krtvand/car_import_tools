@@ -5,19 +5,32 @@ market: gone within 30 days is good news, still listed after 30 days is a
 warning. That is backwards from how the rest of this repo reads a delisting, and
 the reason is the queue.
 
-Buyers work a market cheapest-acceptable-first. A **competitor** is one car
-ahead of you in that order. So a competitor's *advert age* is not a fact about
-them, it is a fact about your own wait: cars ahead of you leaving quickly means
-the queue is moving and your turn comes later rather than never, while cars
-ahead of you sitting unsold means it is not moving at all. An advert
-disappearing is therefore the friendly colour, and one that has been up for six
-weeks is the alarming one.
+Buyers work a market cheapest-acceptable-first. A **competitor** asking less
+than your cyprus sell price is one car ahead of you in that order. So its
+*advert age* is not a fact about them, it is a fact about your own wait: cars
+ahead of you leaving quickly means the queue is moving and your turn comes later
+rather than never, while cars ahead of you sitting unsold means it is not moving
+at all. An advert disappearing is therefore the friendly colour, and one that
+has been up for six weeks is the alarming one.
+
+(Since `docs/adr/0011-a-competitor-is-priced-near-you.md` the table also
+carries the next cars *behind* you — the ones asking up to 5% more than you must
+— because a buyer weighs those against you too. The colours mean the same thing
+on those rows, and the queue reading simply runs the other way: stock behind you
+sitting unsold is the market saying it will not pay what you need.)
 
 Elsewhere the same event is only a **sold-proxy** — a weak signal feeding the
 asking→sale haircut in `bazaraki.analysis`. Here it is read as evidence about a
 price. Both readings are deliberate, and this is the file that says so.
 
 ## What a competitor is not
+
+**Amended on 2026-09-03 by
+`docs/adr/0011-a-competitor-is-priced-near-you.md`, which moved this line from
+the cyprus sell price to 5% above it. The argument below survives — the market
+far above you is still counted rather than listed, and for the reason given here
+— but the cut-off is now the ceiling and not the sell price.** It is kept
+because the numbers below are why it moved.
 
 A car that sold for *more* than the band's cyprus sell price is **not** a
 competitor and is not shown, however fast it went. You hold the better offer; it
@@ -41,6 +54,13 @@ that matter under 181 that do not, and it would cost the word "competitor" the
 only precise meaning it has. The gap is answered instead by a separate market
 state panel (`.scratch/market-state-panel/spec.md`), with a one-line footnote
 under the table until that exists.
+
+*ADR 0011 kept this paragraph and moved the line it defends.* Widening to
+**all** in-bounds adverts was tried on 2026-09-03 and reverted the same day for
+exactly the reason above: the CX-30 bands went to 168 rows. What changed is that
+the cut-off sits 5% above the sell price, so the nearest of those twenty-nine
+cars — the ones a buyer would actually weigh against you — are rows, and
+`stuck_above` counts from the ceiling instead.
 
 ## Age is measured from the earliest provable date
 
@@ -102,15 +122,16 @@ so it will look like a true competitor again tomorrow, and a row that has
 vanished is a row that gets re-investigated next week. The same instinct as the
 runs index dimming a run it cannot open — hiding it is how it gets forgotten.
 
-So the row is dimmed, its price struck through, and both `under by` and its age
-mark rendered blank: it has withdrawn from the queue rather than taken a
+So the row is dimmed, its price struck through, and both the euro against your
+sell price and its age mark rendered blank: it has withdrawn from the queue rather than taken a
 position in it, and green and red are equally lies about a car nobody can buy.
 It is not carried as a fourth mark for that reason — the three marks are
 verdicts a price has earned.
 
-**Nothing counts it.** Not the competitor count, not `considered`, not
-`stuck_above`. A band whose only under-price adverts are all marked prints
-"Nothing under EUR X" *and* shows the marked rows beneath it.
+**Nothing counts it.** Not the competitor count, not the count of adverts
+asking less than the sell price, not `considered`, not `stuck_above`. A band
+whose only under-price adverts are all marked prints "Nothing under EUR X" *and*
+shows the marked rows beneath it.
 
 **The mark stops at the panel.** The operator chose a deliberately broad
 meaning — any reason at all — and the price of that breadth is that it can never

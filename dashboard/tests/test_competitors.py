@@ -169,16 +169,58 @@ def test_no_filters_declared_keeps_everything():
 # --- the list itself ---------------------------------------------------------
 
 
-def test_only_adverts_under_the_sell_price_are_competitors():
+def test_an_advert_a_little_above_your_sell_price_is_a_competitor():
+    """The ceiling. A seller asking 4% more is the same offer to a buyer who
+    means to haggle, and the fact that such a car sold in a month is the
+    clearest evidence this page can carry that your price works."""
+    rows, considered = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=16_000.0), _advert(ad_id=2, price=18_500.0)],
+        CompetitorFilters(), sell_price=17_859.0)
+
+    assert [row.ad_id for row in rows] == [1, 2]
+    assert considered == 2
+
+
+def test_an_advert_past_the_ceiling_is_not_a_competitor():
+    """Where the list stops. Everything above is a different market — counted by
+    ``_stuck_above``, never a row, or the three rows that matter are lost in two
+    hundred that do not."""
     rows, considered = competitors._rows_for(
         BAND,
         [_advert(ad_id=1, price=16_000.0), _advert(ad_id=2, price=19_000.0)],
         CompetitorFilters(), sell_price=17_859.0)
 
     assert [row.ad_id for row in rows] == [1]
-    # Both were inside the bounds; only one is under the price. The count is on
-    # the page so "nothing under €17,859" can say what it looked at.
+    # Both were inside the bounds. The count is on the page so "nothing under
+    # €17,859" can say what it looked at.
     assert considered == 2
+
+
+def test_the_ceiling_is_five_per_cent_unless_the_search_says_otherwise():
+    """The default is the whole of what most searches will ever declare."""
+    assert CompetitorFilters().price_ceiling_percent == 5.0
+    assert CompetitorFilters().ceiling(20_000.0) == pytest.approx(21_000.0)
+    assert CompetitorFilters(price_ceiling_percent=10).ceiling(20_000.0) == pytest.approx(22_000.0)
+
+    wide = CompetitorFilters(price_ceiling_percent=20)
+    rows, _ = competitors._rows_for(
+        BAND, [_advert(price=19_000.0)], wide, sell_price=17_859.0)
+    assert [row.price for row in rows] == [19_000.0]
+
+
+def test_the_sign_of_the_euro_says_which_side_of_you_the_advert_is_on():
+    """Positive undercuts you; negative is headroom. One signed number, because
+    the table now reaches a little way above the sell price."""
+    rows, _ = competitors._rows_for(
+        BAND,
+        [_advert(ad_id=1, price=16_000.0), _advert(ad_id=2, price=18_500.0)],
+        CompetitorFilters(), sell_price=17_859.0)
+
+    assert rows[0].versus_sell_price == pytest.approx(1_859.0)
+    assert rows[0].undercuts is True
+    assert rows[1].versus_sell_price == pytest.approx(-641.0)
+    assert rows[1].undercuts is False
 
 
 def test_the_cheapest_undercut_comes_first():
@@ -190,10 +232,12 @@ def test_the_cheapest_undercut_comes_first():
         CompetitorFilters(), sell_price=17_859.0)
 
     assert [row.price for row in rows] == [15_200.0, 16_100.0, 16_900.0]
-    assert rows[0].under_by == pytest.approx(2_659.0)
+    assert rows[0].versus_sell_price == pytest.approx(2_659.0)
 
 
 def test_an_advert_with_no_price_is_not_a_competitor():
+    """It cannot be shown to be under the ceiling, and a filter that keeps what
+    it cannot read is not a filter. It is still counted as looked at."""
     rows, considered = competitors._rows_for(
         BAND, [_advert(price=None)], CompetitorFilters(), sell_price=17_859.0)
     assert rows == () and considered == 1
@@ -286,20 +330,25 @@ def test_a_competitor_that_left_months_ago_is_dropped_entirely():
     assert rows == () and considered == 0
 
 
-def test_a_car_that_sold_above_your_price_is_not_a_competitor():
-    """You hold the better offer, so it was never ahead of you in the queue —
-    however fast it went. The cost of this is the stuck-above count."""
+def test_a_car_that_sold_inside_the_headroom_is_the_best_news_on_the_page():
+    """It is the one fact that separates "I am next in the queue" from "the
+    market ends below me", and a table drawn at the sell price could not show
+    it. Which is why the ceiling is above the sell price and not on it."""
     rows, _ = competitors._rows_for(
         BAND,
-        [_advert(ad_id=1, price=19_000.0, is_active=False,
+        [_advert(ad_id=1, price=18_500.0, is_active=False,
+                 first_seen_at=NOW - timedelta(days=9),
                  delisted_at=NOW - timedelta(days=1))],
         CompetitorFilters(), sell_price=17_859.0, now=NOW)
-    assert rows == ()
+
+    assert [(row.ad_id, row.mark, row.gone) for row in rows] == [
+        (1, competitors.FAIR, True)]
+    assert rows[0].undercuts is False
 
 
-def test_frozen_stock_above_your_price_is_counted_even_though_it_cannot_be_a_row():
-    """Without this the table reads as an easy sale while the market a few
-    hundred euro above you has not moved in a month."""
+def test_frozen_stock_past_the_ceiling_is_counted_even_though_it_cannot_be_a_row():
+    """Without this the table reads as an easy sale while the market above it has
+    not moved in a month."""
     live = [
         _advert(ad_id=1, price=19_000.0, first_seen_at=NOW - timedelta(days=45)),
         _advert(ad_id=2, price=20_000.0, first_seen_at=NOW - timedelta(days=60)),
@@ -308,6 +357,17 @@ def test_frozen_stock_above_your_price_is_counted_even_though_it_cannot_be_a_row
     ]
     assert competitors._stuck_above(
         BAND, live, CompetitorFilters(), sell_price=17_859.0, now=NOW) == 2
+
+
+def test_the_count_and_the_table_never_describe_the_same_advert():
+    """The one thing that must be true of the two: they meet at the ceiling."""
+    stale = _advert(ad_id=1, price=18_500.0, first_seen_at=NOW - timedelta(days=45))
+
+    rows, _ = competitors._rows_for(
+        BAND, [stale], CompetitorFilters(), sell_price=17_859.0, now=NOW)
+    assert [row.ad_id for row in rows] == [1]      # inside the headroom: a row
+    assert competitors._stuck_above(
+        BAND, [stale], CompetitorFilters(), sell_price=17_859.0, now=NOW) == 0
 
 
 # --- adverts dismissed by hand -----------------------------------------------
@@ -351,15 +411,19 @@ def test_a_manually_excluded_advert_has_no_mark():
 
 def test_nothing_counts_a_manually_excluded_advert():
     """``considered`` is what "nothing under €17,859 — of N adverts" counts, and
-    a dismissed advert must not hold that figure up either."""
+    a dismissed advert must not hold that figure up either — nor the count of
+    competitors, on whichever side of the sell price it sits."""
     rows, considered = competitors._rows_for(
         BAND,
         [_advert(ad_id=1, price=16_000.0, manual_exclusion_reason="order only"),
-         _advert(ad_id=2, price=19_000.0)],
+         _advert(ad_id=2, price=18_500.0, manual_exclusion_reason="broker"),
+         _advert(ad_id=3, price=19_000.0)],
         CompetitorFilters(), sell_price=17_859.0, now=NOW)
 
-    panel = competitors.BandPanel(band=BAND, max_bid_jpy=1_805_000, rows=rows)
+    panel = competitors.BandPanel(band=BAND, max_bid_jpy=1_805_000, rows=rows,
+                                  sell_price_eur=17_859.0)
     assert panel.competitors == () and panel.excluded == rows
+    assert panel.undercutting == ()
     assert considered == 1
 
 

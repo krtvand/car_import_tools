@@ -102,17 +102,19 @@ def _statistics_summary(stats: statistics.Statistics) -> str:
 def _summary(dashboard: competitors.Dashboard) -> str:
     """The line the index carries under its link to this page.
 
-    Counts the searches that could not be priced separately from the adverts
-    found, because "0 competitors" and "3 searches unpriced" mean opposite
-    things and a single number would blur them.
+    Three facts kept apart. The competitors are everyone selling this car; the
+    undercuts are the ones ahead of you in the queue; and a search nobody has
+    priced has no undercuts for a reason that is not good news. "0 asking less"
+    and "3 searches unpriced" mean opposite things, and a single number would
+    blur them.
     """
     unpriced = sum(
         1 for panel in dashboard.panels
         if panel.problem or all(band.sell_price_eur is None for band in panel.bands)
     )
     count = dashboard.competitor_count
-    bits = [f"{count} advert{'' if count == 1 else 's'} asking less than a "
-            f"cyprus sell price"]
+    bits = [f"{count} competing advert{'' if count == 1 else 's'} in Cyprus",
+            f"{dashboard.undercut_count} asking less than a cyprus sell price"]
     if unpriced:
         bits.append(f"{unpriced} search{'' if unpriced == 1 else 'es'} not priced yet")
     return " · ".join(bits)
