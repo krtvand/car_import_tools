@@ -83,3 +83,28 @@ max_bid_jpy = { private = 2_575_000 }
   year_start = 2022
   mileage_end = 70000
   exclude_phrases = ["hybrid s", "s package", "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 2_775_000 }
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 50000
+  exclude_phrases = ["hybrid s", "s package", "coming soon"]
+
+
+[[band]]
+year = 2024
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 2_875_000 }
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  exclude_phrases = ["hybrid s", "s package", "coming soon"]

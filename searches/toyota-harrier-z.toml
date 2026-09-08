@@ -59,3 +59,30 @@ max_bid_jpy = { private = 2_737_000 }
   # Both trims below a Z undercut it. Adverts that name no grade stay in.
   exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
                      "g model", "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 2_937_000 }
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 50000
+  # Both trims below a Z undercut it. Adverts that name no grade stay in.
+  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
+                     "g model", "coming soon"]
+[[band]]
+year = 2024
+body_model_code = ["AXUH80", "AXUH85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 2_937_000 }
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  # Both trims below a Z undercut it. Adverts that name no grade stay in.
+  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
+                     "g model", "coming soon"]
