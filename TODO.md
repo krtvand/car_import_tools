@@ -20,4 +20,5 @@ Lets update our index page. The index page should contain a list of searches wit
 - upcoming and last 2 finished search runs with lots (everyday use block)
 - competitors (I check it once a week)
 - aiction_statistics (I check it once a week)
+- search params from toml
 
