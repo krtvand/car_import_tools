@@ -351,7 +351,8 @@ def main() -> None:
             wanted = [
                 term
                 for row in extractions
-                for term in glossary_mod.terms_of(row.equipment, row.warnings_ja)
+                for term in glossary_mod.terms_of(row.equipment, row.warnings_ja,
+                                                  row.diagram_notes)
             ]
             print(f"{len(extractions)} extraction(s) in the database")
 

@@ -33,6 +33,18 @@ sometimes written in Japanese (`トビA`).
 _Avoid_: Defect, damage code (the *code* is the letter; the *mark* is the code
 placed on a panel)
 
+**Diagram note**:
+A *word* written on the same diagram instead of a code — `ズレ` across a bumper
+that sits out of line, `トビ` at a stone chip. Read and stored separately from a
+damage mark because it has no letter and no severity digit: nothing about a
+`ズレ` can be weighed against an `A1`, and no requirement is judged on one. A
+condition fact all the same, and the one the exporter's own translation tends to
+lead with, so it prints beside the marks it shares a drawing with and is
+*glossed*, never translated per sheet. The diagram itself reads front at the
+top, rear at the bottom.
+_Avoid_: Handwriting, annotation, comment, note (bare — the sheet has two
+free-text boxes and 検査員報告 is already "the inspector's notes")
+
 **Gloss**:
 The English beside a Japanese term on the report — "power steering" against
 `PS`, "spare key" against `スペアキー`. Never a replacement for the Japanese: the

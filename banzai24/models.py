@@ -117,6 +117,16 @@ class SheetExtraction(SQLModel, table=True):
     sheet_mileage_km: int | None = None # exact — 15415 vs API's 15000
     chassis_full: str | None = None     # unmasked
     damage_marks: str | None = None     # JSON: [{panel, code}]
+
+    # The words written on the diagram instead of coded on it — ズレ against a
+    # bumper out of line, トビ at a stone chip. A condition note with no letter
+    # and no severity digit, so it has no home in `damage_marks`, and before
+    # this column existed it was simply dropped: three successive listings of
+    # one Harrier recorded the A1 on its rear corner and not the ズレ written
+    # across its front bumper, which is the half the exporter's own translation
+    # led with. Null on every row extracted before the prompt asked for it.
+    diagram_notes: str | None = None    # JSON: [{panel, text_ja}]
+
     equipment: str | None = None        # JSON list
     warnings_ja: str | None = None      # 注意事項欄
     warnings_en: str | None = None      # …translated; null on rows extracted

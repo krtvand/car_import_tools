@@ -177,6 +177,12 @@
   .mark b { font-family: ui-monospace, Menlo, monospace; }
   /* The mark that disqualified the car, rather than a list you re-scan yourself. */
   .mark.banned { border-color: var(--bad); background: #fdf3f2; color: var(--bad); }
+  /* A word the inspector wrote on the diagram. Told apart from a legend code
+     because it is one: it carries no severity digit, so nothing about it can be
+     compared with an A1, and a buyer reads it as a thing to photograph rather
+     than a thing to score. */
+  .mark.written { border-style: dashed; }
+  .mark.written b.ja { font-family: inherit; }
 
   /* The three parts of the bid arithmetic stack rather than run together on one
      line: the last of them is the number you type into the bidding platform, and
@@ -202,6 +208,24 @@
 </head>
 <body>
 <div class="wrap">
+
+{# The diagram's handwriting sits with its codes, not down in the warnings
+   list: ズレ is written across the front bumper and it is that bumper it
+   describes. There is no severity digit to lead with, so the Japanese does and
+   the gloss follows it — and a word nobody has glossed yet still names its
+   panel, which is what sends you to the scan. #}
+{% macro diagram_notes(notes) %}
+{% if notes %}
+<div class="marks">
+  {% for note in notes %}
+  <span class="mark written" title="written on the diagram, not a legend code">
+    <b class="ja">{{ note.ja }}</b>{% if note.en %} {{ note.en }}{% endif %}
+    {%- if note.panel %} · {{ note.panel }}{% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
 
 {% macro card(view) %}
 {% set lot = view.lot %}
@@ -389,13 +413,15 @@
             </span>
             {% endfor %}
           </div>
-          {% elif view.extraction %}
+          {% elif view.extraction and not view.diagram_notes %}
           <span class="note">(diagram clean)</span>
           {% endif %}
+          {{ diagram_notes(view.diagram_notes) }}
         </dd>
-        {% elif view.damage_marks %}
+        {% elif view.damage_marks or view.diagram_notes %}
         <dt>Damage</dt>
         <dd>
+          {% if view.damage_marks %}
           <div class="marks">
             {% for mark in view.damage_marks %}
             <span class="mark" title="{{ mark.meaning or 'not in the printed legend' }}">
@@ -403,6 +429,8 @@
             </span>
             {% endfor %}
           </div>
+          {% endif %}
+          {{ diagram_notes(view.diagram_notes) }}
         </dd>
         {% endif %}
 

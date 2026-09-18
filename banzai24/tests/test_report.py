@@ -591,6 +591,42 @@ def test_the_old_whole_box_translation_shows_only_while_the_glossary_is_silent(
     assert "Navi SD card missing" not in glossed
 
 
+def test_a_word_written_on_the_diagram_prints_beside_the_coded_marks(glossary_file):
+    """`ズレ` is written across the front bumper, so it belongs in the Damage row.
+
+    Not down in the warnings list: the warnings box is a different box, and a
+    buyer reading "front bumper" wants it next to the A1 he is already weighing
+    against it.
+    """
+    glossary_file({"ズレ": "misaligned"})
+    html = _render([_view(extraction=_extraction(
+        diagram_notes=json.dumps([{"panel": "front bumper", "text_ja": "ズレ"}],
+                                 ensure_ascii=False)))])
+    assert re.search(r'class="mark written".*?ズレ.*?misaligned.*?front bumper',
+                     html, re.S)
+
+
+def test_an_unglossed_diagram_word_still_names_its_panel(glossary_file):
+    """Which is what sends you to the scan — the half a missing gloss cannot cost."""
+    glossary_file({})
+    html = _render([_view(extraction=_extraction(
+        diagram_notes=json.dumps([{"panel": "front bumper", "text_ja": "ズレ"}],
+                                 ensure_ascii=False)))])
+    assert "ズレ" in html and "front bumper" in html
+
+
+def test_a_diagram_with_writing_on_it_is_not_reported_clean(glossary_file):
+    """`(diagram clean)` is an assertion about the drawing, and a bumper marked
+    ズレ and nothing else makes it a false one."""
+    glossary_file({"ズレ": "misaligned"})
+    html = _render([_judged(_view(extraction=_extraction(
+        damage_marks=json.dumps([]),
+        diagram_notes=json.dumps([{"panel": "front bumper", "text_ja": "ズレ"}],
+                                 ensure_ascii=False))))])
+    assert "diagram clean" not in html
+    assert "ズレ" in html
+
+
 def test_the_trim_row_carries_the_japanese_the_english_and_the_tell():
     from cars.definitions import get as car
 

@@ -210,13 +210,15 @@ You are glossing shorthand from Japanese used-car auction sheets (中古車オ�
 ション出品票) into English for a European importer reading the sheet in
 translation.
 
-The terms come from two boxes:
+The terms come from three places on the sheet:
 
 * the equipment and selling-point lines — 装備, セールスポイント, 純正装備 —
   which list fitted options in heavy abbreviation: ナビ, ｴｱB, PS, PW, 純正AW,
   SR, カワ, ワンオーナー;
 * the 注意事項欄 warnings box, where the inspector notes what is wrong,
-  missing, or being sent separately: SD欠品, 取保, 後送, スペアキー.
+  missing, or being sent separately: SD欠品, 取保, 後送, スペアキー;
+* the words written on the damage diagram itself, which say what is wrong with
+  the panel they sit on: ズレ, トビ, キズ, ヘコミ.
 
 For each term give a **short English gloss**, not a sentence: what a parts
 catalogue or a condition report would call it. Six words is long.
@@ -229,6 +231,9 @@ catalogue or a condition report would call it. Six words is long.
 * Say what a warning **means for the buyer**. 欠品 is "missing", not "shortage"
   — ﾋﾟSD欠品 is "navigation SD card missing". 後送 is "to be sent later". 取保
   is "owner's manual and service book present".
+* A diagram word names a defect in the panel it is written on, so gloss it as
+  that defect: ズレ is "misaligned", トビ is "stone chip", ハガレ is "paint
+  peeling".
 * Marketing decoration is still a term: ★オークションデビュー★ is "first time
   at auction".
 * If a term is genuinely unreadable — a typo, a house's private code, a
@@ -317,24 +322,47 @@ def ensure(terms: list[str], client: anthropic.Anthropic | None = None,
     return learned
 
 
-def terms_of(equipment: list[str] | str | None, warnings_ja: str | None) -> list[str]:
-    """Every term one sheet contributes: its equipment list and its warnings box.
+def _as_list(value: list | str | None) -> list:
+    """A field that is a list in a fresh extraction and JSON text in a DB row.
+
+    Both callers are real and neither should have to know which the other
+    passes. Malformed JSON yields an empty list rather than an error: losing one
+    sheet's equipment terms is better than a backfill that stops on the row
+    holding them, and the other halves of that sheet are still worth glossing.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return value if isinstance(value, list) else []
+
+
+def _note_text(note: object) -> str:
+    """The Japanese out of one diagram note, however it arrived.
+
+    A fresh extraction holds :class:`banzai24.sheets.DiagramNote` objects and a
+    database row holds the dicts they were stored as, so this reads either
+    without importing the model — which would make the glossary depend on the
+    sheet reader it is read by.
+    """
+    text = note.get("text_ja") if isinstance(note, dict) else getattr(note, "text_ja", None)
+    return str(text) if text else ""
+
+
+def terms_of(equipment: list[str] | str | None, warnings_ja: str | None,
+             diagram_notes: list | str | None = None) -> list[str]:
+    """Every term one sheet contributes: equipment, warnings box, diagram words.
 
     One place decides what is glossable, so the extraction, the backfill command
     and the report cannot disagree about it — a term the report looks up but the
     extraction never learned would be a permanently blank gloss.
 
-    ``equipment`` is taken either as the list a fresh extraction holds or as the
-    JSON text the database column stores, because both callers are real and
-    neither should have to know which the other passes. Malformed JSON yields no
-    equipment terms rather than an error: the warnings half of the sheet is
-    still worth glossing.
+    The diagram words are here rather than translated by the sheet read for the
+    same reason the other two are: ``ズレ`` is written on sheet after sheet, so
+    it is worth one translation and no more, and the file is where a correction
+    to it can be typed once and stay.
     """
-    if isinstance(equipment, str):
-        try:
-            equipment = json.loads(equipment)
-        except ValueError:
-            equipment = []
-    if not isinstance(equipment, list):
-        equipment = []
-    return [str(item) for item in equipment] + split_warnings(warnings_ja)
+    equipment_terms = [str(item) for item in _as_list(equipment)]
+    note_terms = [text for text in map(_note_text, _as_list(diagram_notes)) if text]
+    return equipment_terms + split_warnings(warnings_ja) + note_terms

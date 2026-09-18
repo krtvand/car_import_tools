@@ -68,6 +68,7 @@ def _sheet_data(**overrides) -> SheetData:
         "sheet_mileage_km": 15415, "chassis_full": "DMEJ3P-103452",
         "first_registration_raw": "R5年1月", "shaken_expiry_raw": None,
         "damage_marks": [DamageMark(panel="right rear", code="A1")],
+        "diagram_notes": [],
         "equipment": ["純正メーカーナビTV"],
         "warnings_ja": "ﾋﾟSD欠品", "warnings_en": "Navi SD card missing",
         "inspector_notes_ja": "ハンドルすれ",
@@ -233,6 +234,34 @@ def test_lists_are_stored_as_readable_json_not_python_repr():
     ))
     assert json.loads(row["damage_marks"]) == [{"panel": "right rear", "code": "A1"}]
     assert "純正" in row["equipment"]
+
+
+def test_a_word_written_on_the_diagram_reaches_the_row_untranslated():
+    """`ズレ` on a bumper is a condition note with no code to carry it.
+
+    It used to reach nothing at all: `damage_marks` takes a letter and a digit,
+    so a word on the drawing had nowhere to go and was dropped — three
+    successive listings of one Harrier kept the A1 on its rear corner and lost
+    the ズレ across its front bumper, the half the exporter's translation led
+    with. It is stored verbatim because `banzai24.glossary` does the English.
+    """
+    row = sheets.to_row(sheets.Extraction(
+        lot_number="x",
+        data=_sheet_data(diagram_notes=[
+            sheets.DiagramNote(panel="front bumper", text_ja="ズレ")]),
+        raw_json="{}", sheet_sha256="abc", model_id=sheets.MODEL,
+    ))
+    assert json.loads(row["diagram_notes"]) == [
+        {"panel": "front bumper", "text_ja": "ズレ"}]
+
+
+def test_a_clean_diagram_stores_an_empty_note_list_not_a_null():
+    """Asked and answered, the same as an empty `damage_marks`."""
+    row = sheets.to_row(sheets.Extraction(
+        lot_number="x", data=_sheet_data(), raw_json="{}",
+        sheet_sha256="abc", model_id=sheets.MODEL,
+    ))
+    assert json.loads(row["diagram_notes"]) == []
 
 
 def test_the_trim_reaches_the_row_in_the_katakana_the_house_typed():

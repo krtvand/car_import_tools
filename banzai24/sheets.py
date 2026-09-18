@@ -102,6 +102,28 @@ class DamageMark(BaseModel):
                                   "severity 1-4.")
 
 
+class DiagramNote(BaseModel):
+    """A word written on the car diagram rather than a code from the legend.
+
+    The inspector writes on the drawing as well as coding it: ``ズレ`` beside a
+    bumper that sits out of line, ``トビ`` at a stone chip. That is a condition
+    note as real as any ``A1`` — a bumper out of line is the sort of thing a
+    buyer asks for close photographs of — but it carries no letter and no
+    severity digit, so :class:`DamageMark` has nowhere to put it and a read that
+    forced one would file a word where a code belongs.
+
+    Kept verbatim and glossed by :mod:`banzai24.glossary` rather than translated
+    here, for the reason the equipment shorthand is: these words repeat across
+    sheets, so ``ズレ`` is worth translating once and reading for ever after.
+    """
+
+    panel: str = Field(description="Which panel the word is written on or points "
+                                   "at, in English: 'front bumper', 'left rear "
+                                   "quarter'. Best effort.")
+    text_ja: str = Field(description="The word exactly as written, verbatim "
+                                     "Japanese. Do not translate it here.")
+
+
 class SheetData(BaseModel):
     """What one auction sheet says. Every field is nullable on purpose.
 
@@ -145,6 +167,11 @@ class SheetData(BaseModel):
     damage_marks: list[DamageMark] = Field(description="Every code on the car "
                                                        "diagram. Empty list if the "
                                                        "diagram is clean.")
+    diagram_notes: list[DiagramNote] = Field(description="Every word written on the "
+                                                         "car diagram that is not a "
+                                                         "code from the legend — ズレ, "
+                                                         "トビ. Empty list if there "
+                                                         "are none.")
     equipment: list[str] = Field(description="セールスポイント and 純正装備 items, "
                                              "verbatim. Empty list if none.")
 
@@ -201,6 +228,29 @@ ground truth rather than guessing:
 A code is a letter plus a severity digit 1-4 (A1 = light scratch, U2 = a more
 significant dent). Report the code exactly as printed and name the panel it sits
 on in English, as best you can read the diagram.
+
+**The diagram is drawn front at the top and rear at the bottom**, the car's own
+left down the left of the page and its right down the right. Decide front from
+rear off that and not off the shapes in the drawing: it is a generic template
+printed for every model, so its lamps and vents are nobody's in particular, and
+reading them as this car's is how a mark on a rear corner gets reported as the
+front bumper.
+
+The plan view is flanked by the two sides unfolded, and each flank runs the same
+way — front at its top. Two tells, for a mark sitting near one end of a flank:
+the front end is cut away by a long diagonal (the bonnet and windscreen sloping
+down from the roof) where the rear end is squared off, and the short panel just
+behind the first wheel arch is the front wing where the long one past the last
+arch is the rear quarter.
+
+Words are written on the diagram as well as codes — ズレ against a bumper that
+sits out of line, トビ at a stone chip. Report those in `diagram_notes`,
+verbatim and untranslated, with the panel each is written on. They are not
+damage codes and must not be squeezed into one: `damage_marks` is for the
+legend's letter-plus-digit codes only, so a `トビA` written on the drawing is a
+note, not a mark. Wording that is part of the printed form rather than the
+inspector's hand — スペア beside the spare-wheel circle, the 車検 and dimension
+labels around the drawing — is not a note either, and goes in neither list.
 
 Rules:
 - **Null over guesses.** A blank 車検 box means the car has no valid shaken —
@@ -477,6 +527,8 @@ def to_row(extraction: Extraction) -> dict:
         "chassis_full": data.chassis_full,
         "damage_marks": json.dumps([m.model_dump() for m in data.damage_marks],
                                    ensure_ascii=False),
+        "diagram_notes": json.dumps([n.model_dump() for n in data.diagram_notes],
+                                    ensure_ascii=False),
         "equipment": json.dumps(data.equipment, ensure_ascii=False),
         "warnings_ja": data.warnings_ja,
         "warnings_en": data.warnings_en,
@@ -636,16 +688,17 @@ def run_extract(
         if bad := checks.disagreements:
             result.mismatches.append(f"{lot.lot_short}: {', '.join(bad)}")
 
-        # Learn this sheet's new equipment and warning terms while it is in
-        # hand. Almost always free — after the first few runs a sheet prints
-        # nothing nobody has seen — and never allowed to cost the extraction it
-        # rides on: the sheet read is paid for and already in the database, so a
-        # glossary failure is a line of output, not a lost lot. The `glossary`
-        # command picks up whatever was missed.
+        # Learn this sheet's new equipment, warning and diagram terms while it
+        # is in hand. Almost always free — after the first few runs a sheet
+        # prints nothing nobody has seen — and never allowed to cost the
+        # extraction it rides on: the sheet read is paid for and already in the
+        # database, so a glossary failure is a line of output, not a lost lot.
+        # The `glossary` command picks up whatever was missed.
         try:
             learned = glossary.ensure(
                 glossary.terms_of(extraction.data.equipment,
-                                  extraction.data.warnings_ja),
+                                  extraction.data.warnings_ja,
+                                  extraction.data.diagram_notes),
                 client=client,
             )
             result.terms_learned += len(learned)

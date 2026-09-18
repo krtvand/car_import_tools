@@ -268,3 +268,25 @@ def test_equipment_is_taken_as_a_list_or_as_the_json_the_database_stores():
     assert glossary.terms_of('["PS", "PW"]', None) == ["PS", "PW"]
     assert glossary.terms_of("not json", "取保") == ["取保"]
     assert glossary.terms_of(None, None) == []
+
+
+def test_the_words_written_on_the_diagram_are_terms_too():
+    """`ズレ` is on sheet after sheet, so it is worth one translation and no more."""
+    notes = [{"panel": "front bumper", "text_ja": "ズレ"},
+             {"panel": "bonnet", "text_ja": "トビ"}]
+    assert glossary.terms_of(["PS"], None, notes) == ["PS", "ズレ", "トビ"]
+    assert glossary.terms_of(None, None, json.dumps(notes, ensure_ascii=False)) == [
+        "ズレ", "トビ"]
+
+
+def test_a_diagram_note_object_is_read_as_readily_as_the_stored_dict():
+    """`extract` holds `DiagramNote`s, the backfill holds the column's dicts."""
+    from banzai24.sheets import DiagramNote
+
+    assert glossary.terms_of(None, None,
+                             [DiagramNote(panel="front bumper", text_ja="ズレ")]) == ["ズレ"]
+
+
+def test_a_note_with_no_japanese_in_it_contributes_nothing():
+    """A malformed row costs the glossary a term, never a traceback."""
+    assert glossary.terms_of(None, None, [{"panel": "roof"}, "not a note", None]) == []

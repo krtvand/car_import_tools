@@ -424,6 +424,31 @@ class LotView:
         return marks
 
     @property
+    def diagram_notes(self) -> list[dict]:
+        """``[{panel, ja, en}, …]`` — the words written on the damage diagram.
+
+        Shown beside the coded marks rather than down with the warnings,
+        because that is where they are on the sheet and what they are about:
+        ``ズレ`` is written across the front bumper and it is the front bumper
+        it describes. Glossed from the file like every other term, so a word
+        nobody has glossed yet prints its Japanese alone and this report still
+        makes no model calls.
+        """
+        notes = []
+        for note in _json_list(self.extraction.diagram_notes if self.extraction else None):
+            if not isinstance(note, dict):
+                continue
+            ja = str(note.get("text_ja") or "")
+            if not ja:
+                continue
+            notes.append({
+                "panel": note.get("panel") or "",
+                "ja": ja,
+                "en": glossary.look_up(ja, self._glossary),
+            })
+        return notes
+
+    @property
     def trim(self) -> dict | None:
         """``{printed, en, note, matched, blank, unasked}`` for the グレード box.
 
