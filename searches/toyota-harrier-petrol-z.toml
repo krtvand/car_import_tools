@@ -1,0 +1,97 @@
+# Toyota Harrier 2.0 petrol Z — the plain one, without the leather package.
+# 2023–2024, to 50,000 km. See toyota-harrier-petrol-g.toml for what every
+# section is doing and for the two placeholders in it (¥1 bids, and the hybrid
+# CO2 figure every Harrier landed cost is priced off), and
+# cars/reference/harrier-grades.md for how the four trims are told apart.
+
+car = "toyota-harrier"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+exclude_colours = ["black", "blue"]
+# "LEATHER" is the third word here and it is load-bearing: a Z "Leather Package"
+# is a dearer car whose trim line *contains* a plain Z's, so banning "Z" is not
+# available and banning the one word that only it carries is. The houses write
+# the same car three ways — "Z LEATHER PACKAGE", "Z LEATHER PACKAGE 4WD",
+# "4WD Z LEATHER PACKAGE" — and "LEATHER" is in all three; it cannot catch
+# anything else, because no other Harrier grade has a leather package.
+#
+# NOTE: the hybrid toyota-harrier-z.toml explains this in its comment but does
+# not have "LEATHER" in its own list, so it is currently pricing leather Zs as
+# plain ones. Left alone rather than edited from here.
+exclude_model_grades = ["S", "G", "LEATHER"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+[auction_statistics]
+
+[dashboard]
+enabled = true
+expected_profit_percent = 20
+
+[competitors]
+fuel_type = ["petrol"]
+engine_size_start = 2.0
+engine_size_end = 2.0
+
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 50000
+  # Both trims below a Z undercut it. Adverts that name no grade stay in, and so
+  # do leather-package ones: they are dearer, not cheaper. "leather" alone is
+  # never used here — Cyprus adverts list "leather seats" on cars that are
+  # plainly not leather-package Zs.
+  exclude_phrases = ["s package", "s model", "g package", "g model",
+                     "coming soon"]
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  exclude_phrases = ["s package", "s model", "g package", "g model",
+                     "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 50000
+  exclude_phrases = ["s package", "s model", "g package", "g model",
+                     "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  exclude_phrases = ["s package", "s model", "g package", "g model",
+                     "coming soon"]

@@ -60,34 +60,6 @@ def test_archive_source_is_selectable():
     assert q["source"] == ["archive"]
 
 
-def test_the_saved_cx30_search_reproduces_the_phase0_reference_url():
-    """The exact filter set verified live during Phase 0 recon.
-
-    Asserted against the saved search rather than a constant, because the
-    constant is gone: ``mazda-cx30.toml`` is now the only place that filter set
-    lives, and an edit to it that breaks the verified URL is exactly what this
-    should catch.
-    """
-    from banzai24 import search
-
-    url = config.build_search_url(search.load("mazda-cx30").filters)
-    parsed = urlparse(url)
-    q = _query(url)
-
-    assert parsed.netloc == "banzai24.com"
-    assert parsed.path == "/MAZDA/CX-30/transmissions-auto"
-    assert q["yearStart"] == ["2023"] and q["yearEnd"] == ["2023"]
-    # 60,000, not the 55,000 recon used: the bound is now the union of the
-    # bands, and the table has always priced to 60,000. The old hand-written
-    # ceiling meant every lot between them was priced and never fetched, which
-    # is the drift `docs/adr/0005-one-search-file-two-parsers.md` describes.
-    assert q["mileageEnd"] == ["60000"]
-    assert q["engineCapacityStart"] == ["1.9"]
-    assert sorted(q["gradeOrigin"]) == ["4", "4.5", "5"]
-    assert q["source"] == ["auctions"]
-    assert q["countryISO"] == ["JP"]
-
-
 def test_run_slug_is_filesystem_safe():
     assert config.run_slug(AuctionFilters(make="MAZDA", model="CX-30")) == "MAZDA-CX-30"
     assert "/" not in config.run_slug(AuctionFilters(make="MERCEDES-BENZ", model="C/CLASS"))

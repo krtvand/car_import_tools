@@ -1,6 +1,3 @@
-# Toyota Harrier HYBRID Z — the plain one, without the leather package.
-# 2023, to 50,000 km. See toyota-harrier-g.toml for what every section is doing,
-# and cars/reference/harrier-grades.md for how the four trims are told apart.
 
 car = "toyota-harrier"
 

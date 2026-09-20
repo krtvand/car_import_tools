@@ -1,0 +1,94 @@
+# Toyota Harrier 2.0 petrol S, 2023–2024, to 50,000 km.
+# See toyota-harrier-petrol-g.toml for what every section is doing and for the
+# two placeholders in it (¥1 bids, and the hybrid CO2 figure every Harrier
+# landed cost is priced off), and cars/reference/harrier-grades.md for how the
+# four trims are told apart.
+#
+# The S is a *petrol* grade — this is the file it belongs in. Toyota's 主要諸元表
+# 2023年10月 lists it in the ガソリン車(2WD) column only, on MXUA80 alone, and the
+# hybrid S that the auctions carry anyway is a fleet batch the catalogue dropped
+# in 2022 (see toyota-harrier-s.toml). MXUA85 is priced here regardless: if a
+# 4WD lot comes back badged S it is either a mis-typed trim line or a drivetrain
+# the sheet does not admit to, and both are worth seeing on the report rather
+# than filtering away unseen.
+#
+# The bottom of the range, and so the one of the three most likely to have
+# something to buy in it — and the one to read the 車歴 on before believing a
+# `private` price, since a cheap grade at low money is where fleet disposals land.
+
+car = "toyota-harrier"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+exclude_colours = ["black", "blue"]
+# "Z" also catches "Z LEATHER PACKAGE".
+exclude_model_grades = ["Z", "G"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+[auction_statistics]
+
+[dashboard]
+enabled = true
+expected_profit_percent = 20
+
+[competitors]
+fuel_type = ["petrol"]
+engine_size_start = 2.0
+engine_size_end = 2.0
+
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  # Nothing cheaper to exclude — the S is the bottom of the range.
+  exclude_phrases = ["coming soon"]
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  # Nothing cheaper to exclude — the S is the bottom of the range.
+  exclude_phrases = ["coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  exclude_phrases = ["coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see toyota-harrier-petrol-g.toml
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  exclude_phrases = ["coming soon"]

@@ -1,0 +1,126 @@
+# Toyota Harrier 2.0 petrol G, 2023–2024, to 50,000 km.
+#
+# The petrol half of the Harrier. Same four trims as the hybrid, same reason for
+# one file each: the chassis code says the drivetrain and nothing else, so only
+# the trim line tells a G from a Z — see cars/reference/harrier-grades.md.
+# What changes on this side is the code and the engine, not the method:
+#
+#   2.0 petrol   MXUA80 (2WD) / MXUA85 (4WD)   grades Z "Leather Package"·Z·G·S
+#   2.5 hybrid   AXUH80 (2WD) / AXUH85 (E-Four)  grades Z "Leather Package"·Z·G
+#   2.5 PHEV     AXUP85                          grade  Z
+#
+# This is the annotated one of the three petrol files; the others say only what
+# differs. See toyota-harrier-g.toml for the hybrid it was copied from and
+# mazda-cx30.toml for what the sections mean.
+#
+# TWO THINGS ARE PLACEHOLDERS AND MUST NOT BE TRADED ON:
+#
+# 1. Every `max_bid_jpy` below is ¥1. No petrol Harrier has been priced from
+#    either side yet — there is no Japanese hammer data in this repo for MXUA80
+#    and no Cyprus curve for a 2.0 petrol. Run the search, then re-derive the
+#    bids with `python -m price_calculator`. At ¥1 nothing will ever clear the
+#    ceiling, which is the intended failure: the report measures, it does not buy.
+# 2. `cars/inputs/model_specs.csv` has one HARRIER row, matched on make, model
+#    and year, and its co2_gkm of 104 is the *hybrid's* figure (WLTC 22.3 km/L).
+#    Its own header says using it to price a petrol Harrier "would be badly
+#    wrong". Every landed cost on this search inherits that number until the row
+#    grows a body-code key or the CO2 is taken off a registration document.
+
+car = "toyota-harrier"
+
+[site]
+transmission = "auto"
+grade = ["4", "4.5", "5"]
+source = "auctions"
+
+[api]
+# The same rule every other search in this directory runs. Whether black costs
+# as much here as it does on the hybrid side is unmeasured — drop the "black" if
+# you want to find out.
+exclude_colours = ["black", "blue"]
+# Written as an exclusion of the other grades rather than as a request for "G",
+# so a lot whose trim line is blank is kept and reaches the report where the
+# photographs can answer. The petrol spellings are not yet counted the way the
+# hybrid's 70 lots were, so expect "4WD G" and "G 4WD" alike — word order does
+# not matter, the match is on whole consecutive words.
+#
+# "Z" also catches "Z LEATHER PACKAGE", so no separate ban is needed here.
+exclude_model_grades = ["S", "Z"]
+
+[sheet]
+no_damage_codes = ["W", "X", "欠"]
+
+# Inherits [site] and [api] — including the grade exclusion above, so the sales
+# measured are Gs. `source` and `status` are not written here: an archive search
+# is over completed sales by definition. This is the section that will answer
+# what a petrol G actually hammers for, which is the first half of a real bid.
+[auction_statistics]
+
+[dashboard]
+enabled = true
+expected_profit_percent = 20
+
+# 2.0 litres and plain "petrol" are what fence off the other two Harriers on
+# bazaraki: the 2.5 hybrid is a different bazaraki fuel type ("hybrid petrol")
+# and the PHEV is a third ("plug-in hybrid petrol"), so naming this one drops
+# both, and the engine size drops anything mis-filed.
+[competitors]
+fuel_type = ["petrol"]
+engine_size_start = 2.0
+engine_size_end = 2.0
+
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see the header
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 50000
+  # Drops the trim below a G and nothing else; an advert naming no grade stays
+  # in, because it has not been shown to be a cheaper car and it still takes the
+  # sale. The hybrid files can write "hybrid s", which cannot collide with
+  # anything; on the petrol side the bare grade word has to carry it, and the
+  # cost is that "sports package" contains "s package". Nothing seen so far
+  # spells a Harrier that way, but the phrase is a substring match, not a word
+  # one — check the dropped column if the panel looks thin.
+  exclude_phrases = ["s package", "s model", "coming soon"]
+
+[[band]]
+year = 2023
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see the header
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+  exclude_phrases = ["s package", "s model", "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 1 }   # placeholder — see the header
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 50000
+  exclude_phrases = ["s package", "s model", "coming soon"]
+
+[[band]]
+year = 2024
+body_model_code = ["MXUA80", "MXUA85"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 1 }   # placeholder — see the header
+
+  [band.competitors]
+  year_start = 2023
+  mileage_end = 65_000
+  exclude_phrases = ["s package", "s model", "coming soon"]
