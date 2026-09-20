@@ -1,183 +1,145 @@
 """``python -m dashboard`` — write the pages, and open them in the right browser.
 
-``build`` writes ``runs/index.html``, ``runs/competitors.html`` and
-``runs/auction_statistics.html`` side by side. Side by side because the links
-between them are relative, so the set survives ``runs/`` being copied somewhere
-else — the same property the index has always had for its links into run
-directories.
+``build`` writes ``runs/index.html`` and, for every enabled search, an
+``index.html`` and a ``past.html`` under ``runs/searches/<name>/``. Seventeen
+files today, always rewritten in full: the pages are derived from the runs, the
+databases and the search files, so the only failure mode they have is staleness.
 
 ``open`` builds and then opens the index in **the parser's own Chrome**, not
 your everyday browser. banzai24 caps how many authenticated clients you may have
-at once and the reports link back to it, so opening a report anywhere else costs
-a click that lands signed out and may unseat the session the parser needs. That
+at once and the cards link back to it, so opening a page anywhere else costs a
+click that lands signed out and may unseat the session the parser needs. That
 window lives only as long as this command; see :func:`banzai24.session.review`.
 
-This module may import both parsers. Neither of them imports it — the runs index
+This module may import both parsers. Neither of them imports it — the pages
 moved here precisely so that ``banzai24 report`` could go on promising to touch
-no network and cost nothing, while this page needs two databases, a cost book
+no network and cost nothing, while these pages need two databases, a cost book
 and today's exchange rate.
+
+The two pages that panelled every search at once are gone: their content is on
+the search pages now. Files an older build left in ``runs/`` are not deleted —
+nothing here removes anything, and an orphan page is cheap to ignore. See
+``docs/adr/0012-the-dashboard-is-per-search.md``.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
-from markupsafe import Markup, escape
+import searches
 
-from . import competitors, index, statistics
-
-TEMPLATE_DIR = Path(__file__).parent / "templates"
-COMPETITORS_FILENAME = "competitors.html"
-STATISTICS_FILENAME = "auction_statistics.html"
+from . import competitors, index, search_page, statistics
 
 
-def _backticks(text: str) -> Markup:
-    """`like this` → <code>like this</code>, escaping everything else first.
+@dataclass(frozen=True)
+class Build:
+    """What one build wrote, and what it noticed while writing it."""
 
-    The notes are written as prose with commands in them and are also printed to
-    a terminal by ``build``, where backticks are the readable form. Marking the
-    result safe is only sound because :func:`escape` has already run over the
-    whole string — the substitution introduces the only tags in it.
+    listing: Path
+    pages: tuple[tuple[str, Path, Path], ...] = ()   # name, search page, past page
+    dashboard: competitors.Dashboard | None = None
+    statistics: statistics.Statistics | None = None
+    notes: tuple[str, ...] = field(default_factory=tuple)
+
+
+def build(runs_dir: Path | None = None) -> Build:
+    """Write every page. Always a full rewrite; staleness is the only failure mode.
+
+    The two panels are built once, for every search, and then handed out one at a
+    time — they read the databases and today's money, and eight rebuilds of that
+    to write eight pages would be the slowest thing here by an order of
+    magnitude.
     """
-    out, tag = [], False
-    for part in escape(text).split("`"):
-        out.append(f"<code>{part}</code>" if tag else part)
-        tag = not tag
-    return Markup("".join(out))
-
-
-def render(dashboard: competitors.Dashboard,
-           generated_at: datetime | None = None) -> str:
-    """The whole page as one string. No file written, so this is testable."""
-    # Same autoescape reasoning as report.py and index.py: the loader keys on
-    # ".j2", so `select_autoescape` would see no ".html" and quietly leave
-    # escaping off — and advert titles are free text off a public website.
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    env.filters["backticks"] = _backticks
-    return env.get_template("competitors.html.j2").render(
-        dashboard=dashboard,
-        generated_at=(generated_at or datetime.now()).strftime("%Y-%m-%d %H:%M"),
-    )
-
-
-def render_statistics(stats: statistics.Statistics,
-                      generated_at: datetime | None = None) -> str:
-    """The statistics page as one string. No file written, so this is testable."""
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    env.filters["backticks"] = _backticks
-    return env.get_template("auction_statistics.html.j2").render(
-        statistics=stats,
-        generated_at=(generated_at or datetime.now()).strftime("%Y-%m-%d %H:%M"),
-    )
-
-
-def _statistics_summary(stats: statistics.Statistics) -> str:
-    """The line the index carries under its link to the statistics page.
-
-    Counts the searches nobody has measured separately from the sales found,
-    because "0 benchmarks" and "2 searches never measured" mean opposite things
-    and one number would blur them — the same reasoning as :func:`_summary`.
-    """
-    count = stats.benchmark_count
-    bits = [f"{count} cheapest acceptable sale{'' if count == 1 else 's'}"]
-    if stats.unmeasured:
-        bits.append(f"{stats.unmeasured} search"
-                    f"{'' if stats.unmeasured == 1 else 'es'} not measured yet")
-    return " · ".join(bits)
-
-
-def _summary(dashboard: competitors.Dashboard) -> str:
-    """The line the index carries under its link to this page.
-
-    Three facts kept apart. The competitors are everyone selling this car; the
-    undercuts are the ones ahead of you in the queue; and a search nobody has
-    priced has no undercuts for a reason that is not good news. "0 asking less"
-    and "3 searches unpriced" mean opposite things, and a single number would
-    blur them.
-    """
-    unpriced = sum(
-        1 for panel in dashboard.panels
-        if panel.problem or all(band.sell_price_eur is None for band in panel.bands)
-    )
-    count = dashboard.competitor_count
-    bits = [f"{count} competing advert{'' if count == 1 else 's'} in Cyprus",
-            f"{dashboard.undercut_count} asking less than a cyprus sell price"]
-    if unpriced:
-        bits.append(f"{unpriced} search{'' if unpriced == 1 else 'es'} not priced yet")
-    return " · ".join(bits)
-
-
-def build(runs_dir: Path | None = None) -> tuple[
-        Path, Path, competitors.Dashboard, statistics.Statistics]:
-    """Write all three pages. Always a full rewrite; staleness is the only failure mode."""
     runs_dir = runs_dir or index.RUNS_DIR
     dashboard = competitors.build(runs_dir)
     stats = statistics.build()
 
     runs_dir.mkdir(parents=True, exist_ok=True)
-    panel_path = runs_dir / COMPETITORS_FILENAME
-    panel_path.write_text(render(dashboard), encoding="utf-8")
+    pages, notes = [], []
+    for name, definition, problem in sorted(searches.load_all(),
+                                            key=lambda item: item[0]):
+        if problem:
+            # The index carries this one; it is repeated here because the person
+            # who broke the file is standing at the terminal that broke it.
+            notes.append(f"{name}: will not load — {problem}")
+            continue
+        if not definition.dashboard.enabled:
+            continue
+        page = search_page.collect(name, dashboard, stats, runs_dir)
+        past = search_page.collect_past(name, dashboard, stats, runs_dir)
+        pages.append((name, search_page.write(page, runs_dir),
+                      search_page.write_past(past, runs_dir)))
 
-    stats_path = runs_dir / STATISTICS_FILENAME
-    stats_path.write_text(render_statistics(stats), encoding="utf-8")
+    if dashboard.money_problem:
+        notes.append(dashboard.money_problem)
+    for panel in dashboard.panels:
+        if panel.coverage:
+            notes.append(f"{panel.name}: {panel.coverage}")
 
-    listing = index.write(
-        runs_dir,
-        competitors_summary=_summary(dashboard),
-        statistics_summary=_statistics_summary(stats),
-    )
-    return listing, panel_path, dashboard, stats
+    return Build(listing=index.write(runs_dir), pages=tuple(pages),
+                 dashboard=dashboard, statistics=stats, notes=tuple(notes))
+
+
+# What a panel says when it has nothing to say — a gap in the setup rather than
+# a fact about a market. These reach the terminal; the numbers do not.
+_GAPS = ("not priced yet", "not measured yet")
+
+
+def _line(name: str, rows: list[index.Row], result: Build) -> str:
+    """One search's line: what is waiting, and only the gaps behind the folds.
+
+    The lot count, because that is what changes daily and what you came for. Not
+    the competitor or benchmark counts: the index deliberately stopped carrying
+    weekly numbers onto a page read every morning, and a terminal that printed
+    them anyway would just be the old index with a different font. What does
+    come through is a panel with *nothing* in it — an unpriced search or an
+    unmeasured one is a file to go and edit, not a market to read.
+    """
+    row = next((row for row in rows if row.name == name), None)
+    bits = [row.summary if row else "?"]
+    panel = next((p for p in (result.dashboard.panels if result.dashboard else ())
+                  if p.name == name), None)
+    stats_panel = next((p for p in (result.statistics.panels if result.statistics else ())
+                        if p.name == name), None)
+    for summary in (competitors.panel_summary(panel) if panel else None,
+                    statistics.panel_summary(stats_panel) if stats_panel else None):
+        if summary in _GAPS:
+            bits.append(summary)
+    return f"  {name:<18} {' · '.join(bits)}"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m dashboard",
-        description="Build the workflow's pages: the runs index, the "
-                    "competitors panel and the auction statistics.")
+        description="Build the pages: the index, and one page per saved search.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build", help="Write runs/index.html, runs/competitors.html "
-                                 "and runs/auction_statistics.html")
+    sub.add_parser("build", help="Write runs/index.html and runs/searches/*/")
     sub.add_parser("open", help="Build, then open the index in the parser's Chrome")
 
     args = parser.parse_args(argv)
-    listing, panel_path, dashboard, stats = build()
+    result = build()
 
-    print(f"Wrote {listing}")
-    print(f"Wrote {panel_path} — {_summary(dashboard)}")
-    print(f"Wrote {panel_path.parent / STATISTICS_FILENAME} — "
-          f"{_statistics_summary(stats)}")
-    if dashboard.money_problem:
-        # Said in the terminal as well as on the page: it is the difference
-        # between today's numbers and a stale run's, and you want to hear about
-        # it where you typed rather than three scrolls into the HTML.
-        print(f"  {dashboard.money_problem}")
-    for panel in dashboard.panels:
-        if panel.problem:
-            print(f"  {panel.name}: will not load — {panel.problem}")
-        elif panel.coverage:
-            print(f"  {panel.name}: {panel.coverage}")
+    print(f"Wrote {result.listing}")
+    rows = index.rows()
+    for name, _page, _past in result.pages:
+        print(_line(name, rows, result))
+    for note in result.notes:
+        # Said in the terminal as well as on the page: a stale cost book or a
+        # crawl that does not cover a search is the difference between today's
+        # numbers and last week's, and you want to hear about it where you typed
+        # rather than three scrolls into the HTML.
+        print(f"  {note}")
 
     if args.command == "open":
         from banzai24 import session
 
-        print(f"\nOpening {listing} — close the window when you are done.")
+        print(f"\nOpening {result.listing} — close the window when you are done.")
         print("  If a lot opens signed out, sign in in that window — "
               "it will be saved.")
         try:
-            asyncio.run(session.review(listing.resolve().as_uri()))
+            asyncio.run(session.review(result.listing.resolve().as_uri()))
         except (session.SessionExpired, session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
     return 0

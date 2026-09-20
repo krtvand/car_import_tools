@@ -132,6 +132,23 @@ class Statistics:
                    if panel.problem or panel.measured_on is None)
 
 
+def panel_summary(panel: SearchPanel) -> str:
+    """The line printed on this panel's closed ``<details>`` on a search page.
+
+    A search nobody has measured is said separately from a search measured and
+    found empty: "0 sales" and "never measured" are opposite news, and one
+    number would blur them — see ``docs/adr/0002-unmeasured-survivorship-is-
+    ignorance.md``.
+    """
+    if panel.problem:
+        return f"will not load: {panel.problem}"
+    if panel.measured_on is None:
+        return "not measured yet"
+    count = panel.benchmark_count
+    return (f"{count} cheapest acceptable sale{'' if count == 1 else 's'}"
+            f" · measured {panel.measured_on.isoformat()}")
+
+
 # --- turning stored lots back into a band's five -----------------------------
 
 

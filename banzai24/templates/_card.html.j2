@@ -1,0 +1,369 @@
+{# One card per lot: the auction sheet on the left, everything read off it on
+   the right. Self-contained by construction — the only <img> is a data URI and
+   the only external URLs are hyperlinks back to banzai24, which the page never
+   needs to load.
+
+   Requirement verdicts print **against the value they judge** rather than in a
+   block of their own — the same convention the cross-checks follow, and for the
+   same reason: a verdict qualifies a number best when it is printed on it.
+
+   Imported by `report.html.j2` and by the dashboard's search pages. Everything
+   it needs arrives as an argument, `jpy_per_eur` included: a macro imported
+   without context cannot see the render globals, and a card that silently
+   dropped its euro line on one page and not another is exactly the kind of bug
+   nobody reports. The Jinja filters it uses — `yen`, `km`, `check`, `verdict` —
+   come from the environment, so any page rendering a card must register them;
+   see `banzai24.report._environment`. #}
+
+{# The diagram's handwriting sits with its codes, not down in the warnings
+   list: ズレ is written across the front bumper and it is that bumper it
+   describes. There is no severity digit to lead with, so the Japanese does and
+   the gloss follows it — and a word nobody has glossed yet still names its
+   panel, which is what sends you to the scan. #}
+{% macro diagram_notes(notes) %}
+{% if notes %}
+<div class="marks">
+  {% for note in notes %}
+  <span class="mark written" title="written on the diagram, not a legend code">
+    <b class="ja">{{ note.ja }}</b>{% if note.en %} {{ note.en }}{% endif %}
+    {%- if note.panel %} · {{ note.panel }}{% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro card(view, jpy_per_eur=None) %}
+{% set lot = view.lot %}
+{% set top = view.flags[0].key if view.flags else '' %}
+{# The zoom checkbox is keyed on the lot number rather than a loop counter:
+   cards are emitted group by group, so a per-loop index would collide across
+   headings and one click would zoom a different card. #}
+{% set zoom_id = 'zoom-' ~ lot.lot_number %}
+<article class="lot {{ 'flagged' if view.flags }} {{ top }}">
+
+  <div class="head">
+    <span class="lotno">Lot {{ lot.lot_short }}</span>
+    <span class="where">
+      {{ lot.auction_name }} · {{ lot.trade_date }}{% if lot.trade_time %} {{ lot.trade_time }}{% endif %}
+    </span>
+    <span class="badges">
+      {% for flag in view.flags %}
+      <span class="badge {{ flag.key }}">{{ flag.label }}</span>
+      {% endfor %}
+    </span>
+    <span class="status">{{ lot.status_code or '—' }}</span>
+  </div>
+
+  {% if view.verdict_line %}
+  <p class="verdict {{ view.group }}">{{ view.verdict_line }}</p>
+  {% endif %}
+
+  <div class="body">
+    <div class="left">
+      {# The checkbox precedes .sheet so `:checked +` can reach it; it is visually
+         hidden but still keyboard-reachable. #}
+      <input type="checkbox" class="zoom sheet-zoom" id="{{ zoom_id }}"
+             aria-label="Enlarge the auction sheet for lot {{ lot.lot_short }}">
+      <label class="sheet" for="{{ zoom_id }}">
+        {% if view.sheet_uri %}
+        <img src="{{ view.sheet_uri }}" alt="Auction sheet for lot {{ lot.lot_short }}"
+             width="800" height="800">
+        {% else %}
+        <span class="nosheet">
+          {% if lot.sheet_status == 'no_sheet' %}
+          banzai24 published no sheet for this lot
+          {% else %}
+          sheet not downloaded ({{ lot.sheet_status }})
+          {% endif %}
+        </span>
+        {% endif %}
+      </label>
+
+      {# The car itself, under the sheet that describes it — as many shots as
+         fetch brought down, which is however many fit this one row. There is no
+         "and N more" line because the number is not known here and would cost a
+         column to store; the lot page in Links is the rest of the gallery. #}
+      {% if view.photo_uris %}
+      <div class="photos">
+        {% for photo_uri in view.photo_uris %}
+        <input type="checkbox" class="zoom photo-zoom" id="{{ zoom_id }}-photo-{{ loop.index }}"
+               aria-label="View photo {{ loop.index }} of lot {{ lot.lot_short }} full size">
+        <label class="shot" for="{{ zoom_id }}-photo-{{ loop.index }}">
+          <img src="{{ photo_uri }}" loading="lazy"
+               alt="Photo {{ loop.index }} of lot {{ lot.lot_short }}">
+        </label>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="fields">
+      <h2>
+        {{ view.title }}
+        {% if view.registration %}<span class="year">· {{ view.registration }}</span>{% endif %}
+      </h2>
+
+      <dl>
+        {# The trim — *which* of a model's cars this is, as against the Grade
+           row below, which is what condition it is in. Two boxes on the sheet,
+           both called a grade in English, and on a Harrier the first is worth
+           about ¥1.5M.
+
+           Only shown once a sheet has been read: the <h2> above already carries
+           the API's own trim line, and a second row repeating it in an unread
+           state would push the scan further down for nothing.
+
+           `dd.ja` is pre-wrap, so the whitespace here is controlled — the
+           template's own indentation would otherwise print as a blank first
+           line and a leading indent. #}
+        {% if view.trim %}
+        <dt>Trim グレード</dt>
+        <dd class="ja">
+          {%- if view.trim.unasked -%}
+          <span class="unset">this sheet was read before the trim was asked for</span>
+          {%- elif view.trim.blank -%}
+          <span class="unset">the グレード box is blank</span>
+          {%- else -%}
+          {{ view.trim.printed }}
+          {%- if view.trim.en %} <span class="note">{{ view.trim.en }}</span>
+          {%- else %} <span class="note bad">(no entry in cars/inputs/trims.toml)</span>
+          {%- endif -%}
+          {%- if view.trim.note %}<span class="note translation">{{ view.trim.note }}</span>{% endif -%}
+          {%- endif -%}
+        </dd>
+        {% endif %}
+
+        {# The listing's own trim line, against the `[api]` grade rules the
+           search splits one car on. Directly under the sheet's box, because the
+           whole reason to print a line the <h2> already carries is to have the
+           two answers a centimetre apart: the file is re-read every time this
+           page is built, so a grade banned since the fetch is a lot sitting here
+           that nothing else would mention.
+
+           Shown whenever the search names any grade — like Drivetrain, and for
+           the same reason: an empty line is the reason a card wears a badge, and
+           hiding the row would hide the reason. #}
+        {% if view.check('trim') %}
+        <dt>Trim (listing)</dt>
+        <dd>
+          <span class="{{ view.check('trim') | verdict }}">
+            {%- if lot.modification %}{{ lot.modification }}
+            {%- else %}<span class="unset">not stated</span>{% endif -%}
+          </span>
+          <span class="note{{ ' bad' if view.check('trim').failed }}">({{ view.trim_rule }})</span>
+        </dd>
+        {% endif %}
+
+        <dt>Grade</dt>
+        <dd>
+          <span class="{{ view.check('grade') | verdict or (view.checks.grade | check if view.checks else '') }}">
+            {{ (view.extraction.sheet_grade if view.extraction else None) or lot.grade_origin or '—' }}
+          </span>
+          {% if view.extraction %}
+            {% if view.extraction.exterior_grade %}· exterior {{ view.extraction.exterior_grade }}{% endif %}
+            {% if view.extraction.interior_grade %}· interior {{ view.extraction.interior_grade }}{% endif %}
+          {% endif %}
+          {% if view.check('grade') and view.check('grade').detail %}
+          <span class="note bad">({{ view.check('grade').detail }})</span>
+          {% elif view.grade_note %}<span class="note bad">({{ view.grade_note }})</span>{% endif %}
+        </dd>
+
+        <dt>Mileage</dt>
+        <dd>
+          {% if view.extraction and view.extraction.sheet_mileage_km is not none %}
+          <span class="{{ view.check('mileage') | verdict or view.checks.mileage | check }}">{{ view.extraction.sheet_mileage_km | km }}</span>
+          {% if view.mileage_note %}<span class="note">({{ view.mileage_note }})</span>{% endif %}
+          {% else %}
+          {{ lot.mileage_km | km or '—' }} <span class="note">(API, rounded)</span>
+          {% endif %}
+        </dd>
+
+        {% if view.extraction %}
+        <dt>Chassis</dt>
+        <dd>
+          <code class="{{ view.checks.chassis | check }}">{{ view.extraction.chassis_full or '—' }}</code>
+          {% if view.chassis_note %}<span class="note">({{ view.chassis_note }})</span>{% endif %}
+        </dd>
+        {% endif %}
+
+        {# Drivetrain shows whenever the search asks for one, extraction or not:
+           its "?" is the reason a card sits in *unconfirmed*, and hiding the row
+           would hide the reason. #}
+        {% if view.check('drivetrain') %}
+        <dt>Drivetrain</dt>
+        <dd>
+          <span class="{{ view.check('drivetrain') | verdict }}">
+            {{ (view.extraction.drivetrain if view.extraction else None) or 'not on the sheet' }}
+          </span>
+          {% if view.check('drivetrain').detail and view.check('drivetrain').failed %}
+          <span class="note bad">(wanted {{ view.requirements.drivetrain }})</span>
+          {% endif %}
+        </dd>
+        {% endif %}
+
+        {# The damage row is the assertion, not the inventory: when the search
+           bans codes, the label says which and the verdict marker answers it.
+           The marks themselves are still listed, with the offending one picked
+           out — you still have to look at the scan, and the code tells you where. #}
+        {% if view.check('damage') %}
+        <dt>Damage</dt>
+        <dd>
+          <span class="{{ view.check('damage') | verdict }}">no {{ view.banned_codes | join('/') }} marks</span>
+          {% if view.damage_marks %}
+          <div class="marks">
+            {% for mark in view.damage_marks %}
+            <span class="mark {{ 'banned' if mark.banned }}"
+                  title="{{ mark.meaning or 'not in the printed legend' }}">
+              <b>{{ mark.code }}</b> {{ mark.panel }}
+            </span>
+            {% endfor %}
+          </div>
+          {% elif view.extraction and not view.diagram_notes %}
+          <span class="note">(diagram clean)</span>
+          {% endif %}
+          {{ diagram_notes(view.diagram_notes) }}
+        </dd>
+        {% elif view.damage_marks or view.diagram_notes %}
+        <dt>Damage</dt>
+        <dd>
+          {% if view.damage_marks %}
+          <div class="marks">
+            {% for mark in view.damage_marks %}
+            <span class="mark" title="{{ mark.meaning or 'not in the printed legend' }}">
+              <b>{{ mark.code }}</b> {{ mark.panel }}
+            </span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {{ diagram_notes(view.diagram_notes) }}
+        </dd>
+        {% endif %}
+
+        {% if view.extraction %}
+        {# Item by item rather than as one block of Japanese with one block of
+           English under it: the box is a list of separate things wrong with the
+           car, and the buyer prices them one at a time. `warnings_note` is the
+           old whole-box translation, kept only for a box the glossary cannot
+           read a single term of. #}
+        {% if view.warnings %}
+        <dt>Warnings 注意事項欄</dt>
+        <dd>
+          <ul class="terms">
+            {% for item in view.warnings %}
+            <li><span class="ja warn">{{ item.ja }}</span>{% if item.en %}<span class="gloss">{{ item.en }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% if view.warnings_note %}<span class="note translation">{{ view.warnings_note }}</span>{% endif %}
+        </dd>
+        {% endif %}
+
+        {% if view.extraction.inspector_notes_ja %}
+        <dt>Inspector's notes 検査員記入欄</dt>
+        <dd class="ja">{{ view.extraction.inspector_notes_ja }}{% if view.extraction.inspector_notes_en %}<span class="note translation">{{ view.extraction.inspector_notes_en }}</span>{% endif %}</dd>
+        {% endif %}
+
+        {# Always rendered once a sheet is read, blank box included: it is the
+           input the bid falls back to `private` on, and the card has to show
+           what that assumption was made from. #}
+        {% if view.history_note %}
+        <dt>Vehicle history 車歴</dt>
+        {# Whitespace-controlled: `dd.ja` is pre-wrap, so the template's own
+           indentation would print as a blank first line and a leading indent. #}
+        <dd class="ja {{ 'warn' if view.history_note.rental }}">
+          {%- if view.history_note.unset -%}
+          <span class="unset">unset — the sheet says neither</span>
+          {%- else -%}
+          {{ view.history_note.ja }}{% if view.history_note.en %} <span class="note">{{ view.history_note.en }}</span>{% endif %}
+          {%- endif -%}
+        </dd>
+        {% endif %}
+
+        {% if view.equipment %}
+        <dt>Equipment</dt>
+        <dd>
+          <details>
+            <summary>{{ view.equipment | length }} items</summary>
+            <ul class="terms">
+              {% for item in view.equipment %}
+              <li><span class="ja">{{ item.ja }}</span>{% if item.en %}<span class="gloss">{{ item.en }}</span>{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </details>
+        </dd>
+        {% endif %}
+        {% endif %}{# view.extraction #}
+
+        <dt>Price</dt>
+        <dd>
+          start {{ lot.start_price_jpy | yen or '—' }}
+          {% if jpy_per_eur and lot.start_price_jpy %}
+          <span class="note">(≈ €{{ '{:,.0f}'.format(lot.start_price_jpy / jpy_per_eur) }}
+            at {{ jpy_per_eur }} ¥/€)</span>
+          {% endif %}
+          {% if lot.end_price_jpy %}· sold {{ lot.end_price_jpy | yen }}{% endif %}
+        </dd>
+
+        {# max_bid − extra_costs = bid_reduced, or the reason there is no such
+           number. Printed on every card in every group: a car that fails a
+           requirement is still one whose price you may want to know, and the
+           arithmetic does not depend on the verdict. Omitted only when the
+           tables themselves are missing — that reason is report-wide and prints
+           once in the header, rather than sixty times down the page. #}
+        {% if view.quote %}
+        <dt>Bid</dt>
+        <dd class="money">
+          {% for line in view.quote.lines() %}
+          {% if loop.last %}
+          <span class="{{ 'result' if view.quote.bid_reduced is not none else 'why' }}">{{ line }}</span>
+          {% else %}
+          <span>{{ line }}</span>
+          {% endif %}
+          {% endfor %}
+        </dd>
+        {% endif %}
+
+        {# What that max bid costs on Cyprus plates. Priced from `max_bid` rather
+           than `bid_reduced`: the area price is paid in Japan for the car and
+           belongs in the customs value. The rates are the ones stamped into the
+           run the morning it was fetched, so this number never moves under a
+           re-render.
+
+           A string here is a reason the car could not be priced, and prints
+           where the money would go. Two reach this page: no model spec at all,
+           and a spec carrying no CO₂ figure. The second is not a technicality —
+           road tax comes off the Cyprus CO₂ scale and is worth €45 to €1,500 a
+           year, so a car with no figure cannot be landed within a hundred euro
+           and gets the sentence instead of a total. Both are fixed in
+           `cars/inputs/model_specs.csv`, and the reason names it.
+
+           Only the landed cost prints. `Margin.lines()` also carries the resale
+           estimate and the gap to it, and those were crowding out the half of
+           the card this page is actually for — reading the condition off the
+           sheet. The resale side is a curve fitted to asking prices with a
+           haircut on top; it belongs in a pricing report, not next to the
+           damage diagram. #}
+        {% if view.margin %}
+        <dt>Landed</dt>
+        <dd class="money">
+          {% if view.margin is string %}
+          <span class="why">{{ view.margin }}</span>
+          {% else %}
+          <span class="result">{{ view.margin.lines()[0] }}</span>
+          {% endif %}
+        </dd>
+        {% endif %}
+
+        <dt>Links</dt>
+        <dd class="note">
+          {% if view.lot_url %}<a href="{{ view.lot_url }}">banzai24 lot page</a> · {% endif %}
+          <code>{{ lot.lot_number }}</code>
+          {% if view.extraction %}· read by {{ view.extraction.model_id }}
+          {% if view.extraction.confidence is not none %}at confidence {{ '%.2f' % view.extraction.confidence }}{% endif %}
+          {% endif %}
+        </dd>
+      </dl>
+    </div>
+  </div>
+</article>
+{% endmacro %}

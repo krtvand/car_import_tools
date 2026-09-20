@@ -1,16 +1,19 @@
-"""Rendering the competitors page: what a reader is told when there is no answer.
+"""Rendering a competitors panel: what a reader is told when there is no answer.
 
 The template is a layout and is not tested for its own sake. What is tested is
 that the three "we cannot answer this" states actually reach the HTML — a
 mis-edited search, a band with nothing declared, and a band the market will not
 pay for — because each of them would otherwise render as a short list, and a
 short list reads as good news.
+
+The panel is rendered through the same macro the search page uses. There is no
+competitors *page* any more: one search's panel is a fold on its own page.
 """
 from __future__ import annotations
 
 from searches.definition import Band, CompetitorBounds
 
-from dashboard import cli, competitors
+from dashboard import competitors, search_page
 
 BAND = Band(year=2023, mileage_start=0, mileage_end=50_000,
             max_bid_jpy={"private": 1_805_000},
@@ -30,9 +33,15 @@ def _dashboard(*panels) -> competitors.Dashboard:
     return competitors.Dashboard(panels=panels, rates="¥185/€", costs="Aug 2026")
 
 
+def _render(dashboard: competitors.Dashboard) -> str:
+    """Every panel through the macro the search page folds away."""
+    macro = search_page._environment().get_template("_competitors.html.j2").module.panel
+    return "\n".join(str(macro(panel)) for panel in dashboard.panels)
+
+
 def test_a_percent_profit_says_so_next_to_the_euro_it_came_to():
     """The euro is what it came to; the percent is what was actually declared."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -45,7 +54,7 @@ def test_a_percent_profit_says_so_next_to_the_euro_it_came_to():
 def test_a_dismissed_advert_is_shown_struck_through_with_its_reason():
     """It stays on the page because bazaraki still shows it under these filters;
     it is struck through because it is not competition."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -66,7 +75,7 @@ def test_a_dismissed_advert_is_shown_struck_through_with_its_reason():
 def test_a_band_whose_only_undercuts_were_dismissed_says_so_and_still_shows_them():
     """The two used to be an if/else. Both are true here: nobody is undercutting
     you, *and* here is the row you already dealt with."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -81,7 +90,7 @@ def test_a_band_whose_only_undercuts_were_dismissed_says_so_and_still_shows_them
 def test_a_priced_band_shows_all_three_numbers_and_the_advert():
     """The sell price, the estimate, and the link. The comparison between the
     first two is why the estimate is on the page at all."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -109,7 +118,7 @@ def test_a_priced_band_shows_all_three_numbers_and_the_advert():
 def test_the_mark_colours_the_age_cell_and_the_legend_explains_it():
     """The colour is the only label the operator wanted, so the number it sits on
     has to carry the same distinction for anyone reading in greyscale."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -133,7 +142,7 @@ def test_the_mark_colours_the_age_cell_and_the_legend_explains_it():
 def test_an_empty_list_says_what_it_looked_at():
     """"Nothing under €17,859" is only good news if you know how many adverts
     were considered to reach it."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -147,7 +156,7 @@ def test_an_empty_list_says_what_it_looked_at():
 def test_a_band_with_rows_only_in_the_headroom_still_says_nobody_undercuts_you():
     """The ceiling put those rows on the page; they must not be read as
     undercuts because they are on it."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=15_859.0,
@@ -160,7 +169,7 @@ def test_a_band_with_rows_only_in_the_headroom_still_says_nobody_undercuts_you()
 
 
 def test_a_band_with_nothing_declared_says_so_instead_of_showing_a_list():
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx5", car="Mazda CX-5",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000,
@@ -173,13 +182,13 @@ def test_a_band_with_nothing_declared_says_so_instead_of_showing_a_list():
 def test_a_search_that_will_not_load_still_gets_a_section():
     """Hiding it is how it gets forgotten — the runs index makes the same
     argument about a run it cannot open."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-3", problem="mazda-3.toml: bands 2023 and 2023 overlap")))
     assert "will not load" in html and "overlap" in html
 
 
 def test_an_underwater_band_is_called_out_above_its_list():
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-cx30", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1_805_000, landed_eur=20_000.0,
@@ -193,12 +202,12 @@ def test_an_underwater_band_is_called_out_above_its_list():
 def test_a_command_in_a_note_is_rendered_as_code_and_still_escaped():
     """The notes double as terminal output, so they are written with backticks —
     and advert titles beside them are free text off a public website."""
-    html = cli.render(_dashboard(competitors.SearchPanel(
+    html = _render(_dashboard(competitors.SearchPanel(
         name="mazda-3",
         coverage="no completed crawl — run `bazaraki scrape --search mazda-3`")))
     assert "<code>bazaraki scrape --search mazda-3</code>" in html
 
-    escaped = cli.render(_dashboard(competitors.SearchPanel(
+    escaped = _render(_dashboard(competitors.SearchPanel(
         name="x", car="Mazda CX-30",
         bands=(competitors.BandPanel(
             band=BAND, max_bid_jpy=1, landed_eur=1.0, profit_eur=1.0,
@@ -208,15 +217,17 @@ def test_a_command_in_a_note_is_rendered_as_code_and_still_escaped():
     assert "&lt;script&gt;" in escaped
 
 
-def test_the_index_summary_separates_adverts_found_from_searches_unpriced():
-    """"0 competitors" and "3 searches not configured" mean opposite things."""
-    summary = cli._summary(_dashboard(
-        competitors.SearchPanel(name="a", bands=(competitors.BandPanel(
-            band=BAND, max_bid_jpy=1, sell_price_eur=3.0,
-            rows=(_row(),)),)),
-        competitors.SearchPanel(name="b", bands=(competitors.BandPanel(
-            band=BAND, max_bid_jpy=1),)),
-    ))
-    assert "1 competing advert in Cyprus" in summary
-    assert "1 asking less than a cyprus sell price" in summary
-    assert "1 search not priced yet" in summary
+def test_a_panel_summary_separates_adverts_found_from_a_search_unpriced():
+    """"0 competitors" and "not priced yet" mean opposite things.
+
+    The line this protected used to be one sentence about all eight searches on
+    the index. It is per search now, on the fold that opens that search's
+    competitors — so the two states are asserted one panel at a time.
+    """
+    priced = competitors.SearchPanel(name="a", bands=(competitors.BandPanel(
+        band=BAND, max_bid_jpy=1, sell_price_eur=3.0, rows=(_row(),)),))
+    unpriced = competitors.SearchPanel(name="b", bands=(competitors.BandPanel(
+        band=BAND, max_bid_jpy=1),))
+    assert competitors.panel_summary(priced) == (
+        "1 competing advert in Cyprus · 1 asking less than a cyprus sell price")
+    assert competitors.panel_summary(unpriced) == "not priced yet"

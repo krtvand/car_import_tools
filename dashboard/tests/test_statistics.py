@@ -15,7 +15,7 @@ import pytest
 
 from banzai24 import search
 from banzai24.models import AuctionLot, SheetExtraction
-from dashboard import cli, statistics
+from dashboard import search_page, statistics
 
 RAV4 = """
 car = "toyota-rav4"
@@ -193,11 +193,15 @@ def test_a_full_five_needs_no_footnote(definition):
 
 
 def _page(definition, **kw):
+    """One panel, through the macro the search page folds away.
+
+    There is no statistics *page* any more — the eight-panel version is what the
+    10 MB file was — so what is rendered here is one search's section of it.
+    """
     band = statistics.BandPanel(band=definition.bands[0], **kw)
-    return cli.render_statistics(statistics.Statistics(panels=(
-        statistics.SearchPanel(name="toyota-rav4", bands=(band,),
-                               measured_on=date(2026, 8, 27)),
-    )))
+    macro = search_page._environment().get_template("_statistics.html.j2").module.panel
+    return str(macro(statistics.SearchPanel(
+        name="toyota-rav4", bands=(band,), measured_on=date(2026, 8, 27))))
 
 
 def _row(price=2_960_000, uri=None):

@@ -1,194 +1,165 @@
-"""The runs index — ordering, parsing, and the states a run can be in."""
+"""The index — a table of contents, and the three absences it must keep apart.
+
+What this page must never do is go quiet about a search. A missing row reads as
+"switched off on purpose" whatever the real reason was, so a file that will not
+parse stays on the page, and a search nobody has fetched says that rather than
+showing a zero.
+"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from dashboard import index
 
 
-def make_run(root: Path, name: str, lots: int = 0, reported: bool = True) -> Path:
-    """A run directory with just enough in it to be recognised as one."""
-    run = root / name
-    (run / "sheets").mkdir(parents=True)
-    (run / "lots.json").write_text("[]", encoding="utf-8")
-    rows = ["lot_number,mark,model"] + [f"{i},MAZDA,CX-30" for i in range(lots)]
-    (run / "lots.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
-    if reported:
-        (run / "report.html").write_text("<!doctype html>", encoding="utf-8")
-    return run
+def _definition(enabled: bool = True):
+    return SimpleNamespace(dashboard=SimpleNamespace(enabled=enabled))
 
 
-def test_parses_the_timestamp_and_the_car_out_of_the_directory_name():
-    stamp, car = index._parse_name("2026-08-17_222903_TOYOTA-RAV4")
-    assert stamp == datetime(2026, 8, 17, 22, 29, 3)
-    assert car == "TOYOTA RAV4"
+@pytest.fixture
+def searches_on_disk(monkeypatch):
+    """Control what `searches.load_all()` finds, without writing TOML files."""
+    def use(*entries):
+        monkeypatch.setattr(index.searches, "load_all", lambda *a, **kw: list(entries))
+    return use
 
 
-def test_keeps_hyphens_inside_the_model():
-    """`MAZDA-CX-30` is make + model, not three words."""
-    _, car = index._parse_name("2026-08-16_105939_MAZDA-CX-30")
-    assert car == "MAZDA CX-30"
+@pytest.fixture
+def fetched(monkeypatch):
+    """Control what `days` knows, without a runs directory."""
+    def use(upcoming: dict[str, list[int]], ever: set[str] | None = None):
+        ever = set(upcoming) if ever is None else ever
+        monkeypatch.setattr(index.days, "upcoming", lambda name, *a, **kw: [
+            SimpleNamespace(count=n) for n in upcoming.get(name, [])])
+        monkeypatch.setattr(index.days, "ever_fetched", lambda name, *a, **kw: name in ever)
+    return use
 
 
-def test_an_unparseable_name_still_yields_an_entry(tmp_path):
-    make_run(tmp_path, "hand-renamed-run")
-    entry = index.recent(tmp_path)[0]
-    assert entry.started_at is None
-    assert entry.when == "hand-renamed-run"  # falls back, never blank
+def test_rows_are_alphabetical_by_file_name(searches_on_disk, fetched):
+    """The file name is what you type at `--search`, and it sorts the three
+    Harriers together."""
+    searches_on_disk(("toyota-harrier-z", _definition(), None),
+                     ("mazda-3", _definition(), None),
+                     ("toyota-harrier-g", _definition(), None))
+    fetched({})
+    assert [row.name for row in index.rows()] == [
+        "mazda-3", "toyota-harrier-g", "toyota-harrier-z"]
 
 
-def test_newest_first(tmp_path):
-    for name in ("2026-08-16_105939_MAZDA-CX-30",
-                 "2026-08-17_222903_TOYOTA-RAV4",
-                 "2026-08-17_182056_MAZDA-CX-5"):
-        make_run(tmp_path, name)
-    assert [e.name for e in index.recent(tmp_path)] == [
-        "2026-08-17_222903_TOYOTA-RAV4",
-        "2026-08-17_182056_MAZDA-CX-5",
-        "2026-08-16_105939_MAZDA-CX-30",
-    ]
+def test_a_disabled_search_is_simply_absent(searches_on_disk, fetched):
+    searches_on_disk(("mazda-cx5", _definition(enabled=False), None),
+                     ("mazda-3", _definition(), None))
+    fetched({})
+    assert [row.name for row in index.rows()] == ["mazda-3"]
 
 
-def test_ordering_ignores_mtime(tmp_path):
-    """Re-reading an old run's sheets must not float it to the top.
-
-    `extract` and `report` both write into an existing run directory, so an
-    mtime sort would reorder the index every time you worked on an old run.
-    """
-    old = make_run(tmp_path, "2026-08-01_090000_MAZDA-CX-30")
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    (old / "report.html").write_text("<!doctype html>rebuilt", encoding="utf-8")
-    (old / "extractions.jsonl").write_text("{}\n", encoding="utf-8")
-
-    assert index.recent(tmp_path)[0].name == "2026-08-17_222903_TOYOTA-RAV4"
+def test_a_broken_file_keeps_its_row_and_carries_the_parser_s_message(
+        searches_on_disk, fetched):
+    """The whole reason this page still has bad news on it."""
+    searches_on_disk(("toyota-rav4-g", None, "[band] mileage_end must be an integer"))
+    fetched({})
+    row, = index.rows()
+    assert row.problem == "[band] mileage_end must be an integer"
+    assert row.summary == "file will not load: [band] mileage_end must be an integer"
 
 
-def test_limit_takes_the_newest(tmp_path):
-    for day in range(1, 13):
-        make_run(tmp_path, f"2026-08-{day:02d}_090000_MAZDA-CX-30")
-    entries = index.recent(tmp_path, limit=10)
-    assert len(entries) == 10
-    assert entries[0].name.startswith("2026-08-12")
-    assert entries[-1].name.startswith("2026-08-03")
+def test_the_count_is_every_kept_lot_on_the_days_ahead(searches_on_disk, fetched):
+    searches_on_disk(("toyota-harrier-z", _definition(), None))
+    fetched({"toyota-harrier-z": [3, 2]})       # two upcoming days
+    assert index.rows()[0].summary == "5 lots"
 
 
-def test_a_directory_without_lots_json_is_not_a_run(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    (tmp_path / "scratch").mkdir()
-    (tmp_path / "index.html").write_text("previous build", encoding="utf-8")
-    assert len(index.recent(tmp_path)) == 1
+def test_one_lot_is_not_pluralised(searches_on_disk, fetched):
+    searches_on_disk(("toyota-harrier-g", _definition(), None))
+    fetched({"toyota-harrier-g": [1]})
+    assert index.rows()[0].summary == "1 lot"
 
 
-def test_lot_count_excludes_the_header(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4", lots=3)
-    assert index.recent(tmp_path)[0].lots == 3
+def test_a_quiet_week_and_a_morning_you_forgot_read_differently(
+        searches_on_disk, fetched):
+    """Fetched with nothing ahead is not the same news as never fetched."""
+    searches_on_disk(("toyota-rav4-x", _definition(), None),
+                     ("mazda-cx30", _definition(), None))
+    fetched({}, ever={"toyota-rav4-x"})
+    summaries = {row.name: row.summary for row in index.rows()}
+    assert summaries == {"toyota-rav4-x": "no upcoming lots",
+                         "mazda-cx30": "never fetched"}
 
 
-def test_lot_count_survives_a_newline_inside_a_quoted_field(tmp_path):
-    """Sheet text is Japanese free text; counting lines would over-count."""
-    run = make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    (run / "lots.csv").write_text(
-        'lot_number,note\n1,"first\nsecond"\n2,plain\n', encoding="utf-8"
-    )
-    assert index.recent(tmp_path)[0].lots == 2
+def test_a_row_links_into_the_search_folder():
+    assert index.Row(name="toyota-harrier-z").href == (
+        "searches/toyota-harrier-z/index.html")
 
 
-def test_an_unreported_run_is_listed_with_no_link(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4", reported=False)
-    entry = index.recent(tmp_path)[0]
-    assert entry.report is None
-    assert entry.href is None
+# --- rendering ----------------------------------------------------------------
 
 
-def test_links_are_relative(tmp_path):
-    """So the index keeps working if `runs/` is copied somewhere else."""
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    assert index.recent(tmp_path)[0].href == (
-        "2026-08-17_222903_TOYOTA-RAV4/report.html"
-    )
+def test_render_lists_every_row_with_its_link_and_summary():
+    html = index.render([index.Row(name="toyota-harrier-z", lots=3, upcoming=True),
+                         index.Row(name="mazda-3", lots=0, upcoming=False)])
+    assert 'href="searches/toyota-harrier-z/index.html"' in html
+    assert "3 lots" in html
+    assert "no upcoming lots" in html
 
 
-def test_no_runs_at_all(tmp_path):
-    assert index.recent(tmp_path) == []
-    assert index.recent(tmp_path / "nonexistent") == []
+def test_render_marks_the_rows_with_nothing_waiting(): 
+    """Readable at a glance down the whole list, not a word you have to find."""
+    html = index.render([index.Row(name="mazda-3", lots=0, upcoming=False)])
+    assert "search quiet" in html
 
 
-# --- rendering -------------------------------------------------------------
-
-def test_render_lists_every_entry(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4", lots=2)
-    make_run(tmp_path, "2026-08-16_105939_MAZDA-CX-30", lots=1)
-    html = index.render(index.recent(tmp_path))
-    assert "TOYOTA RAV4" in html
-    assert "MAZDA CX-30" in html
-    assert "2 lots" in html
-    assert "1 lot" in html  # singular
+def test_a_broken_row_is_loud_and_not_a_link():
+    html = index.render([index.Row(name="toyota-rav4-g", problem="line 4: bad table")])
+    assert "search broken" in html
+    assert 'href="searches/toyota-rav4-g/' not in html
 
 
-def test_render_flags_an_unreported_run_with_the_command_to_fix_it(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4", reported=False)
-    html = index.render(index.recent(tmp_path))
-    assert "unreported" in html
-    assert "report runs/2026-08-17_222903_TOYOTA-RAV4" in html
-
-
-def test_render_says_when_it_is_showing_a_subset(tmp_path):
-    for day in range(1, 13):
-        make_run(tmp_path, f"2026-08-{day:02d}_090000_MAZDA-CX-30")
-    html = index.render(index.recent(tmp_path, limit=10), total=12)
-    assert "10 most recent of 12" in html
-
-
-def test_render_with_no_runs_says_what_to_do(tmp_path):
-    html = index.render([])
-    assert "No runs yet" in html
-    assert "fetch" in html
-
-
-def test_render_escapes_directory_names(tmp_path):
-    """Autoescape is on for a reason; .j2 defeats select_autoescape."""
-    make_run(tmp_path, "2026-08-17_222903_<script>")
-    html = index.render(index.recent(tmp_path))
+def test_render_escapes_a_parser_message():
+    """The message carries whatever somebody typed into a TOML file."""
+    html = index.render([index.Row(name="x", problem='<script>alert("hi")</script>')])
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
 
 
-def test_render_is_self_contained(tmp_path):
-    """No network at open time — the report guarantees the same."""
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    html = index.render(index.recent(tmp_path))
+def test_render_is_self_contained():
+    html = index.render([index.Row(name="mazda-3", lots=1, upcoming=True)])
     assert "http://" not in html and "https://" not in html
     assert "<script" not in html
 
 
-# --- writing ---------------------------------------------------------------
-
-def test_write_lands_next_to_the_runs(tmp_path):
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    written = index.write(tmp_path)
-    assert written == tmp_path / "index.html"
-    assert "TOYOTA RAV4" in written.read_text(encoding="utf-8")
+def test_render_with_no_searches_says_where_they_live():
+    assert "searches/" in index.render([])
 
 
-def test_write_replaces_rather_than_appends(tmp_path):
-    make_run(tmp_path, "2026-08-16_105939_MAZDA-CX-30")
+def test_nothing_about_runs_or_the_weekly_panels_is_on_the_page():
+    """Everything that used to be summarised here is now on the page it
+    describes — including the two panel links this page used to carry."""
+    html = index.render([index.Row(name="toyota-harrier-z", lots=3, upcoming=True)])
+    for gone in ("competitors.html", "auction_statistics.html", "report.html",
+                 "competing advert", "cheapest acceptable"):
+        assert gone not in html
+
+
+# --- writing ------------------------------------------------------------------
+
+
+def test_write_lands_beside_the_runs(tmp_path, searches_on_disk, fetched):
+    searches_on_disk(("mazda-3", _definition(), None))
+    fetched({"mazda-3": [2]})
+    path = index.write(tmp_path)
+    assert path == tmp_path / "index.html"
+    assert "2 lots" in path.read_text(encoding="utf-8")
+
+
+def test_write_replaces_rather_than_appends(tmp_path, searches_on_disk, fetched):
+    searches_on_disk(("mazda-3", _definition(), None))
+    fetched({"mazda-3": [2]})
     index.write(tmp_path)
-    make_run(tmp_path, "2026-08-17_222903_TOYOTA-RAV4")
-    html = index.write(tmp_path).read_text(encoding="utf-8")
-    assert html.count("<!doctype html>") == 1
-    assert "TOYOTA RAV4" in html and "MAZDA CX-30" in html
-
-
-def test_write_counts_every_run_but_lists_only_the_limit(tmp_path):
-    for day in range(1, 13):
-        make_run(tmp_path, f"2026-08-{day:02d}_090000_MAZDA-CX-30")
-    html = index.write(tmp_path).read_text(encoding="utf-8")
-    assert "10 most recent of 12" in html
-    assert "2026-08-01_090000" not in html
-
-
-def test_write_with_no_runs_still_writes_a_page(tmp_path):
-    written = index.write(tmp_path)
-    assert written.exists()
-    assert "No runs yet" in written.read_text(encoding="utf-8")
+    first = (tmp_path / "index.html").read_text(encoding="utf-8")
+    index.write(tmp_path)
+    assert (tmp_path / "index.html").read_text(encoding="utf-8").count("<!doctype") == 1
+    assert len(first) == len((tmp_path / "index.html").read_text(encoding="utf-8"))

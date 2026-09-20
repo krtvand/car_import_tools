@@ -1,27 +1,16 @@
-{# Auction statistics: per band, the cheapest sales that passed [sheet].
-   Same palette as index.html.j2, competitors.html.j2 and report.html.j2 so
-   moving between them does not feel like leaving the tool. Self-contained —
-   inline CSS, sheets inlined as data URIs, no JavaScript — and the link back to
-   the index is relative, so the set survives `runs/` being copied elsewhere.
+{# One search's auction statistics: per band, the cheapest concluded sales whose
+   sheet passes its `[sheet]` requirements. Split out of
+   `auction_statistics.html.j2` when the search pages grew a block of their own.
 
-   The sheet opens full size on click, and the enlarged view is the *same* img
-   element the thumbnail is: `:target` restyles it rather than a second copy
-   being inlined, because a sheet is ~130 KB and a page that carried each one
-   twice would pay for a feature it already had the bytes for. Which is also why
-   the inlined sheet is full resolution — you open it to read damage codes off
-   it, and a downscaled one would open into a smudge.
+   `.note` and `.sheet` were renamed to `.panel-note` and `.stat-sheet` when
+   this moved: the search page carries the report's card rules in the same
+   document, and both names mean something else there — see
+   `_competitors.html.j2` for the same reasoning at more length.
 
-   There is deliberately no bid on this page. A sale price is a hammer price and
-   a max bid is an all-in maximum; side by side they would compare different
-   quantities and flatter the bid by an area price that differs per auction
-   house. This page says what sold, and you go and edit the file. #}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>auction statistics</title>
-<style>
+   The sheets are data URIs and this is where the weight of a search page comes
+   from. Needs the `backticks` filter; see `dashboard.cli`. #}
+
+{% macro styles() %}
   :root {
     --ink: #1a1a1a; --muted: #6b6b6b; --line: #e0ddd7; --paper: #faf9f7;
     --card: #ffffff; --warn: #9a6700; --bad: #a11; --good: #1a7f4b; --link: #1a4f8a;
@@ -46,9 +35,9 @@
                     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .car > h2 .when { font-weight: 400; color: var(--muted); font-size: .8125rem; }
 
-  .note { margin: .5rem 0; padding: .5rem .75rem; border-radius: 6px;
+  .panel-note { margin: .5rem 0; padding: .5rem .75rem; border-radius: 6px;
           background: #fdf6e3; color: var(--warn); font-size: .875rem; }
-  .note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .panel-note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
   .band { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
           margin: .75rem 0; padding: .875rem 1rem; }
@@ -64,8 +53,8 @@
   tr:last-child td { border-bottom: 0; }
   td.price { font-weight: 600; white-space: nowrap; }
   td.trim { color: var(--muted); }
-  .sheet .open { display: block; width: 72px; height: 54px; }
-  .sheet img { display: block; width: 100%; height: 100%; object-fit: cover;
+  .stat-sheet .open { display: block; width: 72px; height: 54px; }
+  .stat-sheet img { display: block; width: 100%; height: 100%; object-fit: cover;
                border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; }
 
   /* Click to open, click anywhere to close. `.shut` is the backdrop and takes
@@ -73,33 +62,18 @@
      there is no dead zone in the middle of the overlay where clicking does
      nothing — which is exactly how this looked when the thumbnail was not a
      link at all. */
-  .sheet .shut { display: none; }
-  .sheet:target .shut { display: block; position: fixed; inset: 0;
+  .stat-sheet .shut { display: none; }
+  .stat-sheet:target .shut { display: block; position: fixed; inset: 0;
                         background: rgba(0, 0, 0, .72); z-index: 30; }
-  .sheet:target .open { position: fixed; inset: 0; width: auto; height: auto;
+  .stat-sheet:target .open { position: fixed; inset: 0; width: auto; height: auto;
                         z-index: 31; pointer-events: none;
                         display: flex; align-items: center; justify-content: center; }
-  .sheet:target img { width: auto; height: auto; max-width: 94vw; max-height: 94vh;
+  .stat-sheet:target img { width: auto; height: auto; max-width: 94vw; max-height: 94vh;
                       object-fit: contain; border-radius: 6px; cursor: zoom-out;
                       box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
-</style>
-</head>
-<body>
-<div class="wrap">
+{%- endmacro %}
 
-<a class="back" href="index.html">← Auction runs</a>
-
-<header>
-  <h1>Auction statistics</h1>
-  <p class="meta">
-    The cheapest concluded sales whose auction sheet passes each search's
-    <code>[sheet]</code> requirements — what you could have paid for a car you
-    would have accepted.
-  </p>
-  <p class="meta">Built {{ generated_at }}.</p>
-</header>
-
-{% for panel in statistics.panels %}
+{% macro panel(panel) %}
 <section class="car">
   <h2>
     {{ panel.car if panel.car else panel.name }}
@@ -110,10 +84,10 @@
   </h2>
 
   {% if panel.problem %}
-  <p class="note">This search will not load: {{ panel.problem|backticks }}</p>
+  <p class="panel-note">This search will not load: {{ panel.problem|backticks }}</p>
   {% else %}
     {% if panel.note %}
-    <p class="note">{{ panel.note|backticks }}</p>
+    <p class="panel-note">{{ panel.note|backticks }}</p>
     {% endif %}
 
     {% for band in panel.bands %}
@@ -140,7 +114,7 @@
         <tbody>
           {% for row in band.rows %}
           <tr>
-            <td class="sheet" id="sheet-{{ row.lot_number }}">
+            <td class="stat-sheet" id="sheet-{{ row.lot_number }}">
               {% if row.sheet_uri %}
               <a class="open" href="#sheet-{{ row.lot_number }}"
                  title="auction sheet for lot {{ row.lot_short }} — click to enlarge">
@@ -172,16 +146,10 @@
       {# Never silence. A short list and an empty one both only mean something
          next to how many sales were looked at to produce them. #}
       {% if band.note %}
-      <p class="note">{{ band.note|backticks }}</p>
+      <p class="panel-note">{{ band.note|backticks }}</p>
       {% endif %}
     </div>
     {% endfor %}
   {% endif %}
 </section>
-{% else %}
-<p class="note">No searches are enabled.</p>
-{% endfor %}
-
-</div>
-</body>
-</html>
+{%- endmacro %}

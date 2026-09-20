@@ -19,7 +19,7 @@
 #   scrape     the same cars on bazaraki, over each search's competitor bounds
 #   stats      once a week per car, the cheapest concluded sales that pass
 #              [sheet] — the evidence behind a max bid
-#   dashboard  runs/index.html and runs/competitors.html, rebuilt
+#   dashboard  the index and one page per search, rebuilt
 #
 # **It reads the sheets, and that costs money.** It did not always: the reports
 # used to be built unread, on the reasoning that it was worth seeing what turned
@@ -151,10 +151,11 @@ Each report sorts into three groups: lots that meet every requirement, lots
 nothing has confirmed yet, and lots the sheet disqualified. Every card carries
 its bid price, whichever group it is in.
 
-  uv run python -m dashboard open     # rebuild both pages and open them
+  uv run python -m dashboard open     # rebuild the pages and open the index
 
-`open` opens one tab: `runs/index.html`, this morning's runs on top of the last
-ten, with a link to the competitors panel. It opens in the parser's own Chrome
+`open` opens one tab: `runs/index.html`, the saved searches with what is waiting
+on each. Clicking one is that search's whole page — this morning's lots at the
+top, the weekly reading folded under them. It opens in the parser's own Chrome
 profile, so clicking a lot through to banzai24 uses the session the parser uses
 rather than your everyday browser. If a lot comes up signed out, sign in in that
 window — it is captured while it is open, so the next `fetch` gets it.

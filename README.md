@@ -163,7 +163,7 @@ uv run python -m dashboard open             # rebuild the pages and open them
 `daily.sh` validates the searches, checks the session once, fetches each car —
 each narrowing itself to its own closest upcoming auction day — reads this
 morning's auction sheets, writes a `report.html` per run, crawls the same cars on
-bazaraki, and rebuilds `runs/index.html` and `runs/competitors.html`.
+bazaraki, and rebuilds the index and every search page.
 `--no-cyprus` skips the crawl. Reading sheets costs money (~$0.015 each), but
 the day narrowing keeps a two-car morning at roughly five sheets, and the
 judgement the report exists to make is only on the sheet. See `AUCTION_PLAN.md`
@@ -289,15 +289,27 @@ works this way: `docs/adr/0010-a-term-is-glossed-once.md`.
 ### The dashboard
 
 ```bash
-uv run python -m dashboard build      # write both pages
-uv run python -m dashboard open       # …and open them in the parser's Chrome
+uv run python -m dashboard build      # write the index and every search page
+uv run python -m dashboard open       # …and open it in the parser's Chrome
 ```
 
-Two static pages in `runs/`: `index.html` (the last ten runs, with a link) and
-`competitors.html` — for each enabled search, **who is selling this car in
-Cyprus at a price a buyer would weigh against yours**.
+Static pages in `runs/`. `index.html` is a table of contents: one row per
+enabled search, alphabetical, saying how many lots wait on the days ahead.
+Clicking one opens `runs/searches/<name>/index.html` — **one saved search,
+whole**, in the order it is read:
 
-One section per band. A band's max bid gives a landed cost; landed cost plus
+1. the lots you can still bid on, at full size, grouped by trade date;
+2. a link to `past.html`, the same cars from the last seven days;
+3. **competitors in Cyprus**, folded;
+4. **auction statistics**, folded;
+5. the search's own TOML, verbatim, folded.
+
+Nothing older than seven days is reachable from any page — the runs stay on disk
+and the lots stay in `auction.db`, they just stop competing for space on a page
+you read every morning. Why it works this way:
+`docs/adr/0012-the-dashboard-is-per-search.md`.
+
+**Competitors**, one section per band. A band's max bid gives a landed cost; landed cost plus
 resale costs plus the profit that car has to earn — `expected_profit_eur`, or
 `expected_profit_percent` of the landed cost — gives a **cyprus sell price**; a
 **competitor** is a Cyprus advert, inside that band's declared competitor

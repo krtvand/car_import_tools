@@ -1,0 +1,77 @@
+{# A day's lots, and the page chrome every page of them shares.
+
+   The unit is the day, never the run: two fetches of the same Saturday are one
+   Saturday, and an `--all-days` run is three days. Both the search page and the
+   past page are lists of these blocks, so the block itself is written once —
+   a verdict group added here appears on both pages or on neither.
+
+   The cards come from `banzai24/templates/_card.html.j2` and the palette from
+   `_card.css.j2`; a page importing `blocks()` must import those styles too. #}
+{% from "_card.html.j2" import card %}
+
+{% macro styles() %}
+  body { padding: 1.5rem 1.5rem 4rem; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  a { color: var(--money); }
+  .back { display: inline-block; margin-bottom: .75rem; font-size: .875rem; }
+  .back + .back { margin-left: 1rem; }
+  header h1 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 600; }
+  header .meta { margin: 0; color: var(--muted); font-size: .875rem;
+                 font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* The day is the spine of a page of lots, so it outranks the group headings
+     under it — the first question is which auction these cars are in, and the
+     second is which pile each one is in. */
+  .day { margin: 2rem 0 .5rem; padding-bottom: .35rem;
+         border-bottom: 2px solid var(--ink); font-size: 1.15rem; font-weight: 600; }
+  .day.empty { border-bottom-color: var(--line); color: var(--muted); font-weight: 400; }
+  .empty-state { margin: .5rem 0 0; color: var(--muted); font-size: .9375rem; }
+  .empty-state code { display: inline-block; margin-top: .25rem;
+                      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  footer { margin: 2.5rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .8125rem; }
+  footer dl { grid-template-columns: 2.5rem 1fr; gap: .2rem .5rem; max-width: 26rem; }
+  footer summary { cursor: pointer; }
+{%- endmacro %}
+
+{# `pairs` is (day, report). The report is None for a day with nothing to render
+   but its own heading — a fetch that found no upcoming day at all.
+
+   Every verdict group prints, *fails a requirement* included: the grades are
+   re-judged live against the file as it reads today, and a group hidden here
+   would hide that re-judgement. See
+   `docs/adr/0009-api-grades-are-rejudged-at-render.md`. #}
+{% macro blocks(pairs) %}
+{% for day, report in pairs %}
+<h2 class="day{{ ' empty' if not report or not report.views }}">{{ day.heading }}</h2>
+  {% if report %}
+    {% if report.grouped %}
+      {% for group in report.grouped %}
+<h3 class="group {{ group.key }}">{{ group.label }} <span class="n">· {{ group | length }}</span></h3>
+<p class="blurb">{{ group.blurb }}</p>
+        {% for view in group.views %}{{ card(view) }}{% endfor %}
+      {% endfor %}
+    {% else %}
+      {% for view in report.views %}{{ card(view) }}{% endfor %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+{%- endmacro %}
+
+{# The reference table at the foot of every auction sheet, folded away: it is
+   worth having where the marks are read and worth nothing until you need it. #}
+{% macro legend(damage_codes) %}
+<details>
+  <summary>Damage codes, as printed at the foot of every auction sheet</summary>
+  <dl>
+    {% for code, meaning in damage_codes.items() %}
+    <dt><code>{{ code }}</code></dt><dd>{{ meaning }}</dd>
+    {% endfor %}
+  </dl>
+  <p>A code carries a severity digit 1–4: <code>A1</code> is a light scratch,
+     <code>U2</code> a more significant dent. A banned code is matched as a
+     letter anywhere in the mark, so <code>X</code> catches <code>XX</code> and
+     the severity digit is ignored.</p>
+</details>
+{%- endmacro %}

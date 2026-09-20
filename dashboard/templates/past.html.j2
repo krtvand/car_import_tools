@@ -1,0 +1,55 @@
+{# The same search's last seven days of lots, grouped by day, newest first.
+
+   Split from the search page because the two answer different questions and
+   must never be mistaken for one another: the search page is what you can still
+   bid on, and this is what was on offer and what became of it. A page that
+   showed both in one column is how you bid on a car that sold on Tuesday.
+
+   Nothing older than the window is here, and nothing links to anything older:
+   those runs are still on disk and their lots are still in `auction.db`, they
+   have simply stopped competing for space. See
+   `docs/adr/0012-the-dashboard-is-per-search.md`. #}
+{% from "_card.css.j2" import tokens, styles as card_styles %}
+{% from "_days.html.j2" import styles as day_styles, blocks as day_blocks, legend %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page.name }} · last {{ page.window }} days</title>
+<style>
+{{ tokens() }}
+{{ card_styles() }}
+{{ day_styles() }}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="index.html">← {{ page.car if page.car else page.name }}</a>
+<a class="back" href="../../index.html">← Searches</a>
+
+<header>
+  <h1>{{ page.car if page.car else page.name }} · last {{ page.window }} days</h1>
+  <p class="meta">{{ page.name }}.toml</p>
+</header>
+
+{% if page.past %}
+{{ day_blocks(page.past) }}
+{% else %}
+<h2 class="day empty">Nothing in the last {{ page.window }} days</h2>
+<p class="empty-state">
+  No day in the window was fetched. Days nobody fetched are not shown — no
+  auction calendar is stored, so a quiet market and a morning you skipped look
+  the same from here.
+</p>
+{% endif %}
+
+<footer>
+  {{ legend(damage_codes) }}
+  <p>Rebuilt {{ generated_at }} by <code>dashboard build</code>.</p>
+</footer>
+
+</div>
+</body>
+</html>

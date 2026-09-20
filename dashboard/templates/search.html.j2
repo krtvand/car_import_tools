@@ -1,0 +1,129 @@
+{# One saved search, whole: the cars you can still bid on, then everything you
+   read once a week, then the file that decides all of it.
+
+   The order is the operator's, and it is by how often a thing is read rather
+   than by how it was built — bidding is a daily job, so the lots are at the top
+   at full size, and the weekly reading is folded away under them with its
+   numbers still showing on the closed summary. See
+   `docs/adr/0012-the-dashboard-is-per-search.md`.
+
+   Self-contained: sheets and photographs are data URIs, the CSS is inline, and
+   every link is relative. It is several megabytes and that is the trade. #}
+{% from "_card.css.j2" import tokens, styles as card_styles %}
+{% from "_days.html.j2" import styles as day_styles, blocks as day_blocks, legend %}
+{% from "_competitors.html.j2" import styles as competitor_styles,
+                                      panel as competitors_panel,
+                                      legend as competitors_legend %}
+{% from "_statistics.html.j2" import styles as statistics_styles,
+                                     panel as statistics_panel %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page.name }} · search</title>
+<style>
+{# Panels first, cards last, page chrome last of all. Both panels and the card
+   declare `:root` and both declare `body`, and the later declaration wins: the
+   cards are the block you read every morning, so they get the palette, and this
+   page's own width beats the 940px the competitors page wants for a table. #}
+{{ competitor_styles() }}
+{{ statistics_styles() }}
+{{ tokens() }}
+{{ card_styles() }}
+{{ day_styles() }}
+
+  .past { display: inline-block; margin: 1.5rem 0 0; font-size: .9375rem; }
+
+  /* The weekly blocks. Closed by default with their numbers on the summary:
+     the reading survives the fold, so opening one is a choice rather than the
+     only way to find out whether anything changed. */
+  .panel { margin: 1.25rem 0 0; background: var(--card); border: 1px solid var(--line);
+           border-radius: 8px; padding: .75rem 1rem; }
+  .panel > summary { cursor: pointer; font-size: 1rem; color: var(--ink);
+                     list-style: revert; }
+  .panel > summary .title { font-weight: 600; }
+  .panel > summary .sub { display: block; margin-left: 0; color: var(--muted);
+                          font-size: .875rem; }
+  .panel > summary::-webkit-details-marker { color: var(--muted); }
+  .panel[open] > summary { margin-bottom: .5rem; padding-bottom: .5rem;
+                           border-bottom: 1px solid var(--line); }
+  /* A panel's own first section starts flush with the fold rather than a third
+     of an inch below it: the heading above it already said which car this is. */
+  .panel .car { margin-top: 0; }
+  .panel .car > h2 { display: none; }
+
+  pre.toml { margin: 0; padding: .75rem; overflow-x: auto; background: #fbfaf8;
+             border: 1px solid var(--line); border-radius: 6px;
+             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+             font-size: .8125rem; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="../../index.html">← Searches</a>
+
+<header>
+  <h1>{{ page.car if page.car else page.name }}</h1>
+  <p class="meta">{{ page.name }}.toml</p>
+</header>
+
+{# 1. The everyday block. #}
+{% if page.upcoming %}
+{{ day_blocks(page.upcoming) }}
+{% else %}
+<h2 class="day empty">No upcoming lots</h2>
+<p class="empty-state">
+  Nothing fetched for a day still ahead.<br>
+  <code>uv run python -m banzai24 fetch --search {{ page.name }}</code>
+</p>
+{% endif %}
+
+{# 2. Where the same cars from the last seven days went. Directly under the
+      lots because it is the same subject split by time — and because when the
+      block above is empty this is the only link on the page worth having. #}
+<a class="past" href="past.html">Lots from the last {{ page.past_window }} days →</a>
+
+{# 3. The weekly reading. #}
+<details class="panel">
+  <summary>
+    <span class="title">Competitors in Cyprus</span>
+    <span class="sub">{{ page.competitors_summary }}</span>
+  </summary>
+  {% if page.competitors %}
+  {{ competitors_panel(page.competitors) }}
+  <p class="legend">{{ competitors_legend() }}</p>
+  {% else %}
+  <p class="panel-note">This search is not on the competitors dashboard.</p>
+  {% endif %}
+</details>
+
+<details class="panel">
+  <summary>
+    <span class="title">Auction statistics</span>
+    <span class="sub">{{ page.statistics_summary }}</span>
+  </summary>
+  {% if page.statistics %}
+  {{ statistics_panel(page.statistics) }}
+  {% else %}
+  <p class="panel-note">This search has never been measured.</p>
+  {% endif %}
+</details>
+
+<details class="panel">
+  <summary>
+    <span class="title">Search params</span>
+    <span class="sub">{{ page.name }}.toml — the whole search, nothing inherited</span>
+  </summary>
+  <pre class="toml">{{ page.toml_text }}</pre>
+</details>
+
+<footer>
+  {{ legend(damage_codes) }}
+  <p>Rebuilt {{ generated_at }} by <code>dashboard build</code>.</p>
+</footer>
+
+</div>
+</body>
+</html>

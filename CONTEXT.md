@@ -129,6 +129,19 @@ A requirement only the auction sheet can answer. The only kind that can put a
 lot in *unconfirmed* — a `[site]` or `[api]` requirement has already been
 enforced by somebody, so it either passes or fails and is never a shrug.
 
+**Search page**:
+Everything known about one saved search on one page — the lots you can still bid
+on, who is selling that car in Cyprus, what the cheapest acceptable ones sold for
+in Japan, and the search's own file. Ordered by how often it is read rather than
+by how it was built: the cars sit at the top because bidding is a daily job, and
+the weekly reading is folded away underneath them. Speaks in *days*, never in
+fetches — a day is a thing you bid on, and the fetch that found it is a step in
+the morning rather than an object on a page. Deliberately about one search only:
+there is no page anywhere that compares two. See
+`docs/adr/0012-the-dashboard-is-per-search.md`.
+_Avoid_: Dashboard (which is all of them), report (which is one run's lots),
+panel
+
 ### The verdict
 
 **Meets all requirements**:

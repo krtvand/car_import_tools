@@ -426,6 +426,24 @@ class Dashboard:
         return sum(panel.undercut_count for panel in self.panels)
 
 
+def panel_summary(panel: SearchPanel) -> str:
+    """The line printed on this panel's closed ``<details>`` on a search page.
+
+    Three facts kept apart, for the same reason :func:`dashboard.cli._summary`
+    keeps them apart across the whole dashboard: the competitors are everyone
+    selling this car near your price, the undercuts are the ones ahead of you in
+    the queue, and a band nobody has priced has no undercuts for a reason that is
+    not good news. "0 asking less" and "not priced yet" mean opposite things.
+    """
+    if panel.problem:
+        return f"will not load: {panel.problem}"
+    if not panel.bands or all(band.sell_price_eur is None for band in panel.bands):
+        return "not priced yet"
+    count = panel.competitor_count
+    return (f"{count} competing advert{'' if count == 1 else 's'} in Cyprus"
+            f" · {panel.undercut_count} asking less than a cyprus sell price")
+
+
 # --- building it -------------------------------------------------------------
 
 
