@@ -80,13 +80,6 @@ max_bid_jpy = { private = 2_454_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 50000
-  # Drops the trim below a G and nothing else; an advert naming no grade stays
-  # in, because it has not been shown to be a cheaper car and it still takes the
-  # sale. The hybrid files can write "hybrid s", which cannot collide with
-  # anything; on the petrol side the bare grade word has to carry it, and the
-  # cost is that "sports package" contains "s package". Nothing seen so far
-  # spells a Harrier that way, but the phrase is a substring match, not a word
-  # one — check the dropped column if the panel looks thin.
   exclude_phrases = ["s package", "s model", "coming soon"]
 
 [[band]]
@@ -106,7 +99,7 @@ year = 2024
 body_model_code = ["MXUA80", "MXUA85"]
 mileage_start = 0
 mileage_end = 35000
-max_bid_jpy = { private = 2_515_000 }
+max_bid_jpy = { private = 2_635_000 }
 
   [band.competitors]
   year_start = 2023
@@ -118,7 +111,7 @@ year = 2024
 body_model_code = ["MXUA80", "MXUA85"]
 mileage_start = 35001
 mileage_end = 50000
-max_bid_jpy = { private = 2_515_000 }
+max_bid_jpy = { private = 2_615_000 }
 
   [band.competitors]
   year_start = 2023

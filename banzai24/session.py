@@ -118,6 +118,27 @@ class ServiceUnavailable(RuntimeError):
         )
 
 
+class SiteTooSlow(RuntimeError):
+    """Raised when the search page never finished loading, with no sign of a logout.
+
+    Distinct from :class:`SessionExpired`, and the distinction is the whole
+    point of having it. banzai24's origin intermittently takes half a minute
+    just to serve the search document; the wait for hydration would expire and
+    the run reported the session as dead. That advice is expensive to follow —
+    re-authenticating costs an SMS round-trip — and it fixes nothing, because
+    the session was fine. So a timeout only gets to say "expired" when the page
+    actually showed us a sign-in; otherwise it says this.
+    """
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(
+            (detail + " " if detail else "")
+            + "banzai24 never finished rendering the search page, and never showed "
+            + "a sign-in prompt — so this is the site being slow, not your session. "
+            + "Do not re-login; just run it again."
+        )
+
+
 def session_exists() -> bool:
     """True if there is anything to authenticate with — snapshot or profile."""
     return SESSION_PATH.exists() or (PROFILE_DIR.exists() and any(PROFILE_DIR.iterdir()))

@@ -574,3 +574,67 @@ def test_lots_json_records_the_chosen_day_but_keeps_every_page_verbatim(tmp_path
     assert saved["lots_selected"] == ["65-1953-2377", "69-1252-30013"]
     assert saved["lots_other_days"] == 4
     assert saved["pages"] == payloads    # the discarded days are still on disk
+
+
+# --------------------------------------------------------------------------
+# Telling a slow site from a dead session
+# --------------------------------------------------------------------------
+
+class _StubPage:
+    """The three things ``_await_first_page`` asks a page for."""
+
+    def __init__(self, body: str, url: str = "https://banzai24.com/MAZDA/CX-30"):
+        self.body, self.url = body, url
+
+    async def evaluate(self, _js):
+        return None            # never hydrates — the case under test
+
+    async def inner_text(self, _selector):
+        return self.body
+
+    async def goto(self, url, **_kwargs):
+        self.url = url
+
+
+def _await_first(page, headless=True, budget_ms=10):
+    import asyncio
+
+    original = fetch.HEADLESS_FIRST_PAGE_TIMEOUT_MS
+    fetch.HEADLESS_FIRST_PAGE_TIMEOUT_MS = budget_ms
+    try:
+        asyncio.run(fetch._await_first_page(page, headless=headless))
+    finally:
+        fetch.HEADLESS_FIRST_PAGE_TIMEOUT_MS = original
+
+
+def test_a_page_that_never_renders_is_not_blamed_on_the_session():
+    """The bug this guards: banzai24's origin has been seen taking 27 seconds to
+    serve the search document alone. The wait expired and the run told you to
+    re-login — an SMS round-trip to fix a session that was perfectly good."""
+    import pytest
+    from banzai24 import session
+
+    with pytest.raises(session.SiteTooSlow):
+        _await_first(_StubPage("Поиск автомобилей в Японии"))
+
+
+def test_a_page_that_showed_a_sign_in_is_blamed_on_the_session():
+    import pytest
+    from banzai24 import session
+
+    with pytest.raises(session.SessionExpired):
+        _await_first(_StubPage("Войти"), budget_ms=5_000)
+
+
+def test_the_unavailable_page_still_reads_as_the_site_declining():
+    import pytest
+    from banzai24 import session
+
+    with pytest.raises(session.ServiceUnavailable):
+        _await_first(_StubPage("Service is temporarily unavailable"), budget_ms=5_000)
+
+
+def test_headless_first_page_budget_outlasts_a_slow_document():
+    """27s observed for the document; the budget has to clear that with room to
+    hydrate, or the fix is only theoretical."""
+    assert fetch.HEADLESS_FIRST_PAGE_TIMEOUT_MS >= 60_000

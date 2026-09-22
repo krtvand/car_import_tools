@@ -266,7 +266,7 @@ def main() -> None:
         try:
             checked = asyncio.run(fetch.check_session())
         except (session.SessionExpired, session.ServiceUnavailable,
-                session.ProfileBusy) as exc:
+                session.SiteTooSlow, session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
         print(f"Session OK — {checked.describe()}")
         return
@@ -428,7 +428,7 @@ def main() -> None:
         except stats_mod.OrderingBroken as exc:
             raise SystemExit(f"Stopped: {exc}")
         except (session.SessionExpired, session.ServiceUnavailable,
-                session.ProfileBusy) as exc:
+                session.SiteTooSlow, session.ProfileBusy) as exc:
             raise SystemExit(str(exc))
         print(result.summary())
         return
@@ -506,7 +506,8 @@ def main() -> None:
                   "it will be saved.")
             try:
                 asyncio.run(session.review(listing.resolve().as_uri()))
-            except (session.SessionExpired, session.ProfileBusy) as exc:
+            except (session.SessionExpired, session.SiteTooSlow,
+                    session.ProfileBusy) as exc:
                 raise SystemExit(str(exc))
         return
 
@@ -537,7 +538,7 @@ def main() -> None:
             )
         )
     except (session.SessionExpired, session.ServiceUnavailable,
-            session.ProfileBusy) as exc:
+            session.SiteTooSlow, session.ProfileBusy) as exc:
         raise SystemExit(str(exc))
     except RuntimeError as exc:
         raise SystemExit(str(exc))

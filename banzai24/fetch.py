@@ -75,6 +75,13 @@ PAGE_SAFETY_LIMIT = 25
 # not you sign in right there and the run continues in the same browser.
 FIRST_RESPONSE_TIMEOUT_MS = 300_000
 
+# The headless budget for that same first page. It is not a human-typing wait,
+# but it cannot be RESPONSE_TIMEOUT_MS either: banzai24's origin has been seen
+# taking 27 seconds just to serve the search *document*, before a line of it is
+# hydrated. A 30-second budget turns that into a timeout, and the timeout used
+# to be reported as an expired session — a slow afternoon costing an SMS.
+HEADLESS_FIRST_PAGE_TIMEOUT_MS = 120_000
+
 # A lot whose status is one of these has already been through the ring, so it is
 # not "upcoming" however its trade date compares to today. This matters on the
 # day itself: ``source=auctions`` keeps the morning's SOLD lots in the result set
@@ -412,11 +419,16 @@ async def _await_first_page(page: Page, headless: bool) -> dict:
     page 1 makes none. The wait is generous when headed: it may be waiting for a
     human to complete an SMS sign-in in the visible window.
     """
-    deadline = asyncio.get_running_loop().time() + (
-        FIRST_RESPONSE_TIMEOUT_MS if not headless else RESPONSE_TIMEOUT_MS
+    deadline_s = (
+        FIRST_RESPONSE_TIMEOUT_MS if not headless
+        else HEADLESS_FIRST_PAGE_TIMEOUT_MS
     ) / 1000
+    deadline = asyncio.get_running_loop().time() + deadline_s
 
     announced = False
+    # Whether we ever saw the page admit to being logged out. Only that earns
+    # the "expired" verdict at the end; see session.SiteTooSlow.
+    saw_sign_in = False
     while asyncio.get_running_loop().time() < deadline:
         payload = await _ssr_lots(page)
         if payload:
@@ -434,6 +446,7 @@ async def _await_first_page(page: Page, headless: bool) -> dict:
         # A logout bounces to /?redirectTo=<original path>.
         signed_out = "redirectTo=" in page.url or session.looks_logged_out(body)
         if signed_out:
+            saw_sign_in = True
             if headless:
                 raise session.SessionExpired("Redirected to the sign-in page.")
             if not announced:
@@ -447,9 +460,13 @@ async def _await_first_page(page: Page, headless: bool) -> dict:
 
         await asyncio.sleep(2.0)
 
-    raise session.SessionExpired(
-        "Timed out waiting for page 1 lots (never signed in?)."
-        if not headless else "Timed out waiting for page 1 lots."
+    if saw_sign_in:
+        raise session.SessionExpired(
+            "Timed out on the sign-in page waiting for page 1 lots."
+            if not headless else "Timed out waiting for page 1 lots."
+        )
+    raise session.SiteTooSlow(
+        f"Gave up after {int(deadline_s)}s; the page never rendered any lots."
     )
 
 
@@ -494,7 +511,12 @@ async def fetch_lots(
             print("Opening banzai24 — if it asks you to sign in, do it in that "
                   "window and the run continues by itself.")
 
-        await page.goto(url, wait_until="domcontentloaded")
+        # `commit` rather than `domcontentloaded`, matching check_session: on a
+        # slow day the document alone outlasts Playwright's default navigation
+        # timeout, and a bare PlaywrightTimeoutError here says nothing useful.
+        # _await_first_page is already the thing that waits for content, and it
+        # is the only one of the two that can tell slow from signed-out.
+        await page.goto(url, wait_until="commit")
         first = await _await_first_page(page, headless=headless)
         await session.snapshot(page.context)  # only after a confirmed-good load
         payloads.append(first)
