@@ -68,7 +68,7 @@ class Row:
         return f"{self.lots} lot{'' if self.lots == 1 else 's'}"
 
 
-def rows(root: Path | None = None, today=None) -> list[Row]:
+def rows(root: Path | None = None, now=None) -> list[Row]:
     """Every enabled search, alphabetically by file name.
 
     A disabled search is simply absent — that is what switching it off is for —
@@ -82,7 +82,7 @@ def rows(root: Path | None = None, today=None) -> list[Row]:
             continue
         if not definition.dashboard.enabled:
             continue
-        upcoming = days.upcoming(name, root, today=today)
+        upcoming = days.upcoming(name, root, now=now)
         out.append(Row(
             name=name,
             lots=sum(day.count for day in upcoming) if days.ever_fetched(name, root) else None,
@@ -109,7 +109,7 @@ def render(entries: list[Row], generated_at: datetime | None = None) -> str:
 
 
 def write(root: Path | None = None, output: Path | None = None,
-          today=None) -> Path:
+          now=None) -> Path:
     """(Re)write ``runs/index.html`` and return where it went.
 
     Always a full rewrite. The page costs a directory scan to build, so the only
@@ -118,5 +118,5 @@ def write(root: Path | None = None, output: Path | None = None,
     root = root or RUNS_DIR
     output = output or root / "index.html"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render(rows(root, today=today)), encoding="utf-8")
+    output.write_text(render(rows(root, now=now)), encoding="utf-8")
     return output

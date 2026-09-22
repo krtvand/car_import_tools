@@ -344,6 +344,32 @@ def test_closed_lot_takes_its_day_from_trade_date_time():
     assert fetch.is_upcoming(_closed("2026-08-11"), TODAY) is True
 
 
+# --- when a lot goes through the ring ----------------------------------------
+#
+# The day decides which block a lot is in; the moment decides how long it stays
+# on the page. See `docs/adr/0013-a-lot-is-upcoming-until-it-trades.md`.
+
+
+def test_trade_moment_is_the_day_and_the_hour_in_japan():
+    moment = fetch.trade_moment(_dated("65-1953-2377", "2026-08-11"))
+    assert moment == datetime(2026, 8, 11, 12, 0, tzinfo=fetch.JAPAN_TZ)
+
+
+def test_a_closed_lot_takes_its_moment_from_trade_date_time_too():
+    """Its `lot.tradeTime` is blanked with everything else that identifies it."""
+    assert fetch.trade_moment(_closed("2026-08-11")) == datetime(
+        2026, 8, 11, 14, 28, tzinfo=fetch.JAPAN_TZ)
+
+
+def test_an_unreadable_moment_is_none_rather_than_a_guess():
+    """`None` means *we do not know when*, never *it has not happened*."""
+    assert fetch.trade_moment(_lot("no-date")) is None
+    assert fetch.trade_moment(
+        {"lot": {"number": "a", "tradeDate": "2026-08-11", "tradeTime": "noon"}}) is None
+    assert fetch.trade_moment(
+        {"lot": {"number": "a", "tradeDate": "2026-08-11", "tradeTime": ""}}) is None
+
+
 def test_a_day_of_only_closed_lots_is_not_skipped_over():
     """The regression the fallback exists for.
 

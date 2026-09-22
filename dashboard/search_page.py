@@ -6,9 +6,14 @@ from four sources that already exist and are not rebuilt here: :mod:`days` for
 the trade dates, :mod:`competitors` and :mod:`statistics` for their panels, and
 the search's own TOML read off disk.
 
-Only the *upcoming* days are rendered here. The last seven days live on
+Only the lots *still to be sold* are rendered here. The last seven days live on
 ``past.html`` beside it — same day blocks, same cards, and nothing older than
 that anywhere in the UI. See ``docs/adr/0012-the-dashboard-is-per-search.md``.
+
+The two pages split today between them, lot by lot, as the morning goes on: a
+car that went through the ring at 10:45 is on this page until 10:45 and on
+``past.html`` after it. See
+``docs/adr/0013-a-lot-is-upcoming-until-it-trades.md``.
 
 Every page writes to ``runs/searches/<name>/index.html``, two directories below
 ``runs/``, so the links back into run directories carry the ``../../`` that the
@@ -89,6 +94,9 @@ class PastPage:
     is what you can still bid on, the other what was on offer and what became of
     it. Nothing older than the window is on it, and nothing on it links to
     anything older.
+
+    Today is on it too, from the moment its first lot trades — the same block
+    the search page is printing, holding the other half of the day.
     """
 
     name: str
@@ -136,7 +144,7 @@ def collect(name: str,
             dashboard: competitors.Dashboard | None = None,
             stats: statistics.Statistics | None = None,
             root: Path | None = None,
-            today=None) -> SearchPage:
+            now=None) -> SearchPage:
     """Gather one page. Cheap except for the day reports, which are the cards."""
     competitors_panel = next(
         (panel for panel in (dashboard.panels if dashboard else ()) if panel.name == name),
@@ -145,7 +153,7 @@ def collect(name: str,
         (panel for panel in (stats.panels if stats else ()) if panel.name == name),
         None)
     upcoming = tuple((day, day.report())
-                     for day in days.upcoming(name, root, today=today))
+                     for day in days.upcoming(name, root, now=now))
     car = _car_for(name, dashboard, stats)
     return SearchPage(
         name=name,
@@ -201,13 +209,13 @@ def collect_past(name: str,
                  dashboard: competitors.Dashboard | None = None,
                  stats: statistics.Statistics | None = None,
                  root: Path | None = None,
-                 today=None,
+                 now=None,
                  window: int = days.PAST_WINDOW_DAYS) -> PastPage:
     """Gather the past page. The reports are the expensive part — up to seven
     runs' worth of sheets and photographs, all inlined."""
     car = _car_for(name, dashboard, stats)
     past = tuple((day, day.report())
-                 for day in days.past(name, root, today=today, window=window))
+                 for day in days.past(name, root, now=now, window=window))
     return PastPage(name=name, car=car, past=past, window=window)
 
 

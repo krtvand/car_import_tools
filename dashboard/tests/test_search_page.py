@@ -40,7 +40,8 @@ def _view(lot=None) -> report_mod.LotView:
 
 def _day(day: date | None = date(2026, 9, 22), lots=("a",), dropped=0) -> days.Day:
     return days.Day(date=day, run_dir=Path("runs/x"),
-                    lot_numbers=tuple(lots), dropped=dropped)
+                    lots=tuple(days.Lot(number) for number in lots),
+                    dropped=dropped)
 
 
 def _page(**overrides) -> search_page.SearchPage:

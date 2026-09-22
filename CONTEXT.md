@@ -142,6 +142,16 @@ there is no page anywhere that compares two. See
 _Avoid_: Dashboard (which is all of them), report (which is one run's lots),
 panel
 
+**Day**:
+One trade date's lots for one search, from the newest fetch that covered it —
+the unit both pages are built from, and the reason nothing in the UI names a
+run. Today is the day that is half over: a lot belongs to it until it goes
+through the ring, and to the *past page* after that, so the same day can be
+printed on both pages at once holding a different half of itself in each. Timed
+by the clock in Japan, which is the only clock an auction house keeps. See
+`docs/adr/0013-a-lot-is-upcoming-until-it-trades.md`.
+_Avoid_: Run, fetch, session, batch
+
 ### The verdict
 
 **Meets all requirements**:

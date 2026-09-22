@@ -91,9 +91,14 @@ CONCLUDED_STATUSES = frozenset({"SOLD", "SOLD_BY_NEGO", "NOT_SOLD", "CANCELED", 
 JAPAN_TZ = ZoneInfo("Asia/Tokyo")
 
 
+def japan_now() -> datetime:
+    """The current moment in Japan — the clock every trade time is printed on."""
+    return datetime.now(JAPAN_TZ)
+
+
 def japan_today() -> date:
     """The current date in Japan — the calendar every ``tradeDate`` is written in."""
-    return datetime.now(JAPAN_TZ).date()
+    return japan_now().date()
 
 
 def trade_date(lot: dict) -> str | None:
@@ -118,6 +123,30 @@ def trade_date(lot: dict) -> str | None:
         return day
     # "2026-08-18 14:28:00" — the same calendar date, space-separated.
     return (lot.get("tradeDateTime") or "").strip().partition(" ")[0] or None
+
+
+def trade_moment(lot: dict) -> datetime | None:
+    """``2026-08-11 10:45`` in Japan — when this lot goes through the ring.
+
+    The day comes from :func:`trade_date`, fallback and all; the time from
+    ``lot.tradeTime`` — ``"10:45"``, the same string the card prints — falling
+    back to the ``tradeDateTime`` a blanked closed lot keeps.
+
+    ``None`` when either half is missing or will not parse, and that must be
+    read as *we do not know when*, never as *it has not happened yet*: what is
+    undatable is left where it is rather than hidden.
+    """
+    day = trade_date(lot)
+    if not day:
+        return None
+    clock = ((lot.get("lot") or {}).get("tradeTime") or "").strip()
+    if not clock:
+        # "2026-08-18 14:28:00" — the time half of the space-separated form.
+        clock = (lot.get("tradeDateTime") or "").strip().partition(" ")[2].strip()
+    try:
+        return datetime.fromisoformat(f"{day} {clock}").replace(tzinfo=JAPAN_TZ)
+    except ValueError:
+        return None
 
 
 def is_upcoming(lot: dict, today: date) -> bool:

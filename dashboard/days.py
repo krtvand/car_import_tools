@@ -12,6 +12,15 @@ run-level ``trade_date`` says which day the fetch narrowed to and is ``null``
 when it narrowed to none — but the lots themselves always know their own day,
 which is what makes an ``--all-days`` run split correctly.
 
+**A lot stops being upcoming when it goes through the ring, not at midnight.**
+The pages are built in the morning and read all day, so a day-granular cut
+leaves this morning's sold cars sitting at the top of the page until tomorrow.
+Every lot knows its own trade time, so today's block is filtered by the clock in
+Japan — the calendar and the hour both belong to the auction house, never to the
+machine building the page — and what has already traded moves to the past page,
+where "what was on offer and what became of it" is the question. See
+``docs/adr/0013-a-lot-is-upcoming-until-it-trades.md``.
+
 A day with no lots is still a day. A fetch that ran, found cars, and dropped
 every one of them against the search's ``[api]`` requirements is not the same
 news as a quiet market, so the day survives with its drop count and says so.
@@ -25,7 +34,7 @@ cached, and the report behind a day is built only when a page asks for it.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -43,8 +52,26 @@ _STAMP_FORMAT = "%Y-%m-%d_%H%M%S"
 
 
 @dataclass(frozen=True)
+class Lot:
+    """A kept lot, and the moment it goes through the ring.
+
+    ``at`` is Japan time, because that is the only clock the auction house keeps
+    — and ``None`` when the site gave a day but no readable time. An undatable
+    lot is never treated as traded: hiding a car needs positive evidence that it
+    is gone, and this is the absence of evidence.
+    """
+
+    number: str
+    at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class Day:
     """One trade date's lots, from the newest run that covered it.
+
+    Not necessarily *all* of them: :func:`upcoming` and :func:`past` each hand
+    back today's day holding only its half of it — what is still to come, and
+    what has already been sold. Every other day is whole.
 
     ``date`` is ``None`` in exactly one case: a fetch that looked and found no
     upcoming day at all. That is a fact worth printing — the site had nothing
@@ -53,12 +80,16 @@ class Day:
 
     date: date | None
     run_dir: Path
-    lot_numbers: tuple[str, ...] = ()
+    lots: tuple[Lot, ...] = ()
     dropped: int = 0               # on this day, rejected by the [api] rules
 
     @property
+    def lot_numbers(self) -> tuple[str, ...]:
+        return tuple(lot.number for lot in self.lots)
+
+    @property
     def count(self) -> int:
-        return len(self.lot_numbers)
+        return len(self.lots)
 
     @property
     def heading(self) -> str:
@@ -90,8 +121,6 @@ class Day:
         reads the database and inlines every sheet and photograph as a data URI —
         and the index wants counts and no cards at all, so it never pays for it.
         """
-        from dataclasses import replace
-
         if self.date is None:
             return None
         full = _collect(self.run_dir)
@@ -109,7 +138,7 @@ class _Run:
     search: str
     run_day: date | None           # the day the fetch narrowed to, if it did
     dropped: int
-    days: dict[date, tuple[str, ...]]   # trade date -> the lots kept on it
+    days: dict[date, tuple[Lot, ...]]   # trade date -> the lots kept on it
 
     @property
     def sort_key(self) -> tuple:
@@ -138,17 +167,19 @@ def _parse_stamp(name: str) -> datetime | None:
         return None
 
 
-def _lot_days(payload: dict, kept: set[str]) -> dict[date, tuple[str, ...]]:
-    """The kept lots grouped by their own trade date.
+def _lot_days(payload: dict, kept: set[str]) -> dict[date, tuple[Lot, ...]]:
+    """The kept lots, with their trade moments, grouped by their own trade date.
 
     Walks the untouched API pages the run recorded, so this is the site's own
-    ``tradeDate`` for each lot rather than the run's summary of it. A lot the
-    fetch kept but whose day will not parse is dropped from the grouping: it
-    would otherwise have to be filed under a day we would be making up.
+    ``tradeDate`` and ``tradeTime`` for each lot rather than the run's summary of
+    it. A lot the fetch kept but whose day will not parse is dropped from the
+    grouping: it would otherwise have to be filed under a day we would be making
+    up. A lot whose *time* will not parse is kept, with no moment — the day is
+    what files it, and the hour only decides when it leaves the page.
     """
     from banzai24 import fetch
 
-    grouped: dict[date, list[str]] = {}
+    grouped: dict[date, list[Lot]] = {}
     for page in payload.get("pages") or []:
         for item in page.get("items") or []:
             number = (item.get("lot") or {}).get("number")
@@ -157,10 +188,11 @@ def _lot_days(payload: dict, kept: set[str]) -> dict[date, tuple[str, ...]]:
             day = _parse_date(fetch.trade_date(item))
             if day is None:
                 continue
-            numbers = grouped.setdefault(day, [])
-            if number not in numbers:      # a lot can appear on two pages
-                numbers.append(number)
-    return {day: tuple(numbers) for day, numbers in grouped.items()}
+            lots = grouped.setdefault(day, [])
+            if any(lot.number == number for lot in lots):  # a lot can be on two pages
+                continue
+            lots.append(Lot(number=number, at=fetch.trade_moment(item)))
+    return {day: tuple(lots) for day, lots in grouped.items()}
 
 
 def _read(run_dir: Path) -> _Run | None:
@@ -247,10 +279,43 @@ def _days(runs: list[_Run]) -> list[Day]:
     """
     by_day: dict[date, Day] = {}
     for run in runs:
-        for day, numbers in run.days.items():
-            by_day[day] = Day(date=day, run_dir=run.run_dir, lot_numbers=numbers,
+        for day, lots in run.days.items():
+            by_day[day] = Day(date=day, run_dir=run.run_dir, lots=lots,
                               dropped=run.dropped if day == run.run_day else 0)
     return list(by_day.values())
+
+
+def _now(now: datetime | None) -> datetime:
+    """The moment to judge against, in Japan.
+
+    Defaulted and normalised in one place because getting it from the machine
+    would be wrong twice over: Japan rolls into tomorrow at 18:00 Cyprus time,
+    so for six hours every evening the local date names a Japanese day that
+    finished hours ago — and within a day the hour is the whole point here.
+
+    A naive datetime is read as Japan's wall clock rather than the machine's: a
+    caller that writes ``datetime(2026, 9, 22, 11, 0)`` means eleven in the
+    morning at the auction house, which is the only clock these lots keep.
+    """
+    from banzai24 import fetch
+
+    if now is None:
+        return fetch.japan_now()
+    if now.tzinfo is None:
+        return now.replace(tzinfo=fetch.JAPAN_TZ)
+    return now.astimezone(fetch.JAPAN_TZ)
+
+
+def _still_to_come(day: Day, now: datetime) -> Day:
+    """The day, minus every lot that has already been through the ring."""
+    return replace(day, lots=tuple(lot for lot in day.lots
+                                   if lot.at is None or lot.at > now))
+
+
+def _traded(day: Day, now: datetime) -> Day:
+    """The day, minus every lot still to come. The complement of the above."""
+    return replace(day, lots=tuple(lot for lot in day.lots
+                                   if lot.at is not None and lot.at <= now))
 
 
 def ever_fetched(name: str, root: Path | None = None) -> bool:
@@ -259,11 +324,16 @@ def ever_fetched(name: str, root: Path | None = None) -> bool:
 
 
 def upcoming(name: str, root: Path | None = None,
-             today: date | None = None) -> list[Day]:
-    """Days still ahead of us, nearest first.
+             now: datetime | None = None) -> list[Day]:
+    """Lots still to be sold, by day, nearest first.
 
-    Normally exactly one: ``fetch`` narrows to the nearest upcoming trade date
+    Normally one day: ``fetch`` narrows to the nearest upcoming trade date
     unless it is given ``--all-days``.
+
+    Today is the day that is half over, so today is the only one filtered by the
+    clock: its lots leave this list as each goes through the ring, and once the
+    last of them has, the day leaves with it. A day that kept *no* lots stays
+    until midnight — its news is the drop count, which nothing has overtaken.
 
     Empty means *nothing to bid on*, and the page says so with the command that
     would fix it. The one exception is a fetch that ran and found no upcoming
@@ -271,28 +341,46 @@ def upcoming(name: str, root: Path | None = None,
     as a single dateless :class:`Day` so that the page can print that rather
     than the empty state, which would read as "you forgot to fetch".
     """
-    today = today or date.today()
+    now = _now(now)
+    today = now.date()
     runs = _runs_for(name, root)
-    days = sorted((day for day in _days(runs) if day.date >= today),
-                  key=lambda day: day.date)
-    if days:
-        return days
+    ahead = []
+    for day in _days(runs):
+        if day.date > today:
+            ahead.append(day)
+        elif day.date == today:
+            left = _still_to_come(day, now)
+            if left.lots or not day.lots:
+                ahead.append(left)
+    if ahead:
+        return sorted(ahead, key=lambda day: day.date)
     if runs and runs[-1].run_day is None:
         return [Day(date=None, run_dir=runs[-1].run_dir)]
     return []
 
 
-def past(name: str, root: Path | None = None, today: date | None = None,
+def past(name: str, root: Path | None = None, now: datetime | None = None,
          window: int = PAST_WINDOW_DAYS) -> list[Day]:
-    """Days already traded, inside the window, newest first.
+    """Lots already sold, by day, newest first — today's included.
+
+    Today appears here the moment its first lot has traded, carrying only the
+    lots that have: a car sold at 10:45 is *what was on offer and what became of
+    it* from 10:46, and waiting for midnight to say so would mean the whole
+    morning is reachable from no page at all.
 
     Nothing older than the window is returned — not as a link, not as a count.
     The runs are still on disk and the lots are still in ``auction.db``; they
     have simply stopped competing for space on a page read every morning.
     """
-    today = today or date.today()
+    now = _now(now)
+    today = now.date()
     first = today.toordinal() - window
-    return sorted(
-        (day for day in _days(_runs_for(name, root))
-         if day.date < today and day.date.toordinal() >= first),
-        key=lambda day: day.date, reverse=True)
+    gone = []
+    for day in _days(_runs_for(name, root)):
+        if day.date == today:
+            traded = _traded(day, now)
+            if traded.lots:
+                gone.append(traded)
+        elif day.date < today and day.date.toordinal() >= first:
+            gone.append(day)
+    return sorted(gone, key=lambda day: day.date, reverse=True)
