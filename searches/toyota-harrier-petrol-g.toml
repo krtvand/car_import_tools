@@ -30,7 +30,6 @@ car = "toyota-harrier"
 
 [site]
 transmission = "auto"
-grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
@@ -74,6 +73,7 @@ exclude_phrases = ["s package", "s model", "coming soon"]
 [[band]]
 year = 2023
 body_model_code = ["MXUA80", "MXUA85"]
+grade = ["4", "4.5", "5"]
 mileage_start = 0
 mileage_end = 35000
 max_bid_jpy = { private = 2_454_000 }
@@ -85,6 +85,7 @@ max_bid_jpy = { private = 2_454_000 }
 [[band]]
 year = 2023
 body_model_code = ["MXUA80", "MXUA85"]
+grade = ["4", "4.5", "5"]
 mileage_start = 35001
 mileage_end = 50000
 max_bid_jpy = { private = 2_454_000 }
@@ -96,6 +97,7 @@ max_bid_jpy = { private = 2_454_000 }
 [[band]]
 year = 2024
 body_model_code = ["MXUA80", "MXUA85"]
+grade = ["4", "4.5", "5"]
 mileage_start = 0
 mileage_end = 35000
 max_bid_jpy = { private = 2_635_000 }
@@ -107,6 +109,7 @@ max_bid_jpy = { private = 2_635_000 }
 [[band]]
 year = 2024
 body_model_code = ["MXUA80", "MXUA85"]
+grade = ["4", "4.5", "5"]
 mileage_start = 35001
 mileage_end = 50000
 max_bid_jpy = { private = 2_615_000 }

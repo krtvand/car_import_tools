@@ -32,7 +32,6 @@ RAV4 = """
 car = "toyota-rav4"
 
 [site]
-grade = ["4", "4.5", "5"]
 
 [sheet]
 no_damage_codes = ["W", "X"]
@@ -43,6 +42,7 @@ model_grade = ["HYBRID G"]
 [[band]]
 year = 2023
 body_model_code = ["AXAH54"]
+grade = ["4", "4.5", "5"]
 mileage_end = 50000
 max_bid_jpy = { private = 2_505_000 }
 """
@@ -55,22 +55,23 @@ def definition(tmp_path):
 
 
 def _lot(number="1-1-1", price=3_000_000, mileage=30_000, year=2023,
-         modification="5D 4WD HYBRID G", code="AXAH54") -> AuctionLot:
+         modification="5D 4WD HYBRID G", code="AXAH54",
+         grade="4.5") -> AuctionLot:
     return AuctionLot(
         lot_number=number, lot_short=number.rsplit("-", 1)[-1], banzai_id="uuid",
         auction_id=1, auction_name="TAA Kinki", trade_date=date(2026, 8, 1),
         trade_time="10:00", mark="TOYOTA", model="RAV4",
         modification=modification, body_model_code=code,
-        registration_year=year, mileage_km=mileage, grade_origin="4.5",
+        registration_year=year, mileage_km=mileage, grade_origin=grade,
         end_price_jpy=price, discovered_by="stats", sheet_status="extracted",
     )
 
 
-def _clean(lot: AuctionLot, marks=()) -> SheetExtraction:
+def _clean(lot: AuctionLot, marks=(), grade="4.5") -> SheetExtraction:
     return SheetExtraction(
         lot_number=lot.lot_number, extracted_at=datetime.now(), model_id="m",
         sheet_sha256="abc", raw_json="{}",
-        sheet_grade="4.5", sheet_mileage_km=lot.mileage_km,
+        sheet_grade=grade, sheet_mileage_km=lot.mileage_km,
         first_registration_year=lot.registration_year,
         damage_marks=json.dumps([{"panel": "roof", "code": c} for c in marks]),
     )
@@ -92,6 +93,24 @@ def test_a_sale_missing_a_figure_is_in_no_band_at_all(definition):
     band = definition.bands[0]
     assert statistics._in_band(_lot(year=None), band) is False
     assert statistics._in_band(_lot(mileage=None), band) is False
+
+
+def test_a_sale_of_another_condition_is_not_this_bands_benchmark(tmp_path):
+    """The band that splits a 5 from a 4.5 must not be measured against the
+    other half. Re-checked here rather than left to the archive walk, which
+    asked the site for these grades: a stored sale outlives the walk that
+    fetched it, so splitting a band has to drop yesterday's 5s out of the 4.5
+    panel — the same rule a tightened `model_grade` follows above."""
+    (tmp_path / "toyota-rav4.toml").write_text(
+        RAV4.replace('grade = ["4", "4.5", "5"]', 'grade = ["4", "4.5"]'),
+        encoding="utf-8")
+    band = search.load("toyota-rav4", tmp_path).bands[0]
+
+    assert statistics._in_band(_lot(), band) is True
+    assert statistics._in_band(_lot(grade="5"), band) is False
+    # And the sheet outranks the list here too, exactly as it does on the bid.
+    lot = _lot(grade="5")
+    assert statistics._in_band(lot, band, _clean(lot, grade="4.5")) is True
 
 
 def test_the_trim_line_is_matched_the_way_the_site_matches_it(definition):

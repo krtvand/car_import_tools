@@ -176,18 +176,19 @@ dashboard. It is the **whole** declaration — nothing is inherited, so a filter
 that is not in the file is not applied.
 
 A search is made of **bands**. A `[[band]]` is a year, a mileage range, the
-chassis codes it prices and the max bid for them; the site's own year and
-mileage bounds — and the codes the fetch keeps — are the union of the bands and
-are never written by hand. Two variants worth different money are two bands: the
-RAV4's E-Four `AXAH54` and 2WD `AXAH52` share a year and a mileage range and are
-¥445,000 apart.
+chassis codes and auction grades it prices and the max bid for them; the site's
+own year and mileage bounds — and the codes and grades the fetch keeps — are the
+union of the bands and are never written by hand. Anything worth different money
+is two bands: the RAV4's E-Four `AXAH54` and 2WD `AXAH52` share a year and a
+mileage range and are ¥445,000 apart, and on a Harrier Z a 評価点 5 and a 4.5
+share everything and are ¥50,000 apart. See
+`docs/adr/0014-a-grade-is-what-a-band-prices.md`.
 
 ```toml
 car = "mazda-cx30"                     # how each parser spells it is its own business
 
 [site]                                 # banzai24 filters these out for us,
 transmission = "auto"                  # and the sheet re-judges them
-grade = ["4", "4.5", "5"]
 
 [api]                                  # we drop these ourselves, from list data.
 exclude_colours = ["black", "blue"]    # Rejects never reach the report.
@@ -207,6 +208,8 @@ engine_size_start = 1.8
 [[band]]
 year = 2023
 body_model_code = ["DMEJ3P"]           # which variant this price is for
+grade = ["4", "4.5", "5"]              # and which 評価点 — the fetch keeps the
+                                       # union of what the bands price
 mileage_end = 50000
 max_bid_jpy = { private = 1_805_000 }
 

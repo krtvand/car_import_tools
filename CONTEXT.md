@@ -100,10 +100,14 @@ both parsers read this one file. Made of *bands*.
 _Avoid_: Config, filters, saved search, profile
 
 **Band**:
-One row of a search's bid table: a year, a mileage range, and the max bid for it
-per 車歴. What a search is actually made of — the search's own fetch bounds are
-the union of its bands, never written separately, because a bound written beside
-a price drifts from it.
+One row of a search's bid table: a year, a mileage range, the chassis codes and
+評価点 it prices, and the max bid for all of that per 車歴. What a search is
+actually made of — the search's own fetch bounds, codes and grades are the union
+of its bands, never written separately, because anything written beside a price
+drifts from it. A band is the unit a price is attached to, so anything worth a
+different amount of money belongs on one: two chassis codes are two bands, and
+so are a 5 and a 4.5 of the same car. See
+`docs/adr/0014-a-grade-is-what-a-band-prices.md`.
 _Avoid_: Tier, block, range, row
 
 **Requirement**:

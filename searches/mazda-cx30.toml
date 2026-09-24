@@ -9,9 +9,9 @@
 #   uv run python -m dashboard build
 #
 # The [[band]] list is what this search is made of: a year, a mileage range, the
-# chassis codes it prices and the most this operation will pay for them. The
-# site's year and mileage bounds — and the codes the fetch keeps — are the union
-# of the bands and are never written by hand.
+# chassis codes and auction grades it prices, and the most this operation will
+# pay for them. The site's year and mileage bounds — and the codes and grades the
+# fetch keeps — are the union of the bands and are never written by hand.
 #
 # The three requirement sections are named for *who can check them*:
 #
@@ -30,7 +30,6 @@ car = "mazda-cx30"
 [site]
 transmission = "auto"
 engine_capacity_start = 1.9
-grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
@@ -65,6 +64,7 @@ year = 2023
 # makes no difference. Every band of this search prices the same three, because
 # here they are the same car; the RAV4 is where two codes are two prices.
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
+grade = ["4", "4.5", "5"]
 mileage_start = 0
 mileage_end = 35000
 max_bid_jpy = { private = 1_733500 }
@@ -78,6 +78,7 @@ max_bid_jpy = { private = 1_733500 }
 [[band]]
 year = 2023
 body_model_code = ["DMEJ3R", "DMFP", "DMEJ3P"]
+grade = ["4", "4.5", "5"]
 mileage_start = 35001
 mileage_end = 50000
 max_bid_jpy = { private = 1_705_000 }

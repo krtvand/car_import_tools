@@ -17,9 +17,10 @@ from urllib.parse import urlencode
 
 BASE_URL = "https://banzai24.com"
 
-# Grades an auction inspector can award overall. Used for validation only —
-# the site takes them as opaque strings.
-KNOWN_GRADES = ("S", "6", "5", "4.5", "4", "3.5", "3", "2", "1", "R", "RA")
+# The grades an inspector can award live in `searches.KNOWN_GRADES`, which is
+# where they are now checked: a 評価点 is a `[[band]]` key, so the file that
+# spends the money is the one that validates it. The site takes them as opaque
+# strings and this module has nothing to add.
 
 
 @dataclass

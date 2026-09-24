@@ -6,8 +6,8 @@ competition when it is time to sell it in Cyprus. Both parsers read this file
 and nothing else; there is no second table to keep in step with it.
 
 **A search is made of bands.** A ``[[band]]`` is a year, a mileage range, the
-chassis codes it prices and the max bid for them — the rows that used to live in
-``bid_prices.csv``. The
+chassis codes and 評価点 it prices, and the max bid for them — the rows that used
+to live in ``bid_prices.csv``. The
 site's own year and mileage bounds are the *union* of the bands and are never
 written by hand, because writing them twice is how they drift: when this
 replaced the CSV, the CX-30 fetched to 55,000 km while the table priced to
@@ -51,10 +51,25 @@ _OPAQUE = ("site", "api", "sheet", "auction_statistics")
 RENTAL_KINDS = ("private", "rental")
 PRIVATE = "private"
 
+# Every 評価点 an inspector can award, and the spelling a band is canonicalised
+# to. Checked rather than passed through, because a grade now decides a max bid:
+# a typo'd "45" would be a band that prices nothing at all, and the lots it was
+# written for would arrive with no bid and no explanation. It lives here rather
+# than with the site's query parameters for the same reason the bands do — this
+# is the file that spends the money.
+KNOWN_GRADES = ("S", "6", "5", "4.5", "4", "3.5", "3", "2", "1", "R", "RA")
+
 # Derived from the bands, so writing them in [site] is an error rather than an
 # override — an override would be a bound that silently disagrees with the
 # prices underneath it, which is the exact drift this file was merged to end.
-_DERIVED_SITE_KEYS = ("year_start", "year_end", "mileage_start", "mileage_end")
+#
+# `grade` joined them for the reason `body_model_code` moved onto a band: a 評価点
+# is worth a different amount of money — a 5 and a 4.5 of one year and one
+# mileage are two prices — so it is written where the price is and the fetch is
+# derived back from it. Left in [site] it would be a second, search-wide answer
+# to a question each band now answers for itself.
+_DERIVED_SITE_KEYS = ("year_start", "year_end", "mileage_start", "mileage_end",
+                      "grade")
 
 # The car names these, so [site] must not.
 _CAR_SITE_KEYS = ("make", "model")
@@ -152,6 +167,45 @@ def _code_tuple(value, where: str, label: str) -> tuple[str, ...]:
             or not all(isinstance(item, str) for item in value)):
         raise SearchDefinitionError(f"{where}: {label} must be a list of strings")
     return tuple(item.strip().upper() for item in value if item.strip())
+
+
+def _grade_key(value: str) -> str:
+    """One spelling per 評価点: ``"4.50"``, ``" 4.5 "`` and ``"4.5"`` are one grade.
+
+    The scale is numeric in the middle and lettered at its ends (``S``, ``R``,
+    ``RA``), so neither a float compare nor a string compare covers it alone.
+    Canonicalised at the door rather than at each comparison because a band's
+    grades are a *set*: whether two bands are disjoint is a question that has to
+    have exactly one answer, and it is asked at load time with no car in hand.
+    """
+    text = value.strip()
+    try:
+        return f"{float(text):g}"
+    except ValueError:
+        return text.upper()
+
+
+def _grade_tuple(value, where: str, label: str) -> tuple[str, ...]:
+    """A list of 評価点, canonicalised and checked against the scale.
+
+    An unknown grade is refused for the reason an unknown *key* is: a band whose
+    grade matches nothing is a price that never applies, and it fails as a
+    missing bid on a morning rather than as an error at load.
+    """
+    if isinstance(value, str):
+        raise SearchDefinitionError(
+            f"{where}: {label} must be a list, not a string ({value!r})")
+    if (not isinstance(value, (list, tuple))
+            or not all(isinstance(item, str) for item in value)):
+        raise SearchDefinitionError(f"{where}: {label} must be a list of strings")
+    grades = tuple(dict.fromkeys(
+        _grade_key(item) for item in value if item.strip()))
+    for grade in grades:
+        if grade not in KNOWN_GRADES:
+            raise SearchDefinitionError(
+                f"{where}: {label} has no grade {grade!r}. "
+                f"Known grades: {', '.join(KNOWN_GRADES)}")
+    return grades
 
 
 def _folded(value, where: str, label: str) -> str:
@@ -273,6 +327,13 @@ class Band:
     names no code prices every code, which is what every single-variant search
     still says by saying nothing.
 
+    ``grade`` is the 評価点 this band prices, and is here for the reason the code
+    is: a 5 and a 4.5 of one year and one mileage range are the same car in two
+    conditions and are worth different money — the Harrier Z is about ¥50,000
+    apart across that half-point. A band that names no grade prices every grade,
+    which is what a search that does not split on condition still says by saying
+    nothing, and — as with the codes — it unbounds the fetch.
+
     ``auction_statistics`` is this band's override of the search's section, and
     is handed on unread for the same reason that section is — the keys are
     banzai24's. It exists because a chassis code does not always name a trim: the
@@ -286,6 +347,7 @@ class Band:
 
     year: int
     body_model_code: tuple[str, ...] = ()
+    grade: tuple[str, ...] = ()
     mileage_start: int = 0
     mileage_end: int | None = None
     max_bid_jpy: dict[str, int] = field(default_factory=dict)
@@ -328,6 +390,24 @@ class Band:
         code = (code or "").strip().upper()
         return bool(code) and any(wanted in code for wanted in self.body_model_code)
 
+    def prices_grade(self, grade: str | None) -> bool:
+        """Does this band price a car the inspector gave this 評価点?
+
+        **Whole grades, never a floor.** The scale is short and closed, so a band
+        saying "4.5 and better" would be a second answer to its neighbour's the
+        moment that neighbour said "5"; each band names the grades it buys and
+        the load-time overlap check can then tell the two apart.
+
+        A band that names grades cannot price a car whose grade nobody stated —
+        the same rule :meth:`prices_code` applies, and with more reason: the
+        grade is what the fetch asked the site for, so a lot arriving without one
+        is a lot nothing has confirmed is the condition being priced.
+        """
+        if not self.grade:
+            return True
+        key = _grade_key(grade or "")
+        return bool(key) and key in self.grade
+
     def bid(self, rental_kind: str = PRIVATE) -> int:
         """The max bid for a 車歴, falling back to ``private``.
 
@@ -341,7 +421,11 @@ class Band:
     def label(self) -> str:
         top = f"{self.mileage_end:,}" if self.mileage_end is not None else "∞"
         code = f" · {'/'.join(self.body_model_code)}" if self.body_model_code else ""
-        return f"{self.year}{code} · {self.mileage_start:,}–{top} km"
+        # Printed whenever the band names one, even where every band of a search
+        # names the same list: two bands split on nothing but the grade are
+        # otherwise the same sentence, and the overlap error names them by this.
+        grade = f" · grade {'/'.join(self.grade)}" if self.grade else ""
+        return f"{self.year}{code}{grade} · {self.mileage_start:,}–{top} km"
 
     def overlaps(self, other: "Band") -> bool:
         if self.year != other.year:
@@ -349,6 +433,11 @@ class Band:
         if not _codes_can_meet(self.body_model_code, other.body_model_code):
             # Two variants of one car, same year, same kilometres, different
             # price: that is the whole point of a code on a band, not a clash.
+            return False
+        if not _grades_can_meet(self.grade, other.grade):
+            # Two conditions of one car, priced apart — the split `grade` exists
+            # for. No lot carries both grades, so neither band can shadow the
+            # other.
             return False
         low = max(self.mileage_start, other.mileage_start)
         high = min(
@@ -368,6 +457,18 @@ def _codes_can_meet(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
     if not left or not right:
         return True
     return any(one in two or two in one for one in left for two in right)
+
+
+def _grades_can_meet(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """Could one car's 評価点 be in both lists? Empty means "any grade".
+
+    A plain intersection, unlike :func:`_codes_can_meet`: grades are
+    canonicalised by :func:`_grade_key` at parse and matched whole, so there is
+    no short spelling that quietly covers a longer one.
+    """
+    if not left or not right:
+        return True
+    return bool(set(left) & set(right))
 
 
 @dataclass(frozen=True)
@@ -520,6 +621,27 @@ class SearchDefinition:
             seen.update(dict.fromkeys(band.body_model_code))
         return tuple(seen)
 
+    @property
+    def grade(self) -> tuple[str, ...]:
+        """The 評価点 a fetch keeps: the union of the bands', in file order.
+
+        Derived exactly as :attr:`body_model_code` is, and for the same reason —
+        the grades worth fetching are the grades some band prices, and a second
+        copy in ``[site]`` could only ever disagree with the prices underneath
+        it.
+
+        **One band naming no grade unbounds the whole search**, again like the
+        codes: that band prices every condition, so narrowing the fetch to the
+        grades its neighbours happen to name would drop the very lots it exists
+        to price.
+        """
+        seen: dict[str, None] = {}
+        for band in self.bands:
+            if not band.grade:
+                return ()
+            seen.update(dict.fromkeys(band.grade))
+        return tuple(seen)
+
     def competitor_scope(self) -> CompetitorBounds:
         """The union of every band's competitor bounds — what to actually crawl.
 
@@ -574,19 +696,25 @@ class SearchDefinition:
         return band.profit or self.dashboard.profit
 
     def band_for(self, year: int | None, mileage_km: int | None,
-                 body_model_code: str | None = None) -> Band | None:
+                 body_model_code: str | None = None,
+                 grade: str | None = None) -> Band | None:
         """The band one car falls in, or ``None``. Bands never overlap; see :func:`parse`.
 
         ``body_model_code`` is what the lot itself carries. Omitting it is
         answering "no code was stated", which no code-bearing band prices —
         so a search whose bands name codes will say ``None`` rather than pick
         the E-Four's price for a car that might be the 2WD.
+
+        ``grade`` is the same kind of answer about the 評価点, and omitting it
+        means the same thing: a search whose bands split a 5 from a 4.5 says
+        ``None`` rather than guess which of the two prices this car is.
         """
         if year is None or mileage_km is None:
             return None
         for band in self.bands:
             if (band.year == year and band.covers(mileage_km)
-                    and band.prices_code(body_model_code)):
+                    and band.prices_code(body_model_code)
+                    and band.prices_grade(grade)):
                 return band
         return None
 
@@ -617,6 +745,7 @@ class SearchDefinition:
                 {
                     "year": band.year,
                     "body_model_code": list(band.body_model_code),
+                    "grade": list(band.grade),
                     "mileage_start": band.mileage_start,
                     "mileage_end": band.mileage_end,
                     "max_bid_jpy": dict(band.max_bid_jpy),
@@ -732,7 +861,7 @@ def _parse_band(payload, where: str, index: int) -> Band:
     if not isinstance(payload, dict):
         raise SearchDefinitionError(f"{where}: {label} must be a table")
     _known(where, label, payload,
-           ("year", "body_model_code", "mileage_start", "mileage_end",
+           ("year", "body_model_code", "grade", "mileage_start", "mileage_end",
             "max_bid_jpy", "competitors", "auction_statistics",
             "expected_profit_eur", "expected_profit_percent"))
 
@@ -753,6 +882,8 @@ def _parse_band(payload, where: str, index: int) -> Band:
         body_model_code=(
             _code_tuple(payload["body_model_code"], where, f"{label}.body_model_code")
             if "body_model_code" in payload else ()),
+        grade=(_grade_tuple(payload["grade"], where, f"{label}.grade")
+               if "grade" in payload else ()),
         mileage_start=start,
         mileage_end=end,
         max_bid_jpy=_parse_max_bid(payload["max_bid_jpy"], where, f"{label}.max_bid_jpy"),
@@ -1004,6 +1135,7 @@ def from_provenance(payload: dict) -> SearchDefinition | None:
         ],
     }
     _lower_the_old_api_code_onto_the_bands(rebuilt)
+    _lower_the_old_site_grade_onto_the_bands(rebuilt)
     try:
         return parse(rebuilt, name=str(stored["name"]))
     except SearchDefinitionError:
@@ -1023,6 +1155,22 @@ def _lower_the_old_api_code_onto_the_bands(rebuilt: dict) -> None:
         return
     for band in rebuilt["band"]:
         band.setdefault("body_model_code", list(codes))
+
+
+def _lower_the_old_site_grade_onto_the_bands(rebuilt: dict) -> None:
+    """Read back a run recorded while ``grade`` was still a ``[site]`` key.
+
+    The same shim as :func:`_lower_the_old_api_code_onto_the_bands`, for the same
+    reason: one grade list for the whole search *is* that list on each of its
+    bands, so the old shape converts exactly. Dropping it instead would re-render
+    an old morning with the condition filter switched off, which reads as a wider
+    report that was nonetheless measured.
+    """
+    grades = (rebuilt.get("site") or {}).pop("grade", None)
+    if not grades:
+        return
+    for band in rebuilt["band"]:
+        band.setdefault("grade", list(grades))
 
 
 def for_run(payload: dict) -> tuple[SearchDefinition | None, str | None]:

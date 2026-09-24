@@ -115,7 +115,11 @@ def build_rows(model_specs_path: Path, rates: Rates, costs: CostBook,
                     mileage_km=mileage, auction_price_jpy=price, rates=rates,
                     costs=costs, specs=specs, market=market,
                 )
-                out.append((f"{search.car} {band.year} · {label} · {kind}",
+                # Named for the reason `Band.label` names it: two bands split
+                # on nothing but the 評価点 are otherwise the same row at the
+                # same price, and one of the two would read as a duplicate.
+                grade = f" · grade {'/'.join(band.grade)}" if band.grade else ""
+                out.append((f"{search.car} {band.year}{grade} · {label} · {kind}",
                             price, result))
     return out, specs, market
 

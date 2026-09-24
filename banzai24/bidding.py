@@ -290,6 +290,25 @@ def sheet_first(lot, extraction) -> tuple[int | None, int | None]:
     return year, mileage
 
 
+def grade_sheet_first(lot, extraction) -> str | None:
+    """The 評価点 a band is picked by — **the sheet's, then the API's**.
+
+    ``docs/adr/0001-sheet-outranks-api.md``, applied to the box the max bid now
+    hangs on. The chassis code above is taken from the API on the grounds that
+    nothing about it is a judgement and a vision read could only introduce error;
+    the grade is the opposite. It *is* the inspector's judgement, written by hand
+    on the sheet, and the list's ``gradeOrigin`` is a re-typed copy of it —
+    :func:`banzai24.sheets.grade_matches` exists precisely because the two are
+    seen to disagree, on a re-list or on a typo. The sheet is the document the
+    bid is made against, so where it has read the box it decides the price.
+
+    A sheet null is not a downgrade: where nothing has read the sheet the API's
+    grade stands, which is the grade the fetch kept the lot for.
+    """
+    grade = extraction.sheet_grade if extraction else None
+    return grade if grade else lot.grade_origin
+
+
 def _load(label, path, loader, empty, quiet_when_absent=False):
     """``(table, problem)`` — reads one file without ever raising.
 
@@ -428,6 +447,7 @@ class BidPricer:
         code = normalize_model_code(lot.body_model_code)
 
         year, mileage = sheet_first(lot, extraction)
+        grade = grade_sheet_first(lot, extraction)
         if year is None:
             return None, "missing year", assumed_private
         if mileage is None:
@@ -441,14 +461,20 @@ class BidPricer:
                           f"{self.car} this search prices"), assumed_private
 
         for band in self.bands:
-            if band.year == year and band.covers(mileage) and band.prices_code(code):
+            if (band.year == year and band.covers(mileage)
+                    and band.prices_code(code) and band.prices_grade(grade)):
                 return band.bid(rental), None, assumed_private
 
         # The code is named in the reason only when the bands price by one,
         # because on every other search it would be a column of noise — and when
         # they do, it is usually the whole answer: an AXAH52 among AXAH54 bands.
+        # The grade is named on the same terms, and is the whole answer as often:
+        # a search that splits a 5 from a 4.5 prices neither of them if the two
+        # readings of the box left it blank.
         variant = ""
         if any(band.body_model_code for band in self.bands):
             variant = f" · {code or 'no model code'}"
+        if any(band.grade for band in self.bands):
+            variant += f" · grade {grade or 'unstated'}"
         return None, (f"no band for {lot.mark or '?'} {lot.model or '?'} "
                       f"{year} · {mileage:,} km{variant}"), assumed_private

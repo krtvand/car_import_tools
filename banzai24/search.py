@@ -49,8 +49,14 @@ _SITE_ALIASES = {"grade": "grade_origin"}
 # Set from the car and from the bands respectively, so a file may not name them.
 # `searches` rejects them before we get here; this set is what keeps them out of
 # the "known keys" list in an error message that would otherwise invite the typo.
+# `grade_origin` is among them because a 評価点 is a `[[band]]` key now — it is
+# worth a different max bid, so it is written where the price is and the fetch
+# keeps the union. That also takes it out of `_STATS_KEYS` below, which is right:
+# the archive measuring one band is pinned to that band's grades, and a section
+# able to name its own would be measuring a condition nobody is buying.
 _NOT_FROM_FILE = {"make", "model",
-                  "year_start", "year_end", "mileage_start", "mileage_end"}
+                  "year_start", "year_end", "mileage_start", "mileage_end",
+                  "grade_origin"}
 
 _SITE_KEYS = {f.name for f in fields(AuctionFilters)} - _NOT_FROM_FILE
 
@@ -92,10 +98,17 @@ def _stats_table(raw, where: str, section: str = "auction_statistics") -> dict:
     rejects.
     """
     table = {_SITE_ALIASES.get(key, key): value for key, value in (raw or {}).items()}
+    if "grade_origin" in table:
+        # Named rather than left to `_known`, which would report the aliased
+        # spelling at a file that wrote `grade` and say only that it is unknown.
+        raise SearchDefinitionError(
+            f"{where}: [{section}] grade is a [[band]] key now — a band is what "
+            f"prices one 評価点, and the archive for a band is pinned to its "
+            f"grades. Write it in each [[band]] instead")
     _known(section, table, _STATS_KEYS, where)
-    for key in ("grade_origin", "model_grade"):
-        if key in table:
-            table[key] = _tuple_of_str(table[key], f"{where}: [{section}] {key}")
+    if "model_grade" in table:
+        table["model_grade"] = _tuple_of_str(
+            table["model_grade"], f"{where}: [{section}] model_grade")
     return table
 
 
@@ -149,12 +162,15 @@ class SearchDefinition:
         *that*, for the narrowing that is true of one band and not its
         neighbours: a 2WD AXAH52 is a HYBRID X whatever the auction house typed,
         while an E-Four AXAH54 is a G, an Adventure or an X and has to say so.
-        Then the band pins year and mileage, the same way it does everywhere
-        else, and the archive pins itself.
+        Then the band pins year, mileage and grade, the same way it does
+        everywhere else, and the archive pins itself.
 
         Year is an exact match rather than the search-wide span: a band is the
         thing that has a price on it, so the sales it is measured against are
-        the ones in its own year and its own mileage range.
+        the ones in its own year, its own mileage range and its own 評価点. The
+        grade is pinned only when the band names one — a band that prices every
+        condition is measured against every condition, which is the search-wide
+        list it already inherits.
         """
         return replace(
             self.filters,
@@ -163,6 +179,7 @@ class SearchDefinition:
             year_end=band.year,
             mileage_start=band.mileage_start,
             mileage_end=band.mileage_end,
+            **({"grade_origin": band.grade} if band.grade else {}),
             source="archive",
             status="SOLD",
         )
@@ -221,15 +238,19 @@ def adapt(spec: searches.SearchDefinition) -> SearchDefinition:
     site = {_SITE_ALIASES.get(key, key): value
             for key, value in (spec.sections.get("site") or {}).items()}
     _known("site", site, _SITE_KEYS, where)
-    for key in ("grade_origin", "model_grade"):
-        if key in site:
-            site[key] = _tuple_of_str(site[key], f"{where}: [site] {key}")
+    if "model_grade" in site:
+        site["model_grade"] = _tuple_of_str(
+            site["model_grade"], f"{where}: [site] model_grade")
 
     make, model = banzai_cars.slugs(spec.car)
     site.update(
         make=make, model=model,
         year_start=spec.year_start, year_end=spec.year_end,
         mileage_start=spec.mileage_start, mileage_end=spec.mileage_end,
+        # The fetch keeps what some band prices, the same as the codes below.
+        # Empty when any band names no grade, which is that band saying it
+        # prices every condition the site will show it.
+        grade_origin=spec.grade,
     )
 
     api = dict(spec.sections.get("api") or {})

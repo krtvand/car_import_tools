@@ -69,7 +69,8 @@ They are not a catalogue mistake and they are not scattered. They arrive in
 consecutive lot numbers at one TAA Kanto sale — 52022, 52030, 52034, 52036,
 52037, 52038, 52040, 52041 — at 37,000–58,000 km in about three years, nearly
 all opening at exactly ¥1,000,000. That is a fleet disposal, and the auction
-grades say so too: almost all are 3 or 3.5, which `[site] grade` already refuses.
+grades say so too: almost all are 3 or 3.5, which no band in that file prices —
+and so nothing fetches.
 
 Two consequences for `toyota-harrier-s.toml`:
 

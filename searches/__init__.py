@@ -9,6 +9,7 @@ the URL slugs are in neither package.
 """
 from cars.definitions import CARS, Car, UnknownCar, get as car
 from .definition import (
+    KNOWN_GRADES,
     SEARCH_DIR,
     Band,
     CompetitorBounds,
@@ -27,7 +28,7 @@ from .definition import (
 
 __all__ = [
     "CARS", "Car", "UnknownCar", "car",
-    "SEARCH_DIR", "Band", "CompetitorBounds", "CompetitorFilters",
+    "KNOWN_GRADES", "SEARCH_DIR", "Band", "CompetitorBounds", "CompetitorFilters",
     "DashboardSettings", "SearchDefinition", "SearchDefinitionError",
     "available", "for_run", "from_provenance", "load", "load_all", "parse",
     "path_for",

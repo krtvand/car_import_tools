@@ -26,7 +26,6 @@ car = "toyota-rav4"
 
 [site]
 transmission = "auto"
-grade = ["4", "4.5", "5"]
 
 [sheet]
 no_damage_codes = ["W", "X"]
@@ -38,11 +37,13 @@ engine_capacity_start = 2.5
 [[band]]
 year = 2023
 body_model_code = ["AXAH54"]
+grade = ["4", "4.5", "5"]
 mileage_end = 50000
 max_bid_jpy = { private = 2_505_000 }
 
 [[band]]
 year = 2023
+grade = ["4", "4.5", "5"]
 mileage_start = 50001
 mileage_end = 70000
 max_bid_jpy = { private = 2_205_000 }
@@ -78,6 +79,29 @@ def test_the_band_pins_the_year_and_mileage_exactly(tmp_path):
     assert (low.year_start, low.year_end) == (2023, 2023)
     assert (low.mileage_start, low.mileage_end) == (0, 50000)
     assert (high.mileage_start, high.mileage_end) == (50001, 70000)
+
+
+def test_the_band_pins_its_own_grades(tmp_path):
+    """A band that splits a 5 from a 4.5 is benchmarked against 5s, or its
+    ceiling is being compared with cars in another condition."""
+    text = RAV4.replace('body_model_code = ["AXAH54"]\ngrade = ["4", "4.5", "5"]',
+                        'body_model_code = ["AXAH54"]\ngrade = ["5"]')
+    definition = search.load("toyota-rav4", _write(tmp_path, text))
+    narrowed, inherited = (definition.stats_filters(b) for b in definition.bands)
+
+    assert narrowed.grade_origin == ("5",)
+    assert inherited.grade_origin == ("4", "4.5", "5")
+    # And the fetch keeps the union of the two, so both bands have lots to find.
+    assert definition.filters.grade_origin == ("5", "4", "4.5")
+
+
+def test_a_section_may_not_name_a_grade_of_its_own(tmp_path):
+    """It would be a second answer to what each band already says with a price
+    attached — and would measure a condition nobody is buying."""
+    text = RAV4.replace('model_grade = ["HYBRID G"]',
+                        'model_grade = ["HYBRID G"]\ngrade = ["5"]')
+    with pytest.raises(SearchDefinitionError, match=r"\[\[band\]\] key now"):
+        search.load("toyota-rav4", _write(tmp_path, text))
 
 
 def test_the_archive_and_sold_are_not_read_from_the_file(tmp_path):

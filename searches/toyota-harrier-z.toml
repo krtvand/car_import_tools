@@ -3,7 +3,6 @@ car = "toyota-harrier"
 
 [site]
 transmission = "auto"
-grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
@@ -33,9 +32,20 @@ exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
                    "g model", "coming soon"]
 
 
+# Each mileage range is two bands, split on the 評価点: a 5 is worth paying more
+# for than a 4.5 of the same year and the same kilometres, and one price for both
+# was either overpaying for the 4.5 or losing the 5. The fetch still asks for all
+# three grades, because it is the union of what the bands below price.
+#
+# BOTH HALVES CARRY THE OLD SINGLE PRICE for now — the split is structural until
+# the archive says what the two conditions actually hammer for. Each half walks
+# its own archive now, so `banzai24 stats --search toyota-harrier-z` is what
+# answers it; set the two numbers off what comes back.
+
 [[band]]
 year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
+grade = ["4", "4.5"]
 mileage_start = 0
 mileage_end = 35000
 max_bid_jpy = { private = 2_885_000 }
@@ -47,6 +57,31 @@ max_bid_jpy = { private = 2_885_000 }
 [[band]]
 year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
+grade = ["5"]
+mileage_start = 0
+mileage_end = 35000
+max_bid_jpy = { private = 2_885_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 50000
+
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+grade = ["4", "4.5"]
+mileage_start = 35001
+mileage_end = 50000
+max_bid_jpy = { private = 2_835_000 }
+
+  [band.competitors]
+  year_start = 2022
+  mileage_end = 70000
+
+[[band]]
+year = 2023
+body_model_code = ["AXUH80", "AXUH85"]
+grade = ["5"]
 mileage_start = 35001
 mileage_end = 50000
 max_bid_jpy = { private = 2_835_000 }

@@ -2,7 +2,6 @@ car = "mazda-3"
 
 [site]
 transmission = "auto"
-grade = ["4", "4.5", "5"]
 source = "auctions"
 
 [api]
@@ -24,6 +23,7 @@ engine_size_end = 2.0
 [[band]]
 year = 2023
 body_model_code = ["BP5P", "BP5R"]
+grade = ["4", "4.5", "5"]
 mileage_start = 0
 mileage_end = 50000
 max_bid_jpy = { private = 1_615_000 }

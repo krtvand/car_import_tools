@@ -111,6 +111,74 @@ def test_one_band_without_a_code_leaves_the_fetch_unnarrowed():
     assert search.body_model_code == ()
 
 
+def test_two_grades_of_one_car_are_two_bands_at_two_prices():
+    """The Harrier Z is why the 評価点 sits on the band: a 5 and a 4.5 of one
+    year and one mileage range are the same car in two conditions, and one price
+    for both was either overpaying for the 4.5 or losing the 5."""
+    search = _parse(car="toyota-harrier", band=[
+        {"year": 2023, "grade": ["4", "4.5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2_835_000}},
+        {"year": 2023, "grade": ["5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2_885_000}},
+    ])
+    assert search.band_for(2023, 20_000, grade="4.5").bid() == 2_835_000
+    assert search.band_for(2023, 20_000, grade="5").bid() == 2_885_000
+
+
+def test_a_car_whose_grade_nobody_stated_is_priced_by_no_band():
+    """The same answer an unstated code gets, and for a stronger reason: the
+    grade is what the fetch asked the site for."""
+    search = _parse(car="toyota-harrier", band=[
+        {"year": 2023, "grade": ["5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2_885_000}}])
+    assert search.band_for(2023, 20_000) is None
+    assert search.band_for(2023, 20_000, grade="4.5") is None
+
+
+def test_a_grade_is_one_thing_however_the_file_spells_it():
+    """``4.50`` and ``4.5`` are one grade; ``r`` and ``R`` are one grade."""
+    search = _parse(band=[{"year": 2023, "grade": ["4.50", "r"],
+                           "mileage_end": 50_000, "max_bid_jpy": {"private": 1}}])
+    assert search.bands[0].grade == ("4.5", "R")
+    assert search.bands[0].prices_grade(" 4.500 ")
+
+
+def test_a_band_naming_no_grade_prices_every_grade():
+    """Which is what every search that does not split on condition says by
+    saying nothing."""
+    band = _parse().bands[0]
+    assert band.prices_grade("3") and band.prices_grade(None)
+
+
+def test_the_grades_the_fetch_keeps_are_the_union_of_the_bands():
+    search = _parse(car="toyota-harrier", band=[
+        {"year": 2023, "grade": ["4", "4.5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 1}},
+        {"year": 2023, "grade": ["5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2}},
+    ])
+    assert search.grade == ("4", "4.5", "5")
+
+
+def test_one_band_without_a_grade_leaves_the_fetch_unnarrowed():
+    """That band prices every condition, so narrowing the fetch to its
+    neighbours' grades would drop the lots it exists to price."""
+    search = _parse(band=[
+        {"year": 2023, "grade": ["5"], "mileage_end": 50_000,
+         "max_bid_jpy": {"private": 1}},
+        {"year": 2024, "mileage_end": 50_000, "max_bid_jpy": {"private": 2}},
+    ])
+    assert search.grade == ()
+
+
+def test_a_band_names_the_grades_it_prices_in_its_label():
+    """Two bands split on nothing but the grade are otherwise one sentence, and
+    the overlap error names them by this."""
+    search = _parse(band=[{"year": 2023, "grade": ["4", "4.5"],
+                           "mileage_end": 35_000, "max_bid_jpy": {"private": 1}}])
+    assert search.bands[0].label == "2023 · grade 4/4.5 · 0–35,000 km"
+
+
 def test_a_missing_rental_price_falls_back_to_private():
     """The dearer of the two, so not the cautious choice — the only one that
     always resolves, since some cars have no rental price at all."""
@@ -182,6 +250,47 @@ def test_a_coded_band_and_an_uncoded_one_still_overlap():
         ])
 
 
+def test_bands_that_price_different_grades_never_overlap():
+    """Same year, same kilometres, same code, two conditions: the split the key
+    exists for. No lot carries both grades."""
+    search = _parse(car="toyota-harrier", band=[
+        {"year": 2023, "grade": ["4", "4.5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2_835_000}},
+        {"year": 2023, "grade": ["5"], "mileage_end": 35_000,
+         "max_bid_jpy": {"private": 2_885_000}},
+    ])
+    assert len(search.bands) == 2
+
+
+def test_two_bands_sharing_one_grade_still_overlap():
+    """A 4.5 would match both, and the second price would never be seen."""
+    with pytest.raises(SearchDefinitionError, match="overlap"):
+        _parse(band=[
+            {"year": 2023, "grade": ["4", "4.5"], "mileage_end": 35_000,
+             "max_bid_jpy": {"private": 1}},
+            {"year": 2023, "grade": ["4.5", "5"], "mileage_end": 35_000,
+             "max_bid_jpy": {"private": 2}},
+        ])
+
+
+def test_a_graded_band_and_an_ungraded_one_still_overlap():
+    """The ungraded band prices every grade, this one included."""
+    with pytest.raises(SearchDefinitionError, match="overlap"):
+        _parse(band=[
+            {"year": 2023, "grade": ["5"], "mileage_end": 35_000,
+             "max_bid_jpy": {"private": 1}},
+            {"year": 2023, "mileage_end": 35_000, "max_bid_jpy": {"private": 2}},
+        ])
+
+
+def test_a_grade_off_the_scale_is_refused_at_load():
+    """A band nothing can match is a price that never applies, and it fails as a
+    missing bid on a morning rather than as an error here."""
+    with pytest.raises(SearchDefinitionError, match="Known grades"):
+        _parse(band=[{"year": 2023, "grade": ["45"], "mileage_end": 50_000,
+                      "max_bid_jpy": {"private": 1}}])
+
+
 def test_bands_in_different_years_never_overlap():
     search = _parse(band=[
         {"year": 2023, "mileage_end": 50_000, "max_bid_jpy": {"private": 1}},
@@ -223,6 +332,13 @@ def test_a_derived_bound_written_in_site_is_an_error_not_an_override(key):
     it, which is the drift the merge exists to end."""
     with pytest.raises(SearchDefinitionError, match="derived from the bands"):
         _parse(site={key: 2023})
+
+
+def test_the_grade_written_in_site_says_where_it_went():
+    """It used to live there, and one search-wide grade list is a second answer
+    to the question a band now answers with a price attached."""
+    with pytest.raises(SearchDefinitionError, match="derived from the bands"):
+        _parse(site={"grade": ["4", "4.5", "5"]})
 
 
 def test_the_car_names_the_make_and_model_so_site_may_not():
@@ -472,6 +588,19 @@ def test_a_run_recorded_before_the_code_moved_still_reads_back():
         band.pop("body_model_code")
     restored = definition.from_provenance({"search": stored})
     assert all(band.body_model_code == ("DMEJ3P",) for band in restored.bands)
+
+
+def test_a_run_recorded_before_the_grade_moved_still_reads_back():
+    """The same shim, for the same reason: one grade list for the whole search
+    is that list on each of its bands, and dropping it would re-render an old
+    morning with the condition filter switched off."""
+    stored = _parse().to_payload()
+    stored["site"] = {"grade": ["4", "4.5", "5"]}
+    for band in stored["bands"]:
+        band.pop("grade")
+    restored = definition.from_provenance({"search": stored})
+    assert all(band.grade == ("4", "4.5", "5") for band in restored.bands)
+    assert restored.grade == ("4", "4.5", "5")
 
 
 def test_reading_a_run_back_does_not_edit_the_run():

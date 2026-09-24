@@ -186,6 +186,66 @@ def test_a_search_that_does_not_price_by_code_says_nothing_about_one(tmp_path):
     assert quote.reason == "no band for MAZDA CX-30 2017 · 15,000 km"
 
 
+def test_the_grade_picks_the_band_when_two_conditions_share_a_year(tmp_path):
+    """The Harrier Z: one year, one mileage range, one chassis code, and a 5 is
+    worth more than a 4.5. The 評価点 is the only thing that tells them apart, so
+    it is what picks the price."""
+    bands = (
+        Band(year=2023, grade=("4", "4.5"), mileage_end=50_000,
+             max_bid_jpy={"private": 2_835_000}),
+        Band(year=2023, grade=("5",), mileage_end=50_000,
+             max_bid_jpy={"private": 2_885_000}),
+    )
+    pricer = _pricer(tmp_path, bands=bands)
+    good = pricer.for_lot(_lot(grade_origin="5"), _extraction())
+    fair = pricer.for_lot(_lot(grade_origin="4.5"), _extraction())
+    assert (good.max_bid, fair.max_bid) == (2_885_000, 2_835_000)
+
+
+def test_the_sheet_outranks_the_api_on_the_grade_too(tmp_path):
+    """``docs/adr/0001-sheet-outranks-api.md``, applied to the box the bid now
+    hangs on. Unlike the chassis code, the 評価点 *is* a judgement — the
+    inspector's, written on the sheet — and the list's copy of it is re-typed."""
+    bands = (
+        Band(year=2023, grade=("4", "4.5"), mileage_end=50_000,
+             max_bid_jpy={"private": 2_835_000}),
+        Band(year=2023, grade=("5",), mileage_end=50_000,
+             max_bid_jpy={"private": 2_885_000}),
+    )
+    quote = _pricer(tmp_path, bands=bands).for_lot(
+        _lot(grade_origin="5"), _extraction(sheet_grade="4.5"))
+    assert quote.max_bid == 2_835_000
+
+
+def test_an_unread_sheet_leaves_the_apis_grade_standing(tmp_path):
+    """A sheet null is not a downgrade: the API's grade is the one the fetch
+    kept the lot for."""
+    pricer = _pricer(tmp_path, bands=(
+        Band(year=2023, grade=("5",), mileage_end=50_000,
+             max_bid_jpy={"private": 2_885_000}),))
+    assert pricer.for_lot(_lot(grade_origin="5"), None).max_bid == 2_885_000
+    assert pricer.for_lot(_lot(grade_origin="5"),
+                          _extraction(sheet_grade=None)).max_bid == 2_885_000
+
+
+def test_a_car_whose_grade_no_band_prices_says_which_grade_it_was(tmp_path):
+    """On a search that splits a 5 from a 4.5 the grade is usually the whole
+    answer, so the card carries it — including when neither reading had one."""
+    pricer = _pricer(tmp_path, bands=(
+        Band(year=2023, grade=("5",), mileage_end=50_000,
+             max_bid_jpy={"private": 2_885_000}),))
+    quote = pricer.for_lot(_lot(grade_origin="4.5"), _extraction())
+    assert quote.max_bid is None
+    assert quote.reason.endswith("· grade 4.5")
+    assert pricer.for_lot(_lot(), _extraction()).reason.endswith("· grade unstated")
+
+
+def test_a_search_that_does_not_price_by_grade_says_nothing_about_one(tmp_path):
+    """On every other search it would be a column of noise."""
+    quote = _pricer(tmp_path).for_lot(_lot(registration_year=2017), _extraction())
+    assert "grade" not in quote.reason
+
+
 def test_rental_and_private_are_priced_separately(tmp_path):
     pricer = _pricer(tmp_path, bands=(
         Band(year=2023, mileage_start=0, mileage_end=50_000,

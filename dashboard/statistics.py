@@ -366,15 +366,25 @@ def _matches_stats_filters(lot: AuctionLot, filters, lot_filters) -> bool:
                              modification=lot.modification)
 
 
-def _in_band(lot: AuctionLot, band: Band) -> bool:
-    """Does this sale fall in this band? Year exactly, mileage inclusively.
+def _in_band(lot: AuctionLot, band: Band, extraction=None) -> bool:
+    """Does this sale fall in this band? Year exactly, mileage and grade as bought.
 
     The same test the band applies to a car being bought, so a band is measured
-    against sales it would itself have priced. A lot missing either figure is in
-    no band at all rather than in the first one — bands never overlap, and a
-    guessed one would put a sale under the wrong max bid.
+    against sales it would itself have priced — which is why the 評価点 is read
+    the way :func:`banzai24.bidding.grade_sheet_first` reads it, sheet first.
+    A lot missing a figure the band prices by is in no band at all rather than in
+    the first one: bands never overlap, and a guessed one would put a sale under
+    the wrong max bid.
+
+    The grade is re-checked here rather than left to the archive walk, which
+    already asked the site for this band's grades. A stored sale outlives the
+    walk that fetched it: splitting a band on condition must drop yesterday's
+    5s out of the 4.5 panel, the same way a tightened ``model_grade`` drops a
+    trim in :func:`_matches_stats_filters`.
     """
     if lot.registration_year is None or lot.mileage_km is None:
+        return False
+    if not band.prices_grade(bidding.grade_sheet_first(lot, extraction)):
         return False
     return lot.registration_year == band.year and band.covers(lot.mileage_km)
 
@@ -392,7 +402,8 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
 
     inside = [
         lot for lot in lots
-        if _in_band(lot, band) and _matches_stats_filters(lot, filters, lot_filters)
+        if (_in_band(lot, band, extractions.get(lot.lot_number))
+            and _matches_stats_filters(lot, filters, lot_filters))
     ]
 
     rows: list[BenchmarkRow] = []
