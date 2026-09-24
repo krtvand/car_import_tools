@@ -333,7 +333,7 @@ class BidPricer:
         self.car = car
         bid_problem = None if self.bands else (
             "no bid bands: this run named no saved search")
-        self.area_prices, area_problem = _load(
+        self.area_prices, self.area_problem = _load(
             "area prices", area_prices_path or AREA_PRICES_PATH, load_area_prices, {})
         # The aliases are an accelerator, not an input: without them six houses
         # stop matching and say so on their own cards, which is a working report.
@@ -343,9 +343,10 @@ class BidPricer:
             "auction aliases", aliases_path or ALIASES_PATH, load_aliases, {},
             quiet_when_absent=True)
 
-        self.available = not (bid_problem or area_problem)
+        self.available = not (bid_problem or self.area_problem)
         self.reason = "; ".join(
-            problem for problem in (bid_problem, area_problem, alias_problem) if problem
+            problem for problem in (bid_problem, self.area_problem, alias_problem)
+            if problem
         ) or None
 
     def for_lot(self, lot, extraction=None) -> BidQuote | None:
@@ -358,7 +359,7 @@ class BidPricer:
         if not self.available:
             return None
 
-        extra_costs, house_reason = self._area_cost(lot)
+        extra_costs, house_reason = self.area_cost(lot)
         max_bid, table_reason, assumed_private = self._max_bid(lot, extraction)
         reason = house_reason or table_reason
 
@@ -379,7 +380,23 @@ class BidPricer:
                         house=lot.auction_name,
                         assumed_private=assumed_private and max_bid is not None)
 
-    def _area_cost(self, lot) -> tuple[int | None, str | None]:
+    def area_cost(self, lot) -> tuple[int | None, str | None]:
+        """The house's ``AREA PRICE JPY`` for one lot, and why there isn't one.
+
+        Public and shared for the reason :func:`sheet_first` is: the max bid is
+        no longer the only number keyed on the auction house. The dashboard's
+        auction statistics land a *sold* price, and the customs value it lands
+        is the hammer plus this — every yen paid in Japan for the car, exactly
+        as :class:`banzai24.report.LandedPricer` argues. Two copies of the alias
+        fold would be two answers to "which house is this".
+
+        The missing table is answered here rather than left to look like a
+        missing *house*: :meth:`for_lot` never reaches this with an unloaded
+        file, because ``available`` already stopped it, but a caller that wants
+        only the area price has no such header to read.
+        """
+        if self.area_problem or not self.area_prices:
+            return None, self.area_problem or "area prices not loaded"
         key = _fold(lot.auction_name)
         price = self.area_prices.get(self.aliases.get(key, key))
         if price is None:

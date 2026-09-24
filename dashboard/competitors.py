@@ -409,6 +409,11 @@ class Dashboard:
     rates: str | None = None
     costs: str | None = None
     money_problem: str | None = None
+    # The live objects behind those two sentences, so the second panel of the
+    # same build lands its sales at the rate this one bid at. Nothing renders
+    # it — `rates` and `costs` are what the page prints, because a page records
+    # what it was priced with and not what it could reprice with.
+    money: tuple | None = None
     generated_at: datetime = field(default_factory=datetime.now)
 
     @property
@@ -683,7 +688,7 @@ def _listings_for(search: SearchDefinition):
     return scoped, [listing for listing in scoped if listing.is_active]
 
 
-def build(runs_dir: Path | None = None) -> Dashboard:
+def build(runs_dir: Path | None = None, money=None) -> Dashboard:
     """Every enabled saved search, priced at today's money.
 
     Today's, not the newest run's: this page is not a record of a decision, it is
@@ -691,11 +696,18 @@ def build(runs_dir: Path | None = None) -> Dashboard:
     :func:`price_calculator.sources.money_for_today`, and
     ``docs/adr/0004-bid-prices-are-read-live.md`` for why that does not
     contradict a run's stamped prices.
+
+    ``money`` is that function's ``(rates, costs, problem)`` triple, fetched
+    once per build and shared with :func:`dashboard.statistics.build` — which
+    lands a sold price and must land it at the same rate this panel bids at. It
+    is returned on the :class:`Dashboard` for that hand-off; fetched here when
+    nobody passes one.
     """
     from cars.specs import ModelSpecs
     from price_calculator.sources import CyprusMarket, money_for_today
 
-    rates, costs, money_problem = money_for_today(runs_dir)
+    money = money or money_for_today(runs_dir)
+    rates, costs, money_problem = money
     specs = ModelSpecs()
     market = CyprusMarket()
 
@@ -732,4 +744,5 @@ def build(runs_dir: Path | None = None) -> Dashboard:
         rates=rates.describe() if rates is not None else None,
         costs=costs.describe() if costs is not None else None,
         money_problem=money_problem,
+        money=money,
     )

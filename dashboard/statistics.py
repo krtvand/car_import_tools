@@ -5,12 +5,20 @@ cheapest concluded lots whose auction sheet passes that search's ``[sheet]``
 requirements. Five cars with links — not a median, not a distribution. See
 ``CONTEXT.md`` on *auction statistics*.
 
-**Nothing here decides anything.** The page carries no bid, no landed cost and
-no comparison against one: a benchmark's price is a hammer price and a
-``max_bid_jpy`` is an all-in maximum, so the two side by side would compare
-different quantities and flatter the bid by the size of an area price that
-differs per auction house. The page lists what sold, and you go and edit the
-file.
+**Nothing here decides anything.** The page still carries no bid and no
+comparison against one: a ``max_bid_jpy`` is an all-in maximum in yen, and a
+sale set beside it would be read as a verdict on the bid. The page lists what
+sold, and you go and edit the file.
+
+**It does carry a landed cost per sale**, which is the one number that crosses
+the currency without pretending to be a decision: what that car, at that
+price, at that house, would have cost you on Cyprus plates. The comparison it
+is worth making is against a **competitor** — a euro against a euro — and the
+hammer price alone cannot be compared with anything on this side. It is landed
+from the hammer price *plus that house's area price*, because every yen paid in
+Japan is in the customs value; see :class:`banzai24.report.LandedPricer`, which
+makes the same argument for a max bid. That is also why the auction house has
+no column of its own: it is in the number, and on the cell that carries it.
 
 **The keepers are re-derived, not stored.** ``banzai24 stats`` writes lots and
 extractions; which five of them a band keeps is worked out here, every build,
@@ -27,7 +35,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import searches
-from banzai24 import db as banzai_db
+from banzai24 import bidding, db as banzai_db
 from banzai24 import requirements, search as banzai_search, stats as stats_mod
 from banzai24.models import AuctionLot
 from searches.definition import Band
@@ -43,7 +51,14 @@ KEEPERS = stats_mod.KEEPERS
 
 @dataclass(frozen=True)
 class BenchmarkRow:
-    """One sale: a car, a price, and the sheet that says it was acceptable."""
+    """One sale: a car, a price, and the sheet that says it was acceptable.
+
+    ``auction_name`` lost its column to ``landed_eur`` and kept its field: the
+    house decides the area price inside that euro figure, and the cell names it.
+    Exactly one of ``landed_eur`` and ``landed_reason`` is set — a sale nobody
+    can land says why in the place the number would have been, the rule the rest
+    of this project follows for one car that cannot be priced.
+    """
 
     lot_number: str
     lot_short: str
@@ -55,6 +70,9 @@ class BenchmarkRow:
     auction_name: str
     url: str | None
     sheet_uri: str | None
+    landed_eur: float | None = None
+    landed_reason: str | None = None
+    area_price_jpy: int | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +197,70 @@ def _data_uri(path: Path | None) -> str | None:
             + base64.standard_b64encode(path.read_bytes()).decode("ascii"))
 
 
+class LandedPricer:
+    """What one sold lot would have cost you on Cyprus plates, or why it cannot.
+
+    A thin arrangement of parts that already exist — the area price list from
+    :class:`banzai24.bidding.BidPricer`, the model specs, and
+    :func:`price_calculator.sources.margin_for` — and it owns none of them. What
+    it decides is the one thing neither of them can: that the price to land is
+    the **hammer plus the house's area price**, because that is what the car
+    costs at the auction and all of it is in the customs value. Landing the
+    hammer alone would flatter every row by ¥4,000–¥47,000, which is the mirror
+    of the mistake :class:`banzai24.report.LandedPricer` names.
+
+    **Today's money, like the rest of the dashboard**, and never the stamped
+    money of a run: the panel answers "what is the market doing" this morning,
+    not "what was it doing when this was fetched". See
+    :func:`price_calculator.sources.money_for_today` and
+    ``docs/adr/0004-bid-prices-are-read-live.md``.
+
+    Built once per build and asked once per row. Nothing here raises: every way
+    a sale fails to land comes back as a sentence, and the row prints it where
+    the number was — the page is worth more with four landed rows and a reason
+    on the fifth than with an exception.
+    """
+
+    def __init__(self, rates=None, costs=None, money_problem: str | None = None):
+        from cars.specs import ModelSpecs
+
+        self.rates, self.costs = rates, costs
+        self.areas = bidding.BidPricer()
+        if rates is None or costs is None:
+            self.specs = None
+            self.reason = money_problem or "no exchange rates, so no landed cost"
+        else:
+            self.specs = ModelSpecs()
+            self.reason = self.specs.reason
+
+    def for_lot(self, lot: AuctionLot) -> tuple[float | None, str | None, int | None]:
+        """``(landed EUR, reason, area price JPY)`` — the euro or the sentence."""
+        from price_calculator.sources import margin_for
+
+        if self.rates is None or self.costs is None or self.specs is None:
+            return None, self.reason, None
+        if not lot.end_price_jpy:
+            return None, "no hammer price", None
+
+        area, house_problem = self.areas.area_cost(lot)
+        if area is None:
+            return None, house_problem, None
+
+        margin = margin_for(
+            make=lot.mark, model=lot.model, year=lot.registration_year,
+            mileage_km=lot.mileage_km,
+            auction_price_jpy=lot.end_price_jpy + area,
+            rates=self.rates, costs=self.costs, specs=self.specs,
+            # No market: this is a Japanese sale, and what it sells for in
+            # Cyprus is the competitors panel's question. The estimate costs a
+            # full `bazaraki.db` query per row. See `margin_for`.
+            market=None,
+        )
+        if isinstance(margin, str):
+            return None, margin, area
+        return float(margin.landed.total_eur), None, area
+
+
 def _sheet_path(lot: AuctionLot) -> Path | None:
     if not lot.sheet_path:
         return None
@@ -236,8 +318,13 @@ def _in_band(lot: AuctionLot, band: Band) -> bool:
 
 
 def _band_panel(definition, band: Band, lots: list[AuctionLot],
-                extractions: dict) -> BandPanel:
-    """One band's five cheapest passing sales, re-judged from today's file."""
+                extractions: dict, landed: LandedPricer | None = None) -> BandPanel:
+    """One band's five cheapest passing sales, re-judged from today's file.
+
+    ``landed=None`` keeps the rows and drops their euro — which is what a caller
+    with no money wants, and what a test that is asking about the *keepers* does
+    not have to arrange.
+    """
     filters = definition.stats_filters(band)
     lot_filters = definition.lot_filters_for(band)
 
@@ -264,6 +351,8 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
             unconfirmed += 1
             continue
         if len(rows) < KEEPERS:
+            landed_eur, landed_reason, area = (
+                landed.for_lot(lot) if landed else (None, None, None))
             rows.append(BenchmarkRow(
                 lot_number=lot.lot_number,
                 lot_short=lot.lot_short,
@@ -276,14 +365,32 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
                 url=(f"https://banzai24.com/car/JP/{lot.banzai_id}"
                      if lot.banzai_id else None),
                 sheet_uri=_data_uri(_sheet_path(lot)),
+                landed_eur=landed_eur,
+                landed_reason=landed_reason,
+                area_price_jpy=area,
             ))
 
     return BandPanel(band=band, rows=tuple(rows), stored=len(inside),
                      failed=failed, unconfirmed=unconfirmed)
 
 
-def build() -> Statistics:
-    """Every enabled search, measured against what is stored today."""
+def build(runs_dir: Path | None = None, money=None) -> Statistics:
+    """Every enabled search, measured against what is stored today.
+
+    ``money`` is the ``(rates, costs, problem)`` triple
+    :func:`price_calculator.sources.money_for_today` returns, handed over by
+    :func:`dashboard.cli.build` because the competitors panel has already
+    fetched it. Two fetches a build would be one HTTP round trip wasted and,
+    worse, two rates: the same search page would land a *sale* at one euro and a
+    *max bid* at another, and the gap between them would be read as a fact about
+    the cars. Left out, this fetches its own — which is what a caller building
+    the panel alone wants.
+    """
+    from price_calculator.sources import money_for_today
+
+    rates, costs, money_problem = money or money_for_today(runs_dir)
+    landed = LandedPricer(rates, costs, money_problem)
+
     banzai_db.init_db()
     lots = banzai_db.stats_lots()
     extractions = banzai_db.extractions_by_numbers([lot.lot_number for lot in lots])
@@ -305,7 +412,7 @@ def build() -> Statistics:
         panels.append(SearchPanel(
             name=name,
             car=spec.car,
-            bands=tuple(_band_panel(definition, band, mine, extractions)
+            bands=tuple(_band_panel(definition, band, mine, extractions, landed)
                         for band in definition.bands),
             measured_on=stats_mod.last_run(name),
             note=(None if definition.stats_declared else

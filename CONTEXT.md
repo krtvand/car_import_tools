@@ -304,7 +304,9 @@ search — per band, each one a car with a link, not a summary of a market. Name
 for the site feature it reads rather than for what it is: it counts nothing and
 averages nothing, and the day it grows a distribution this line should be split
 rather than stretched. The Japan-side counterpart to a **competitor**, and just
-as deliberately individual.
+as deliberately individual — each sale carrying its own **landed cost**, landed
+from the hammer price plus its auction house's area price, which is the one
+figure on it comparable with anything on the Cyprus side.
 _Avoid_: Stats, price history, sold comparables — and not a **Cyprus
 comparable**, which is a median
 

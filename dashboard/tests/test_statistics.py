@@ -9,13 +9,24 @@ search still sitting on the page, looking measured.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 
 from banzai24 import search
 from banzai24.models import AuctionLot, SheetExtraction
+from cars.specs import ModelSpecs
 from dashboard import search_page, statistics
+from price_calculator.calculator import Rates
+from price_calculator.sources import load_cost_book, margin_for
+
+# The shipped book and a fixed pair of rates. Nothing below asserts a euro
+# figure — the book is edited whenever somebody's fee changes — only what went
+# into it, which is the decision this module makes.
+COSTS = load_cost_book()
+RATES = Rates(usd_jpy=Decimal("158.9"), eur_jpy_market=Decimal("185.6"),
+              fetched_at=datetime(2026, 8, 22, tzinfo=timezone.utc))
 
 RAV4 = """
 car = "toyota-rav4"
@@ -189,6 +200,52 @@ def test_a_full_five_needs_no_footnote(definition):
     assert panel.note is None
 
 
+# --- landing a sale ----------------------------------------------------------
+
+
+def _landed(price_jpy: int) -> float:
+    """What `price_jpy` lands at, through the calculator directly."""
+    margin = margin_for(make="TOYOTA", model="RAV4", year=2023, mileage_km=30_000,
+                        auction_price_jpy=price_jpy, rates=RATES, costs=COSTS,
+                        specs=ModelSpecs(), market=None)
+    return float(margin.landed.total_eur)
+
+
+def test_a_sale_is_landed_from_the_hammer_plus_the_houses_area_price():
+    """Every yen paid in Japan is in the customs value the VAT is charged on, so
+    the area price is inside the euro and not deducted from it. Landing the
+    hammer alone would flatter every row on the page."""
+    eur, reason, area = statistics.LandedPricer(RATES, COSTS).for_lot(
+        _lot(price=3_000_000))                       # TAA Kinki, ¥5,500
+    assert reason is None and area == 5_500
+    assert eur == pytest.approx(_landed(3_005_500))
+    assert eur > _landed(3_000_000)
+
+
+def test_a_sale_from_a_house_with_no_area_price_is_not_landed_at_the_hammer():
+    """It says which house instead. A euro short by an unknown area price is
+    worse than a blank one, because nothing on the page would show it."""
+    lot = AuctionLot(**{**_lot().__dict__, "auction_name": "SOME NEW AA"})
+    eur, reason, area = statistics.LandedPricer(RATES, COSTS).for_lot(lot)
+    assert eur is None and area is None
+    assert "SOME NEW AA" in reason
+
+
+def test_no_exchange_rates_blanks_the_euro_and_says_so():
+    eur, reason, _ = statistics.LandedPricer(None, None).for_lot(_lot())
+    assert eur is None and "no exchange rates" in reason
+
+
+def test_the_keepers_do_not_need_money_to_be_worked_out(definition):
+    """The five cheapest are re-derived from the search file, and a build with no
+    rates still has them — it just has no euro beside them."""
+    lots = [_lot(f"1-1-{i}", price=3_000_000 + i) for i in range(5)]
+    panel = statistics._band_panel(definition, definition.bands[0], lots,
+                                   {lot.lot_number: _clean(lot) for lot in lots})
+    assert len(panel.rows) == statistics.KEEPERS
+    assert all(row.landed_eur is None for row in panel.rows)
+
+
 # --- the page ----------------------------------------------------------------
 
 
@@ -204,12 +261,12 @@ def _page(definition, **kw):
         name="toyota-rav4", bands=(band,), measured_on=date(2026, 8, 27))))
 
 
-def _row(price=2_960_000, uri=None):
+def _row(price=2_960_000, uri=None, **kw):
     return statistics.BenchmarkRow(
         lot_number="1-1-1", lot_short="2388", price_jpy=price, mileage_km=31_000,
         grade="4.5", modification="HYBRID G 4WD", trade_date=date(2026, 8, 21),
         auction_name="TAA Kinki", url="https://banzai24.com/car/JP/uuid",
-        sheet_uri=uri,
+        sheet_uri=uri, **{"landed_eur": 21_480.0, "area_price_jpy": 5_500, **kw},
     )
 
 
@@ -217,7 +274,31 @@ def test_the_page_shows_the_sale_and_links_the_lot(definition):
     html = _page(definition, rows=(_row(),), stored=6)
     assert "2,960,000 ¥" in html
     assert "https://banzai24.com/car/JP/uuid" in html
-    assert "TAA Kinki" in html
+
+
+def test_the_page_shows_what_the_sale_would_have_landed_at(definition):
+    """The yen is what the market paid; the euro is what it would have cost you,
+    and it is the only figure on the page comparable with a competitor."""
+    html = _page(definition, rows=(_row(),), stored=6)
+    assert "€21,480" in html
+
+
+def test_the_auction_house_keeps_no_column_and_is_named_on_the_euro(definition):
+    """Its area price is inside the landed figure, so the house belongs to that
+    cell rather than to one of its own."""
+    html = _page(definition, rows=(_row(),), stored=6)
+    assert "<th>landed</th>" in html and "<th>auction</th>" not in html
+    assert 'title="TAA Kinki · area price 5,500 ¥"' in html
+
+
+def test_a_sale_that_cannot_be_landed_says_why_where_the_euro_was(definition):
+    """Never a blank cell and never a guessed euro — the same rule the bid
+    column follows on a card."""
+    html = _page(definition, rows=(_row(landed_eur=None, area_price_jpy=None,
+                                        landed_reason="unknown auction house: TAA Kinki"),),
+                 stored=6)
+    assert "unknown auction house: TAA Kinki" in html
+    assert "€" not in html
 
 
 def test_the_page_carries_no_bid_to_compare_against(definition):

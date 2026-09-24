@@ -1,5 +1,6 @@
 {# One search's auction statistics: per band, the cheapest concluded sales whose
-   sheet passes its `[sheet]` requirements. Split out of
+   sheet passes its `[sheet]` requirements, each with what it would have cost on
+   Cyprus plates. Split out of
    `auction_statistics.html.j2` when the search pages grew a block of their own.
 
    `.note` and `.sheet` were renamed to `.panel-note` and `.stat-sheet` when
@@ -52,6 +53,8 @@
        vertical-align: middle; }
   tr:last-child td { border-bottom: 0; }
   td.price { font-weight: 600; white-space: nowrap; }
+  td.landed { color: var(--good); }
+  td.landed .why { font-weight: 400; color: var(--muted); white-space: normal; }
   td.trim { color: var(--muted); }
   .stat-sheet .open { display: block; width: 72px; height: 54px; }
   .stat-sheet img { display: block; width: 100%; height: 100%; object-fit: cover;
@@ -107,8 +110,8 @@
       <table>
         <thead>
           <tr>
-            <th></th><th>sold for</th><th>mileage</th><th>grade</th>
-            <th>Модификация</th><th>date</th><th>auction</th><th>lot</th>
+            <th></th><th>sold for</th><th>landed</th><th>mileage</th>
+            <th>grade</th><th>Модификация</th><th>date</th><th>lot</th>
           </tr>
         </thead>
         <tbody>
@@ -125,11 +128,23 @@
               {% endif %}
             </td>
             <td class="price">{{ '{:,}'.format(row.price_jpy) }} ¥</td>
+            {# The house has no column of its own any more: its area price is
+               inside this euro figure, and the title says which house and how
+               much. A sale that cannot be landed carries the reason here — the
+               page would rather say what is missing than print a euro it has
+               guessed at. #}
+            <td class="price landed"
+                title="{{ row.auction_name }}{% if row.area_price_jpy %} · area price {{ '{:,}'.format(row.area_price_jpy) }} ¥{% endif %}">
+              {%- if row.landed_eur is not none -%}
+                €{{ '{:,.0f}'.format(row.landed_eur) }}
+              {%- else -%}
+                <span class="why">{{ row.landed_reason or '—' }}</span>
+              {%- endif -%}
+            </td>
             <td>{{ '{:,}'.format(row.mileage_km) if row.mileage_km else '—' }} km</td>
             <td>{{ row.grade or '—' }}</td>
             <td class="trim">{{ row.modification or '—' }}</td>
             <td>{{ row.trade_date or '—' }}</td>
-            <td>{{ row.auction_name or '—' }}</td>
             <td>
               {% if row.url %}
               <a href="{{ row.url }}">{{ row.lot_short }}</a>

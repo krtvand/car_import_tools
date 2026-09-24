@@ -427,5 +427,5 @@ def test_the_shipped_tables_load_and_price_a_real_house():
     assert pricer.bands and len(pricer.aliases) == 6
     for db_name in ("U Tokyo", "U Nagoya", "U Kyushu", "U Osaka",
                     "U Yokohama", "Honda AA Tokyo", "BAY AUC", "HAA Kobe"):
-        cost, reason = pricer._area_cost(_lot(auction_name=db_name))
+        cost, reason = pricer.area_cost(_lot(auction_name=db_name))
         assert reason is None and cost > 0, db_name

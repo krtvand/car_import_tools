@@ -178,6 +178,15 @@ row, because each lot sold at its own auction house. Deliberately deferred, not
 forgotten: `bidding.py` already holds the line that a guessed `bid_reduced` is
 worse than none.
 
+**Since 2026-09-24 the auction-house column is a landed cost instead**, which is
+the deferral above taken up rather than dropped: the area price *does* differ per
+row, so each row is landed from its own house's `AREA PRICE JPY` on top of its
+hammer price (`BidPricer.area_cost`, `dashboard.statistics.LandedPricer`). The
+house is named on the cell's title, not in a column of its own, because what it
+decides is now inside the euro. Still no bid on the page — what the euro is for
+is reading a Japanese sale against a Cyprus **competitor**, which the yen could
+never be compared with at all.
+
 ## Validation
 
 A bad search file fails **loudly, per search, and the others still render** —

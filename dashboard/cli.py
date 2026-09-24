@@ -54,7 +54,10 @@ def build(runs_dir: Path | None = None) -> Build:
     """
     runs_dir = runs_dir or index.RUNS_DIR
     dashboard = competitors.build(runs_dir)
-    stats = statistics.build()
+    # Today's money, fetched once by the panel above and handed on: a sale
+    # landed at one rate beside a max bid priced at another would put a gap on
+    # the page that looks like news about the car.
+    stats = statistics.build(runs_dir, money=dashboard.money)
 
     runs_dir.mkdir(parents=True, exist_ok=True)
     pages, notes = [], []
