@@ -515,15 +515,15 @@ def money_for_today(runs_dir: Path | None = None):
     try:
         return fetch_rates(), costs, None
     except RatesUnavailable as exc:
-        pass
+        why = str(exc)
 
     for run_dir in _newest_runs(runs_dir):
         stamped = read_rates(run_dir)
         if stamped is not None:
             return stamped, costs, (
-                f"live rates unavailable ({exc}); using the ones stamped into "
+                f"live rates unavailable ({why}); using the ones stamped into "
                 f"{run_dir.name}")
-    return None, costs, f"no exchange rates: {exc}, and no run has any stamped"
+    return None, costs, f"no exchange rates: {why}, and no run has any stamped"
 
 
 def _newest_runs(runs_dir: Path | None):
