@@ -28,6 +28,9 @@ expected_profit_percent = 20
 fuel_type = ["hybrid petrol"]
 engine_size_start = 2.5
 engine_size_end = 2.5
+# Both trims below a Z undercut it. Adverts that name no grade stay in.
+exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
+                   "g model", "coming soon"]
 
 
 [[band]]
@@ -40,9 +43,7 @@ max_bid_jpy = { private = 2_885_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 50000
-  # Both trims below a Z undercut it. Adverts that name no grade stay in.
-  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
-                     "g model", "coming soon"]
+
 [[band]]
 year = 2023
 body_model_code = ["AXUH80", "AXUH85"]
@@ -53,6 +54,3 @@ max_bid_jpy = { private = 2_835_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  # Both trims below a Z undercut it. Adverts that name no grade stay in.
-  exclude_phrases = ["hybrid s", "s package", "hybrid g", "g package",
-                     "g model", "coming soon"]
