@@ -5,10 +5,15 @@ cheapest concluded lots whose auction sheet passes that search's ``[sheet]``
 requirements. Five cars with links — not a median, not a distribution. See
 ``CONTEXT.md`` on *auction statistics*.
 
-**Nothing here decides anything.** The page still carries no bid and no
-comparison against one: a ``max_bid_jpy`` is an all-in maximum in yen, and a
-sale set beside it would be read as a verdict on the bid. The page lists what
-sold, and you go and edit the file.
+**The band's max bid sits under its sales, landed.** Last row of the table and
+never one of them: a ceiling you wrote, not something that happened. The
+comparison it invites is honest in exactly one column — a ``max_bid_jpy`` is an
+all-in maximum *at the auction*, while a sale's figure is a hammer price with
+the house's area price still to come, so the yen column sets two different
+quantities beside each other and only the euro column sets one against itself.
+That is the whole reason the row can be here, and the reason its yen is the
+greyer of its two numbers. Nothing here decides anything even so: you read the
+euro column and go and edit the file.
 
 **It does carry a landed cost per sale**, which is the one number that crosses
 the currency without pretending to be a decision: what that car, at that
@@ -38,7 +43,7 @@ import searches
 from banzai24 import bidding, db as banzai_db
 from banzai24 import requirements, search as banzai_search, stats as stats_mod
 from banzai24.models import AuctionLot
-from searches.definition import Band
+from searches.definition import PRIVATE, Band
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -76,11 +81,36 @@ class BenchmarkRow:
 
 
 @dataclass(frozen=True)
+class MaxBidRow:
+    """This band's own ``max_bid_jpy``, landed — the ceiling under the sales.
+
+    Two numbers and no car, because there is no car: nothing was bought at this
+    price, and every field a sale fills in is left empty rather than invented.
+    The yen is the figure from the search file and the euro is that figure on
+    Cyprus plates, landed through the same calculator and the same morning's
+    rates as the rows above it — the one thing that makes the column readable
+    top to bottom. ``landed_eur`` and ``landed_reason`` are exclusive, the rule
+    :class:`BenchmarkRow` already follows.
+
+    Nothing is added to the yen before landing it. A ``max_bid_jpy`` is
+    *already* hammer plus the house's area price — that is what an all-in
+    maximum means — so the step :meth:`LandedPricer.for_lot` has to take for a
+    sale would be taken twice here. See ``banzai24.report.LandedPricer``, which
+    prices the same number the same way on a card.
+    """
+
+    price_jpy: int
+    landed_eur: float | None = None
+    landed_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class BandPanel:
     """One band's cheap end, and how much of it had to be looked at."""
 
     band: Band
     rows: tuple[BenchmarkRow, ...] = ()
+    max_bid: MaxBidRow | None = None   # the band's ceiling, under its sales
     stored: int = 0          # lots this walk has stored inside this band
     failed: int = 0          # read, and the sheet disqualified them
     unconfirmed: int = 0     # stored, but nothing has read the sheet yet
@@ -260,6 +290,38 @@ class LandedPricer:
             return None, margin, area
         return float(margin.landed.total_eur), None, area
 
+    def for_band(self, definition, band: Band) -> tuple[float | None, str | None]:
+        """``(landed EUR, reason)`` for this band's max bid — no area price.
+
+        The one place this differs from :meth:`for_lot`, and it is not an
+        omission: a ``max_bid_jpy`` is an all-in maximum at the auction, so the
+        house's area price is inside it already and adding one would charge it
+        twice. Which house is not even a question here — the ceiling is one
+        number for the band, whichever room the car turns up in.
+
+        The car is the *search's* make and model rather than a lot's, because no
+        lot is being priced. Same spelling either way: ``_matches_car`` picks a
+        band's sales out of the table with these two fields.
+        """
+        from price_calculator.sources import margin_for
+
+        if self.rates is None or self.costs is None or self.specs is None:
+            return None, self.reason
+
+        margin = margin_for(
+            make=definition.filters.make, model=definition.filters.model,
+            year=band.year,
+            # No mileage and no market, for the same reason `for_lot` passes
+            # none: mileage only moves the Cyprus estimate, and the estimate is
+            # the competitors panel's question.
+            mileage_km=None, market=None,
+            auction_price_jpy=band.bid(),
+            rates=self.rates, costs=self.costs, specs=self.specs,
+        )
+        if isinstance(margin, str):
+            return None, margin
+        return float(margin.landed.total_eur), None
+
 
 def _sheet_path(lot: AuctionLot) -> Path | None:
     if not lot.sheet_path:
@@ -370,8 +432,18 @@ def _band_panel(definition, band: Band, lots: list[AuctionLot],
                 area_price_jpy=area,
             ))
 
-    return BandPanel(band=band, rows=tuple(rows), stored=len(inside),
-                     failed=failed, unconfirmed=unconfirmed)
+    # The ceiling is the file's, not the walk's: it is there whether or not a
+    # single sale was ever stored, and a band with nothing under it is exactly
+    # where knowing what you are willing to pay is worth reading.
+    max_bid = None
+    if band.max_bid_jpy.get(PRIVATE):
+        landed_eur, landed_reason = (
+            landed.for_band(definition, band) if landed else (None, None))
+        max_bid = MaxBidRow(price_jpy=band.bid(), landed_eur=landed_eur,
+                            landed_reason=landed_reason)
+
+    return BandPanel(band=band, rows=tuple(rows), max_bid=max_bid,
+                     stored=len(inside), failed=failed, unconfirmed=unconfirmed)
 
 
 def build(runs_dir: Path | None = None, money=None) -> Statistics:

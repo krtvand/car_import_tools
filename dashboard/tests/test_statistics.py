@@ -301,13 +301,70 @@ def test_a_sale_that_cannot_be_landed_says_why_where_the_euro_was(definition):
     assert "€" not in html
 
 
-def test_the_page_carries_no_bid_to_compare_against(definition):
-    """A sale price is a hammer price and a max bid is an all-in maximum. Side
-    by side they compare different quantities and flatter the bid by an area
-    price that differs per auction house."""
-    html = _page(definition, rows=(_row(),), stored=6)
-    assert "max bid" not in html.lower()
-    assert "2,505,000" not in html      # the band's max_bid_jpy
+# --- the band's own ceiling --------------------------------------------------
+
+
+def test_the_max_bid_is_landed_all_in_with_no_area_price_added(definition):
+    """A `max_bid_jpy` is *already* hammer plus the house's area price, so the
+    step a sale needs would be charged twice here. This is the one place the two
+    pricings differ, and getting it wrong would push the ceiling above itself by
+    every area price on the list."""
+    eur, reason = statistics.LandedPricer(RATES, COSTS).for_band(
+        definition, definition.bands[0])          # max_bid_jpy = 2,505,000
+    assert reason is None
+    assert eur == pytest.approx(_landed(2_505_000))
+    assert eur < _landed(2_505_000 + 5_500)
+
+
+def test_a_band_carries_its_ceiling_whether_or_not_anything_sold(definition):
+    """The number is the search file's, not the walk's. A band nobody has
+    measured is exactly where knowing what you are willing to pay reads for
+    most, so it is never withheld for want of sales to sit under."""
+    panel = statistics._band_panel(definition, definition.bands[0], [], {},
+                                   statistics.LandedPricer(RATES, COSTS))
+    assert panel.rows == ()
+    assert panel.max_bid.price_jpy == 2_505_000
+    assert panel.max_bid.landed_eur == pytest.approx(_landed(2_505_000))
+
+
+def test_no_exchange_rates_blanks_the_ceilings_euro_too(definition):
+    """The same rule as a sale: a sentence where the number would have been,
+    never a euro nobody could compute."""
+    eur, reason = statistics.LandedPricer(None, None).for_band(
+        definition, definition.bands[0])
+    assert eur is None and "no exchange rates" in reason
+
+
+def test_the_page_prints_the_max_bid_below_the_sales(definition):
+    """Both figures, and the euro is the one that compares: a hammer price and
+    an all-in maximum are different quantities in yen, and the same quantity
+    once each is on Cyprus plates."""
+    html = _page(definition, rows=(_row(),), stored=6,
+                 max_bid=statistics.MaxBidRow(price_jpy=2_505_000,
+                                              landed_eur=18_900.0))
+    foot = html.split("<tfoot>")[1]
+    assert "max bid" in foot
+    assert "2,505,000 ¥" in foot and "€18,900" in foot
+
+
+def test_the_max_bid_row_fills_in_none_of_a_sales_fields(definition):
+    """Empty, not em-dashed. An em-dash on a sale means nobody typed the figure;
+    there is no mileage, grade or lot to type here, because nothing was bought
+    at this price."""
+    html = _page(definition, rows=(_row(),), stored=6,
+                 max_bid=statistics.MaxBidRow(price_jpy=2_505_000,
+                                              landed_eur=18_900.0))
+    rest = html.split("€18,900")[1]          # everything after the landed cell
+    assert "—" not in rest and "km" not in rest and "<a " not in rest
+    assert "<td></td><td></td><td></td><td></td><td></td>" in rest
+
+
+def test_a_ceiling_that_cannot_be_landed_says_why_where_the_euro_was(definition):
+    html = _page(definition, rows=(), stored=0,
+                 max_bid=statistics.MaxBidRow(
+                     price_jpy=2_505_000, landed_reason="no model spec for TOYOTA RAV4 2023"))
+    assert "no model spec for TOYOTA RAV4 2023" in html
+    assert "€" not in html
 
 
 def test_a_short_list_carries_its_reason_onto_the_page(definition):

@@ -56,6 +56,18 @@
   td.landed { color: var(--good); }
   td.landed .why { font-weight: 400; color: var(--muted); white-space: normal; }
   td.trim { color: var(--muted); }
+
+  /* The band's own ceiling, ruled off under the sales rather than sorted among
+     them — it is not a sale, and a row sitting inside the list would be read as
+     one. Its yen is greyed and its euro is not: a max bid is all-in and a
+     hammer price is not, so the euro column is the only one comparing like
+     with like down its whole length. */
+  tfoot .max-bid th, tfoot .max-bid td { border-top: 2px solid var(--line);
+                                         border-bottom: 0; }
+  .max-bid th { text-align: left; font-weight: 600; color: var(--muted);
+                font-size: .8125rem; white-space: nowrap; }
+  .max-bid td.price { font-weight: 400; color: var(--muted); }
+  .max-bid td.landed { font-weight: 600; color: var(--good); }
   .stat-sheet .open { display: block; width: 72px; height: 54px; }
   .stat-sheet img { display: block; width: 100%; height: 100%; object-fit: cover;
                border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; }
@@ -106,7 +118,9 @@
         {% endif %}
       </h3>
 
-      {% if band.rows %}
+      {# Drawn for the ceiling alone when nothing sold: a band with no sales in
+         it is where knowing what you are willing to pay reads for most. #}
+      {% if band.rows or band.max_bid %}
       <table>
         <thead>
           <tr>
@@ -155,6 +169,29 @@
           </tr>
           {% endfor %}
         </tbody>
+        {# Every other cell left genuinely empty, not em-dashed: an em-dash on a
+           sale means "nobody typed it", and there is no mileage or grade to
+           type here — nothing was bought at this price. #}
+        {% if band.max_bid %}
+        <tfoot>
+          <tr class="max-bid">
+            <th scope="row">max bid</th>
+            <td class="price"
+                title="all-in at the auction — hammer plus the house&#39;s area price, unlike the sales above">
+              {{ '{:,}'.format(band.max_bid.price_jpy) }} ¥
+            </td>
+            <td class="price landed"
+                title="what this band&#39;s max bid costs on Cyprus plates — the column that compares">
+              {%- if band.max_bid.landed_eur is not none -%}
+                €{{ '{:,.0f}'.format(band.max_bid.landed_eur) }}
+              {%- else -%}
+                <span class="why">{{ band.max_bid.landed_reason or '—' }}</span>
+              {%- endif -%}
+            </td>
+            <td></td><td></td><td></td><td></td><td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
       {% endif %}
 

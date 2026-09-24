@@ -306,7 +306,11 @@ averages nothing, and the day it grows a distribution this line should be split
 rather than stretched. The Japan-side counterpart to a **competitor**, and just
 as deliberately individual — each sale carrying its own **landed cost**, landed
 from the hammer price plus its auction house's area price, which is the one
-figure on it comparable with anything on the Cyprus side.
+figure on it comparable with anything on the Cyprus side. The band's own
+**max bid** is ruled off underneath, landed the same way and never sorted
+in among the sales: a `max_bid_jpy` is all-in where a hammer price is not,
+so the yen column sets two quantities beside each other and only the landed
+column sets one against itself.
 _Avoid_: Stats, price history, sold comparables — and not a **Cyprus
 comparable**, which is a median
 
