@@ -68,6 +68,7 @@ expected_profit_percent = 20
 fuel_type = ["petrol"]
 engine_size_start = 2.0
 engine_size_end = 2.0
+exclude_phrases = ["s package", "s model", "coming soon"]
 
 
 [[band]]
@@ -80,7 +81,6 @@ max_bid_jpy = { private = 2_454_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 50000
-  exclude_phrases = ["s package", "s model", "coming soon"]
 
 [[band]]
 year = 2023
@@ -92,7 +92,6 @@ max_bid_jpy = { private = 2_454_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  exclude_phrases = ["s package", "s model", "coming soon"]
 
 [[band]]
 year = 2024
@@ -104,7 +103,6 @@ max_bid_jpy = { private = 2_635_000 }
   [band.competitors]
   year_start = 2023
   mileage_end = 50000
-  exclude_phrases = ["s package", "s model", "coming soon"]
 
 [[band]]
 year = 2024
@@ -116,4 +114,3 @@ max_bid_jpy = { private = 2_615_000 }
   [band.competitors]
   year_start = 2023
   mileage_end = 65_000
-  exclude_phrases = ["s package", "s model", "coming soon"]

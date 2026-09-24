@@ -35,6 +35,8 @@ expected_profit_percent = 20
 fuel_type = ["hybrid petrol"]
 engine_size_start = 2.5
 engine_size_end = 2.5
+# Nothing cheaper to exclude — the S is the bottom of the range.
+exclude_phrases = ["coming soon"]
 
 
 [[band]]
@@ -47,8 +49,6 @@ max_bid_jpy = { private = 2_454_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  # Nothing cheaper to exclude — the S is the bottom of the range.
-  exclude_phrases = ["coming soon"]
 
 [[band]]
 year = 2023
@@ -60,5 +60,3 @@ max_bid_jpy = { private = 2_313_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  # Nothing cheaper to exclude — the S is the bottom of the range.
-  exclude_phrases = ["coming soon"]

@@ -58,6 +58,7 @@ expected_profit_percent = 20
 fuel_type = ["hybrid petrol"]
 engine_size_start = 2.5
 engine_size_end = 2.5
+exclude_phrases = ["hybrid s", "s package", "coming soon"]
 
 
 [[band]]
@@ -70,7 +71,6 @@ max_bid_jpy = { private = 2_686_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 50000
-  exclude_phrases = ["hybrid s", "s package", "coming soon"]
 
 [[band]]
 year = 2023
@@ -82,7 +82,6 @@ max_bid_jpy = { private = 2_656_000 }
   [band.competitors]
   year_start = 2022
   mileage_end = 70000
-  exclude_phrases = ["hybrid s", "s package", "coming soon"]
 
 [[band]]
 year = 2024
@@ -94,7 +93,6 @@ max_bid_jpy = { private = 2_845_000 }
   [band.competitors]
   year_start = 2023
   mileage_end = 50000
-  exclude_phrases = ["hybrid s", "s package", "coming soon"]
 
 
 [[band]]
@@ -107,4 +105,3 @@ max_bid_jpy = { private = 2_845_000 }
   [band.competitors]
   year_start = 2023
   mileage_end = 65_000
-  exclude_phrases = ["hybrid s", "s package", "coming soon"]
